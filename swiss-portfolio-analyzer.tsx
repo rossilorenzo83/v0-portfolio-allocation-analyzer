@@ -1,23 +1,10 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useCallback } from "react"
-import {
-  Upload,
-  FileText,
-  PieChartIcon,
-  BarChart3,
-  DollarSign,
-  Building2,
-  TrendingUp,
-  TrendingDown,
-  Globe,
-} from "lucide-react"
+import { PieChartIcon, BarChart3, DollarSign, Building2, TrendingUp, TrendingDown, Globe } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import {
@@ -31,59 +18,82 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from "recharts"
-import { parseSwissPortfolioPDF, type SwissPortfolioData } from "./swiss-portfolio-parser"
+import { parseSwissPortfolioPDF, type SwissPortfolioData } from "./portfolio-parser"
+import { FileUploadHelper } from "./components/file-upload-helper"
+import { LoadingProgress } from "./components/loading-progress"
 
 export default function SwissPortfolioAnalyzer() {
   const [portfolioData, setPortfolioData] = useState<SwissPortfolioData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
+  const handleFileUpload = useCallback(async (file: File) => {
     setIsLoading(true)
     setError(null)
 
     try {
-      const text = await file.text()
+      console.log("Processing file:", file.name, file.type)
 
-      // Check if this looks like a Swiss portfolio statement
-      if (!text.includes("Valeur totale") && !text.includes("Actions") && !text.includes("ETF")) {
-        throw new Error("This doesn't appear to be a Swiss portfolio statement. Please upload the correct format.")
+      // Check file type and validate
+      if (file.type === "application/pdf") {
+        console.log("Processing PDF file...")
+      } else if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+        console.log("Processing text file...")
+      } else if (file.name.endsWith(".csv")) {
+        console.log("Processing CSV file...")
+      } else {
+        throw new Error("Please upload a PDF, TXT, or CSV file from your Swiss bank portfolio statement.")
       }
 
-      const parsedData = parseSwissPortfolioPDF(text)
+      // Add artificial delay to show progress
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+
+      // Parse the file
+      const parsedData = await parseSwissPortfolioPDF(file)
 
       if (parsedData.accountOverview.totalValue === 0) {
-        throw new Error("No portfolio data found. Please check the file format.")
+        throw new Error(
+          "No portfolio data found. Please check the file format and ensure it contains portfolio information.",
+        )
       }
 
+      console.log("Successfully parsed portfolio data:", parsedData)
       setPortfolioData(parsedData)
     } catch (err) {
+      console.error("Parsing error:", err)
       setError(err instanceof Error ? err.message : "Error parsing portfolio file. Please check the format.")
     } finally {
       setIsLoading(false)
     }
   }, [])
 
-  // For demonstration, load the sample data immediately
-  // const loadSampleData = useCallback(() => {
-  //   const sampleText = `
-  //   Valeur totale 889'528.75
-  //   Solde espèces 5'129.55
-  //   Valeur des titres 877'853.96
-  //   Valeur des crypto-monnaies 6'545.23
-  //   Pouvoir d'achat 45'047.57
-  //   `
-  //   const parsedData = parseSwissPortfolioPDF(sampleText)
-  //   setPortfolioData(parsedData)
-  // }, [])
+  const handleTextSubmit = useCallback(async (text: string) => {
+    setIsLoading(true)
+    setError(null)
 
-  // Load sample data on component mount
-  // React.useEffect(() => {
-  //   loadSampleData()
-  // }, [loadSampleData])
+    try {
+      console.log("Processing text input, length:", text.length)
+
+      // Add artificial delay to show progress
+      await new Promise((resolve) => setTimeout(resolve, 4000))
+
+      const parsedData = await parseSwissPortfolioPDF(text)
+
+      if (parsedData.accountOverview.totalValue === 0) {
+        throw new Error(
+          "No portfolio data found. Please check the text format and ensure it contains portfolio information.",
+        )
+      }
+
+      console.log("Successfully parsed portfolio data:", parsedData)
+      setPortfolioData(parsedData)
+    } catch (err) {
+      console.error("Parsing error:", err)
+      setError(err instanceof Error ? err.message : "Error parsing portfolio data. Please check the format.")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
   const colors = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D", "#FFC658", "#FF7C7C"]
 
@@ -184,42 +194,16 @@ export default function SwissPortfolioAnalyzer() {
             </p>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Upload Portfolio Statement
-              </CardTitle>
-              <CardDescription>Upload a PDF or text file from your Swiss bank portfolio statement</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <input
-                  type="file"
-                  accept=".pdf,.txt"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="portfolio-upload"
-                />
-                <label htmlFor="portfolio-upload" className="cursor-pointer">
-                  <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <p className="text-lg font-medium">Click to upload portfolio file</p>
-                  <p className="text-sm text-muted-foreground">Supports PDF and text files</p>
-                </label>
-              </div>
-              {isLoading && (
-                <div className="mt-4">
-                  <Progress value={50} className="w-full" />
-                  <p className="text-sm text-muted-foreground mt-2">Processing portfolio data...</p>
-                </div>
-              )}
-              {error && (
-                <Alert className="mt-4">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
+          {isLoading ? (
+            <LoadingProgress isLoading={isLoading} currentStep="Processing..." />
+          ) : (
+            <FileUploadHelper
+              onFileUpload={handleFileUpload}
+              onTextSubmit={handleTextSubmit}
+              isLoading={isLoading}
+              error={error}
+            />
+          )}
         </div>
       </div>
     )

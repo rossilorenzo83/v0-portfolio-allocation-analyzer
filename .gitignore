@@ -24,6 +24,9 @@ yarn-error.log*
 
 # Local env files
 .env*.local
+.env
+.env.development
+.env.production
 
 # Vercel
 .vercel
@@ -50,3 +53,11 @@ Thumbs.db
 /personal/
 *.pdf
 personal-portfolio.*
+
+# API Configuration (IMPORTANT - DO NOT COMMIT)
+config/api-keys.js
+config/secrets.json
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
