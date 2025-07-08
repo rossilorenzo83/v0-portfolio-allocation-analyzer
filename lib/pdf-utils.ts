@@ -67,27 +67,18 @@ export async function safePDFExtraction(file: File): Promise<string> {
 async function extractWithLocalPDFJS(file: File): Promise<string> {
   try {
     // Dynamic import to avoid build-time issues
-    const pdfjsLib = await import("pdfjs-dist")
-
-    // Use a data URL worker to avoid CDN issues
-    const workerBlob = new Blob(
-      [
-        `
-        // Minimal PDF.js worker implementation
-        importScripts('https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.js');
-      `,
-      ],
-      { type: "application/javascript" },
-    )
-
-    const workerUrl = URL.createObjectURL(workerBlob)
+    const pdfjsLib = await import("pdfjs-dist");
 
     // Configure PDF.js to use local worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+    //const pdfjsWorker = require("pdfjs-dist/build/pdf.worker.min.mjs");
 
-    const arrayBuffer = await file.arrayBuffer()
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        'pdfjs-dist/build/pdf.worker.min.mjs',
+        import.meta.url
+    ).toString();
 
-    console.log("Starting PDF.js extraction with local worker...")
+    const arrayBuffer = await file.arrayBuffer();
+    console.log("Starting PDF.js extraction with local worker...");
 
     const pdf = await pdfjsLib.getDocument({
       data: arrayBuffer,
@@ -97,62 +88,37 @@ async function extractWithLocalPDFJS(file: File): Promise<string> {
       disableFontFace: true,
       maxImageSize: 1024 * 1024,
       verbosity: 0,
-      // Disable worker for better compatibility
-      disableWorker: true,
-    }).promise
+      disableWorker: false, // Enable worker for better performance
+    }).promise;
 
-    console.log(`PDF loaded successfully. Pages: ${pdf.numPages}`)
-
-    let fullText = ""
+    console.log(`PDF loaded successfully. Pages: ${pdf.numPages}`);
+    let fullText = "";
 
     for (let i = 1; i <= pdf.numPages; i++) {
       try {
-        console.log(`Processing page ${i}/${pdf.numPages}`)
-        const page = await pdf.getPage(i)
-        const textContent = await page.getTextContent()
+        console.log(`Processing page ${i}/${pdf.numPages}`);
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
 
         // Extract text items and join them
         const pageText = textContent.items
-          .map((item: any) => {
-            if ("str" in item) {
-              return item.str
-            }
-            return ""
-          })
-          .join(" ")
+            .map((item: any) => ("str" in item ? item.str : ""))
+            .join(" ")
+            .replace(/\s+/g, " ") // Normalize whitespace
+            .trim();
 
-        fullText += pageText + "\n"
-        console.log(`Page ${i} extracted: ${pageText.length} characters`)
+        fullText += pageText + "\n";
+        console.log(`Page ${i} extracted: ${pageText.length} characters`);
       } catch (pageError) {
-        console.warn(`Error extracting page ${i}:`, pageError)
+        console.warn(`Error extracting page ${i}:`, pageError);
         // Continue with other pages
       }
     }
 
-    // Clean up worker URL
-    URL.revokeObjectURL(workerUrl)
-
-    if (fullText.trim().length === 0) {
-      throw new Error("No text content found in PDF")
-    }
-
-    console.log(`PDF extraction complete. Total text length: ${fullText.length}`)
-    return fullText
+    return fullText; // Return extracted text
   } catch (error) {
-    console.error("PDF.js processing error:", error)
-
-    // Provide specific error messages based on the error type
-    if (error instanceof Error) {
-      if (error.message.includes("worker") || error.message.includes("Worker")) {
-        throw new Error("PDF worker loading failed - please try the copy-paste method instead")
-      } else if (error.message.includes("Invalid PDF")) {
-        throw new Error("Invalid PDF file - please ensure the file is not corrupted")
-      } else if (error.message.includes("password")) {
-        throw new Error("Password-protected PDF detected - please remove password protection first")
-      }
-    }
-
-    throw new Error("PDF processing failed - please try the copy-paste method instead")
+    console.error("PDF extraction failed:", error);
+    throw new Error("Text extraction failed: " + error.message);
   }
 }
 

@@ -1,5 +1,6 @@
 import { safePDFExtraction } from "./lib/pdf-utils"
 import { apiService } from "./lib/api-service"
+import Papa from 'papaparse';
 
 export interface SwissPortfolioData {
   accountOverview: {
@@ -57,6 +58,22 @@ interface ParsedPosition {
   category: string
 }
 
+const CATEGORY_ALIASES: Record<string, string> = {
+  // French → canonical
+  'Actions': 'Actions',
+  'Produits structurés': 'Structured Products',
+  'Fonds': 'Funds',
+  'ETF': 'ETF',
+  'Obligations': 'Bonds',
+  'Crypto-monnaies': 'Cryptocurrencies',
+  // English → canonical
+  'Equities': 'Actions',
+  'Structured products': 'Structured Products',
+  'Funds': 'Funds',
+  'Bonds': 'Bonds',
+  'Cryptocurrencies': 'Cryptocurrencies'
+};
+
 /**
  * Parses a Swiss portfolio PDF or text file with real API integration.
  */
@@ -67,6 +84,12 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
     console.log(`Processing file: ${input.name} (${input.type}, ${input.size} bytes)`)
 
     try {
+      if (input instanceof File && input.type === 'text/csv') {
+        return parseSQCSV(await input.text());
+      }
+      let text = input instanceof File ? await input.text() : input;
+      if (looksLikeSQPortfolioCSV(text)) return parseSQCSV(text);
+
       if (input.type === "application/pdf") {
         console.log("Attempting PDF extraction...")
         text = await safePDFExtraction(input)
@@ -150,6 +173,170 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
   return portfolioData
 }
 
+//---------------------------------------------------------------//
+// 0. Language-agnostic header detection
+//---------------------------------------------------------------//
+function looksLikeSQPortfolioCSV(text: string): boolean {
+  return (
+      text.includes('Symbole,Quantité') ||                // French
+      text.includes('Symbol,Quantity')                    // English
+  );
+}
+
+//---------------------------------------------------------------//
+// 1. Revised row mapping
+//---------------------------------------------------------------//
+const FRENCH_COLS = {
+  symbol: 1, qty: 2, unitCost: 3, price: 7, ccy: 8,
+  pnlCHF: 9, pnlPct:10, totalCHF:11, posPct:12, dailyPct:6
+};
+
+const ENGLISH_COLS = {
+  symbol: 1, qty: 2, unitCost: 3, price: 7, ccy: 8,
+  pnlCHF: 9, pnlPct:10, totalCHF:11, posPct:12, dailyPct:6
+};
+
+function detectLanguage(cols: string[]): 'fr' | 'en' {
+  return cols.includes('Symbole') ? 'fr' : 'en';
+}
+
+function pick<T extends keyof typeof FRENCH_COLS>(
+    row: string[], key: T, lang: 'fr' | 'en'
+) {
+  const map = lang === 'fr' ? FRENCH_COLS : ENGLISH_COLS;
+  return row[map[key]];
+}
+
+// List of suffixes for common European exchanges
+const possibleSuffixes = ["", ".SW", ".DE", ".PA", ".MI", ".AS"];
+
+/**
+ * Tries multiple Yahoo Finance symbol variants to find a valid one.
+ * @param baseSymbol The symbol as found in your CSV or PDF.
+ * @returns The first valid Yahoo Finance symbol (with suffix if needed).
+ */
+async function resolveYahooSymbol(baseSymbol: string): Promise<string> {
+  for (const suffix of possibleSuffixes) {
+    const symbol = baseSymbol + suffix;
+    try {
+      const response = await fetch(`/api/yahoo/quote/${symbol}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.symbol) {
+          return symbol;
+        }
+      }
+    } catch (error) {
+      console.error("Can't find symbol:", error);
+    }
+  }
+  // Fallback: return the base symbol if none found
+  return baseSymbol;
+}
+
+async function parseSQCSV(csv: string): Promise<SwissPortfolioData> {
+  const {data} = Papa.parse<string[]>(csv, {
+    delimiter: ',',
+    skipEmptyLines: 'greedy',
+    dynamicTyping: true
+  });
+
+  const header = data[0] as string[];
+  const lang = detectLanguage(header);
+  const positions: PortfolioPosition[] = [];
+  let currentCategory = '';
+
+  console.log('Starting CSV parsing...');
+
+  for (const row of data.slice(1)) {
+    const first = (row[0] || '').trim();
+    const second = (row[1] || '').trim();
+
+    // 1. category lines (row[0] contains category name)
+    if (CATEGORY_ALIASES[first]) {
+      currentCategory = CATEGORY_ALIASES[first];
+      console.log(`Found category: ${currentCategory}`);
+      continue;
+    }
+
+    // 2. Enhanced filtering for subtotal/total rows
+    // Check both row[0] and row[1] for various summary patterns
+    if (
+        // Total row: row[1] contains "Total"
+        second === 'Total' ||
+        // Subtotal rows: row[1] starts with subtotal patterns
+        second.startsWith('Sous-total') ||
+        second.startsWith('Subtotal') ||
+        second.startsWith('Sub-total') ||
+        // Additional safety checks
+        second.toLowerCase().includes('total') ||
+        // Check for French/English currency indicators in subtotal lines
+        (second.includes('CHF') && second.toLowerCase().includes('total'))
+    ) {
+      console.log(`Skipping summary row: ${second}`);
+      continue;
+    }
+
+    // 3. Skip empty rows
+    if (!second) {
+      console.log('Skipping empty row');
+      continue;
+    }
+
+    // 4. Additional validation to ensure this is a real position
+    const qty = +pick(row, 'qty', lang);
+    const unitCost = +pick(row, 'unitCost', lang);
+    const totalCHF = +pick(row, 'totalCHF', lang);
+
+    // Skip if missing essential data
+    if (isNaN(qty) || isNaN(unitCost) || isNaN(totalCHF) || qty <= 0 || totalCHF <= 0) {
+      console.log(`Skipping invalid row: ${second} (qty: ${qty}, unitCost: ${unitCost}, totalCHF: ${totalCHF})`);
+      continue;
+    }
+
+    // 5. Parse valid position
+    console.log(`Processing position: ${second}`);
+    positions.push({
+      symbol: String(pick(row, 'symbol', lang)).trim(),
+      name: String(pick(row, 'symbol', lang)).trim(),
+      quantity: qty,
+      unitCost: unitCost,
+      totalValueCHF: totalCHF,
+      currency: String(pick(row, 'ccy', lang)).trim(),
+      category: currentCategory || 'Unknown',
+      gainLossCHF: +pick(row, 'pnlCHF', lang),
+      gainLossPercent: +pick(row, 'pnlPct', lang),
+      positionPercent: +pick(row, 'posPct', lang),
+      dailyChangePercent: +String(pick(row, 'dailyPct', lang)).replace('%', ''),
+      taxOptimized: false,
+      isOTC: false
+    });
+  }
+
+  console.log(`Parsed ${positions.length} positions`);
+
+  const total = positions.reduce((s, p) => s + p.totalValueCHF, 0);
+  console.log(`Calculated total: ${total}`);
+
+  positions.forEach(p => p.positionPercent = (p.totalValueCHF / total) * 100);
+
+  return {
+    accountOverview: {
+      totalValue: total,
+      cashBalance: 0,
+      securitiesValue: total,
+      cryptoValue: 0,
+      purchasingPower: 0
+    },
+    positions,
+    assetAllocation: calculateAssetAllocation(positions, total),
+    currencyAllocation: await calculateTrueCurrencyAllocation(positions, total),
+    trueCountryAllocation: await calculateTrueCountryAllocation(positions, total),
+    trueSectorAllocation: await calculateTrueSectorAllocation(positions, total),
+    domicileAllocation: calculateDomicileAllocation(positions, total)
+  };
+}
+
 function parseAccountOverview(text: string) {
   const overview = {
     totalValue: 0,
@@ -208,7 +395,7 @@ function parsePositions(text: string): ParsedPosition[] {
 
   // Split text into lines and process
   const lines = text
-    .split("\n")
+    .split("\r\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
 
@@ -283,16 +470,21 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
   for (const parsed of parsedPositions) {
     console.log(`Enriching ${parsed.symbol}...`)
 
+
+    // Step 1: Resolve the correct Yahoo Finance symbol
+    const resolvedSymbol = await resolveYahooSymbol(parsed.symbol);
+
+
     // Get real-time price
-    const priceData = await apiService.getStockPrice(parsed.symbol)
+    const priceData = await apiService.getStockPrice(resolvedSymbol)
 
     // Get asset metadata
-    const metadata = await apiService.getAssetMetadata(parsed.symbol)
+    const metadata = await apiService.getAssetMetadata(resolvedSymbol)
 
     // Get ETF composition if applicable
     let etfComposition = null
     if (parsed.category === "ETF") {
-      etfComposition = await apiService.getETFComposition(parsed.symbol)
+      etfComposition = await apiService.getETFComposition(resolvedSymbol)
     }
 
     const currentPrice = priceData?.price || parsed.price
@@ -353,8 +545,11 @@ async function calculateTrueCurrencyAllocation(
 
   for (const position of positions) {
     if (position.category === "ETF") {
+
+      const resolvedSymbol = await resolveYahooSymbol(position.symbol);
+
       // Get ETF composition for true currency exposure
-      const composition = await apiService.getETFComposition(position.symbol)
+      const composition = await apiService.getETFComposition(resolvedSymbol)
       if (composition) {
         composition.currency.forEach((curr) => {
           const value = (curr.weight / 100) * position.totalValueCHF
@@ -389,8 +584,10 @@ async function calculateTrueCountryAllocation(
 
   for (const position of positions) {
     if (position.category === "ETF") {
+
+      const resolvedSymbol = await resolveYahooSymbol(position.symbol);
       // Get ETF composition for true country exposure
-      const composition = await apiService.getETFComposition(position.symbol)
+      const composition = await apiService.getETFComposition(resolvedSymbol)
       if (composition) {
         composition.country.forEach((country) => {
           const value = (country.weight / 100) * position.totalValueCHF
@@ -426,7 +623,8 @@ async function calculateTrueSectorAllocation(
   for (const position of positions) {
     if (position.category === "ETF") {
       // Get ETF composition for true sector exposure
-      const composition = await apiService.getETFComposition(position.symbol)
+      const resolvedSymbol = await resolveYahooSymbol(position.symbol);
+      const composition = await apiService.getETFComposition(resolvedSymbol)
       if (composition) {
         composition.sector.forEach((sector) => {
           const value = (sector.weight / 100) * position.totalValueCHF

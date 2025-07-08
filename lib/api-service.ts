@@ -1,4 +1,5 @@
 import { API_CONFIG, rateLimiter } from "./config"
+import yahooFinance from 'yahoo-finance2'
 
 export interface StockPrice {
   symbol: string
@@ -131,33 +132,23 @@ class APIService {
     }
 
     try {
-      const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; PortfolioAnalyzer/1.0)",
-        },
-      })
+      const response = await fetch(`/api/yahoo/quote/${symbol}`);
+      const quote = await response.json();
 
-      if (!response.ok) throw new Error(`Yahoo API error: ${response.status}`)
-
-      const data = await response.json()
-      const result = data.chart?.result?.[0]
-
-      if (!result) return null
-
-      const meta = result.meta
-      const quote = result.indicators?.quote?.[0]
+      if (!quote) return null;
 
       return {
         symbol,
-        price: meta.regularMarketPrice || meta.previousClose || 0,
-        currency: meta.currency || "USD",
-        change: meta.regularMarketPrice - meta.previousClose || 0,
-        changePercent: ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100 || 0,
+        price: quote.regularMarketPrice || quote.previousClose || 0,
+        currency: quote.currency || "USD",
+        change: quote.regularMarketChange || 0,
+        changePercent: quote.regularMarketChangePercent || 0,
         lastUpdated: new Date().toISOString(),
-      }
+      };
+
     } catch (error) {
-      console.error("Yahoo Finance API error:", error)
-      return null
+      console.error("Yahoo Finance API error:", error);
+      return null;
     }
   }
 
@@ -226,20 +217,15 @@ class APIService {
 
   private async fetchETFFromYahoo(symbol: string): Promise<ETFComposition | null> {
     try {
-      const response = await fetch(
-        `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=topHoldings,fundProfile,summaryProfile`,
-      )
 
-      if (!response.ok) return null
+      const response = await fetch(`/api/yahoo/etf/${symbol}`);
+      const modules = await response.json();
 
-      const data = await response.json()
-      const result = data.quoteSummary?.result?.[0]
+      if (!modules) return null;
 
-      if (!result) return null
-
-      const topHoldings = result.topHoldings?.holdings || []
-      const fundProfile = result.fundProfile
-      const summaryProfile = result.summaryProfile
+      const topHoldings = modules.topHoldings?.holdings || [];
+      const fundProfile = modules.fundProfile;
+      const summaryProfile = modules.summaryProfile;
 
       // Extract holdings
       const holdings = topHoldings.slice(0, 10).map((holding: any) => ({
@@ -248,14 +234,14 @@ class APIService {
         weight: (holding.holdingPercent || 0) * 100,
         sector: holding.sector || "Unknown",
         country: "Unknown", // Yahoo doesn't provide country data
-      }))
+      }));
 
       // Extract sector breakdown
-      const sectorWeightings = fundProfile?.sectorWeightings || {}
+      const sectorWeightings = fundProfile?.sectorWeightings || {};
       const sectors = Object.entries(sectorWeightings).map(([sector, weight]) => ({
         sector,
         weight: (weight as number) * 100,
-      }))
+      }));
 
       return {
         symbol,
@@ -266,10 +252,11 @@ class APIService {
         domicile: this.getDomicileFromSymbol(symbol),
         withholdingTax: this.getWithholdingTax(symbol),
         lastUpdated: new Date().toISOString(),
-      }
+      };
+
     } catch (error) {
-      console.error("Yahoo ETF API error:", error)
-      return null
+      console.error("Yahoo ETF API error:", error);
+      return null;
     }
   }
 
