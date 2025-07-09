@@ -1,7 +1,7 @@
 "use client"
 
-import "@testing-library/jest-dom"
-import jest from "jest"
+require("@testing-library/jest-dom");
+require("jest");
 
 // Mock next/router
 jest.mock("next/router", () => ({
