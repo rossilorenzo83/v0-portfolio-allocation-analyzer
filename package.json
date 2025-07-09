@@ -53,6 +53,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "yahoo-finance2": "^2.13.3",
+    "finnhub-ts": "^1.0.7",
     "lucide-react": "^0.454.0",
     "next": "15.2.4",
     "node-notifier": "latest",

@@ -1,5 +1,6 @@
 import { API_CONFIG, rateLimiter } from "./config"
-import yahooFinance from 'yahoo-finance2'
+import finnhub, {DefaultApi} from 'finnhub-ts'
+
 
 export interface StockPrice {
   symbol: string
@@ -36,9 +37,22 @@ export interface AssetMetadata {
   type: "Stock" | "ETF" | "Bond" | "Crypto"
 }
 
+// Set up API key
+
+
+const finnhubClient = new DefaultApi({ apiKey: `${API_CONFIG.FINNHUB.KEY}` , isJsonMime: (input: string) => {
+  try {
+    JSON.parse(input);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}});
+
 class APIService {
   private cache = new Map<string, { data: any; timestamp: number }>()
   private readonly CACHE_DURATION = 5 * 60 * 1000 // 5 minutes for prices, longer for metadata
+
 
   private getCachedData(key: string, maxAge: number = this.CACHE_DURATION): any | null {
     const cached = this.cache.get(key)
@@ -78,26 +92,38 @@ class APIService {
   }
 
   async getETFComposition(symbol: string): Promise<ETFComposition | null> {
-    const cacheKey = `etf_${symbol}`
-    const cached = this.getCachedData(cacheKey, 24 * 60 * 60 * 1000) // 24 hours for ETF data
-    if (cached) return cached
+    const cacheKey = `etf_${symbol}`;
+    const cached = this.getCachedData(cacheKey, 24 * 60 * 60 * 1000); // 24 hours
+    if (cached) return cached;
 
     try {
-      let composition = await this.fetchETFFromYahoo(symbol)
-      if (!composition) {
-        composition = await this.fetchETFFromAlphaVantage(symbol)
+      // 1. Try Yahoo Finance
+      let composition = await this.fetchETFFromYahoo(symbol);
+
+      // 2. Check if composition is unreliable (empty, missing sector, or sector is only "Mixed")
+      const isUnreliable = !composition || !composition.sector || composition.sector.length === 0 ||
+          (composition.sector.length === 1 && composition.sector[0].sector.toLowerCase() === 'mixed');
+
+      if (isUnreliable) {
+        // 3. Fallback to Alpha Vantage
+        composition = await this.fetchETFFromAlphaVantage(symbol);
       }
-      if (!composition) {
-        composition = this.getKnownETFComposition(symbol)
+
+      // 4. If still unreliable, fallback to Finnhub
+      if (!composition || !composition.sector || composition.sector.length === 0 ||
+          (composition.sector.length === 1 && composition.sector[0].sector.toLowerCase() === 'mixed')) {
+        composition = await this.fetchETFFromFinnhub(symbol);
       }
 
       if (composition) {
-        this.setCachedData(cacheKey, composition)
+        this.setCachedData(cacheKey, composition);
+        return composition;
       }
-      return composition
+
+      return null;
     } catch (error) {
-      console.error(`Error fetching ETF composition for ${symbol}:`, error)
-      return this.getKnownETFComposition(symbol)
+      console.error(`Error fetching ETF composition for ${symbol}:`, error);
+      return null;
     }
   }
 
@@ -263,6 +289,50 @@ class APIService {
   private async fetchETFFromAlphaVantage(symbol: string): Promise<ETFComposition | null> {
     // Alpha Vantage doesn't have ETF composition data in free tier
     return null
+  }
+
+  private async fetchETFFromFinnhub(symbol: string): Promise<ETFComposition | null> {
+    if (!rateLimiter.canMakeRequest('finnhub', 60, 60000)) {
+      console.warn('Finnhub rate limit reached');
+      return null;
+    }
+
+    try {
+      // Fetch ETF holdings using finnhub-ts
+      const holdingsResponse = await finnhubClient.etfsHoldings({ symbol });
+
+      // Fetch ETF sector exposure using finnhub-ts
+      const sectorResponse = await finnhubClient.etfsSectorExposure({ symbol });
+
+      // Map holdings data
+      const holdings = (holdingsResponse.data?.holdings || []).map(h => ({
+        symbol: h.symbol || '',
+        name: h.name || '',
+        weight: h.weight || 0,
+        sector: h.sector || 'Unknown',
+        country: h.country || 'Unknown',
+      }));
+
+      // Map sector exposure data
+      const sectors = (sectorResponse.data?.sectorExposure || []).map(s => ({
+        sector: s.name || 'Unknown',
+        weight: s.weight || 0,
+      }));
+
+      return {
+        symbol,
+        currency: [{ currency: 'USD', weight: 100 }],
+        country: [{ country: 'Unknown', weight: 100 }],
+        sector: sectors.length > 0 ? sectors : [{ sector: 'Mixed', weight: 100 }],
+        holdings,
+        domicile: this.getDomicileFromSymbol(symbol),
+        withholdingTax: this.getWithholdingTax(symbol),
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('Finnhub ETF API error:', error);
+      return null;
+    }
   }
 
   private async fetchMetadataFromYahoo(symbol: string): Promise<AssetMetadata | null> {
