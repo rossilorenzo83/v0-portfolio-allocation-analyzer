@@ -235,11 +235,13 @@ async function resolveYahooSymbol(baseSymbol: string): Promise<string> {
 }
 
 async function parseSQCSV(csv: string): Promise<SwissPortfolioData> {
-  const {data} = Papa.parse<string[]>(csv, {
-    delimiter: ',',
+  const delimiter = detectCSVDelimiter(csv); // <-- NEW
+  const { data } = Papa.parse(csv, {
+    delimiter,
     skipEmptyLines: 'greedy',
     dynamicTyping: true
   });
+
 
   const header = data[0] as string[];
   const lang = detectLanguage(header);
@@ -613,6 +615,20 @@ async function calculateTrueCountryAllocation(
     country,
   }))
 }
+
+function detectCSVDelimiter(csvText: string): string {
+  // Common delimiters
+  const delimiters = [',', ';', '\t', '|'];
+  // Get the first non-empty line
+  const firstLine = csvText.split(/\r?\n/).find(line => line.trim()) || '';
+  // Count each delimiter's occurrences
+  const counts = delimiters.map(d => ({ d, c: (firstLine.match(new RegExp(`\\${d}`, 'g')) || []).length }));
+  // Pick the delimiter with the highest count, default to comma
+  const best = counts.reduce((a, b) => (b.c > a.c ? b : a), { d: ',', c: 0 });
+  return best.c === 0 ? ',' : best.d;
+}
+
+
 
 async function calculateTrueSectorAllocation(
   positions: PortfolioPosition[],

@@ -299,10 +299,10 @@ class APIService {
 
     try {
       // Fetch ETF holdings using finnhub-ts
-      const holdingsResponse = await finnhubClient.etfsHoldings({ symbol });
+      const holdingsResponse = await finnhubClient.etfsHoldings(symbol);
 
       // Fetch ETF sector exposure using finnhub-ts
-      const sectorResponse = await finnhubClient.etfsSectorExposure({ symbol });
+      const sectorResponse = await finnhubClient.etfsSectorExposure(symbol);
 
       // Map holdings data
       const holdings = (holdingsResponse.data?.holdings || []).map(h => ({
