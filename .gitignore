@@ -16,7 +16,6 @@
 # Misc
 .DS_Store
 *.pem
-*-lock.yml
 
 # Debug
 npm-debug.log*
@@ -62,5 +61,5 @@ config/secrets.json
 .env.development.local
 .env.test.local
 .env.production.local
-/package-lock.json
+
 
