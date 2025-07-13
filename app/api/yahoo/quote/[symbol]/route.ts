@@ -6,7 +6,7 @@ export async function GET(
     req: NextRequest,
     { params }: { params: { symbol: string } }
 ) {
-    const { symbol } = params;
+    const { symbol } = await params;
 
     try {
         // Fetch quote data from yahoo-finance2 (runs server-side, no CORS issues)

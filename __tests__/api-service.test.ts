@@ -15,23 +15,19 @@ describe("API Service", () => {
   describe("Stock Price Fetching", () => {
     test("should fetch from Yahoo Finance successfully", async () => {
       const mockResponse = {
-        chart: {
-          result: [
-            {
-              meta: {
+                symbol: "AAPL",
                 regularMarketPrice: 150.0,
                 previousClose: 148.0,
+                regularMarketChange: 2.0,
+                regularMarketChangePercent: 1.35,
                 currency: "USD",
-              },
-            },
-          ],
-        },
-      }
+        }
+
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => mockResponse,
-      } as Response)
+      } as Response);
 
       const price = await apiService.getStockPrice("AAPL")
 
@@ -113,9 +109,6 @@ describe("API Service", () => {
   describe("ETF Composition Fetching", () => {
     test("should fetch ETF composition from Yahoo", async () => {
       const mockResponse = {
-        quoteSummary: {
-          result: [
-            {
               topHoldings: {
                 holdings: [
                   {
@@ -132,9 +125,6 @@ describe("API Service", () => {
                   Financials: 0.15,
                 },
               },
-            },
-          ],
-        },
       }
 
       mockFetch.mockResolvedValueOnce({
@@ -221,6 +211,20 @@ describe("API Service", () => {
       const promises = Array(10)
         .fill(0)
         .map(() => apiService.getStockPrice("AAPL"))
+
+      const mockResponse = {
+        symbol: "AAPL",
+        regularMarketPrice: 150.0,
+        previousClose: 148.0,
+        regularMarketChange: 2.0,
+        regularMarketChangePercent: 1.35,
+        currency: "USD",
+      }
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      } as Response);
 
       await Promise.all(promises)
 

@@ -1,6 +1,6 @@
 import { parseSwissPortfolioPDF } from "../portfolio-parser"
 import { apiService } from "../lib/api-service"
-import jest from "jest"
+import { jest } from "@jest/globals"
 
 // Mock the API service
 jest.mock("../lib/api-service")

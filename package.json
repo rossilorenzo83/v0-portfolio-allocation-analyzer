@@ -2,7 +2,6 @@
   "name": "swiss-portfolio-analyzer",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "description": "A comprehensive portfolio analysis tool for Swiss bank statements with ETF look-through analysis",
   "keywords": [
     "portfolio",
@@ -14,7 +13,7 @@
     "tax-optimization"
   ],
   "license": "MIT",
-  "author": "Your Name",
+  "author": "Lorenzo Rossi",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
@@ -26,23 +25,6 @@
     "test:parser": "jest --testPathPattern=portfolio-parser",
     "test:watch": "jest --watch",
     "type-check": "tsc --noEmit"
-  },
-  "jest": {
-    "collectCoverageFrom": [
-      "**/*.{ts,tsx}",
-      "!**/*.d.ts",
-      "!**/node_modules/**",
-      "!**/.next/**"
-    ],
-    "preset": "ts-jest",
-    "setupFilesAfterEnv": [
-      "<rootDir>/jest.setup.js"
-    ],
-    "testEnvironment": "jsdom",
-    "testPathIgnorePatterns": [
-      "<rootDir>/.next/",
-      "<rootDir>/node_modules/"
-    ]
   },
   "dependencies": {
     "@jest/globals": "latest",

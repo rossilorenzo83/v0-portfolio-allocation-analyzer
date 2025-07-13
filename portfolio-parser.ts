@@ -472,21 +472,16 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
   for (const parsed of parsedPositions) {
     console.log(`Enriching ${parsed.symbol}...`)
 
-
-    // Step 1: Resolve the correct Yahoo Finance symbol
-    const resolvedSymbol = await resolveYahooSymbol(parsed.symbol);
-
-
     // Get real-time price
-    const priceData = await apiService.getStockPrice(resolvedSymbol)
+    const priceData = await apiService.getStockPrice(parsed.symbol)
 
     // Get asset metadata
-    const metadata = await apiService.getAssetMetadata(resolvedSymbol)
+    const metadata = await apiService.getAssetMetadata(parsed.symbol)
 
     // Get ETF composition if applicable
     let etfComposition = null
     if (parsed.category === "ETF") {
-      etfComposition = await apiService.getETFComposition(resolvedSymbol)
+      etfComposition = await apiService.getETFComposition(parsed.symbol)
     }
 
     const currentPrice = priceData?.price || parsed.price
@@ -698,4 +693,4 @@ function getDomicileName(domicile: string): string {
   return names[domicile] || `${domicile} (${domicile})`
 }
 
-export { parseSwissPortfolioPDF }
+export { parseSwissPortfolioPDF, resolveYahooSymbol }

@@ -1,5 +1,6 @@
 import { API_CONFIG, rateLimiter } from "./config"
 import finnhub, {DefaultApi} from 'finnhub-ts'
+import {resolveYahooSymbol} from "../portfolio-parser";
 
 
 export interface StockPrice {
@@ -120,7 +121,7 @@ class APIService {
         return composition;
       }
 
-      return null;
+      return this.getKnownETFComposition(symbol);
     } catch (error) {
       console.error(`Error fetching ETF composition for ${symbol}:`, error);
       return null;
@@ -158,7 +159,11 @@ class APIService {
     }
 
     try {
-      const response = await fetch(`/api/yahoo/quote/${symbol}`);
+
+      // Step 1: Resolve the correct Yahoo Finance symbol
+      const resolvedSymbol = await resolveYahooSymbol(symbol);
+
+      const response = await fetch(`/api/yahoo/quote/${resolvedSymbol}`);
       const quote = await response.json();
 
       if (!quote) return null;
@@ -244,7 +249,9 @@ class APIService {
   private async fetchETFFromYahoo(symbol: string): Promise<ETFComposition | null> {
     try {
 
-      const response = await fetch(`/api/yahoo/etf/${symbol}`);
+      const resolvedSymbol = await resolveYahooSymbol(symbol);
+
+      const response = await fetch(`/api/yahoo/etf/${resolvedSymbol}`);
       const modules = await response.json();
 
       if (!modules) return null;
@@ -337,7 +344,10 @@ class APIService {
 
   private async fetchMetadataFromYahoo(symbol: string): Promise<AssetMetadata | null> {
     try {
-      const response = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${symbol}`)
+
+      const resolvedSymbol = await resolveYahooSymbol(symbol);
+
+      const response = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${resolvedSymbol}`)
 
       if (!response.ok) return null
 
