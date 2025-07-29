@@ -1,5 +1,9 @@
 import SwissPortfolioAnalyzer from "../swiss-portfolio-analyzer"
 
-export default function Page() {
-  return <SwissPortfolioAnalyzer />
+export default function Home() {
+  return (
+    <main className="min-h-screen">
+      <SwissPortfolioAnalyzer />
+    </main>
+  )
 }

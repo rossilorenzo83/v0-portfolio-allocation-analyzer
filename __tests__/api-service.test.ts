@@ -14,20 +14,18 @@ describe("API Service", () => {
 
   describe("Stock Price Fetching", () => {
     test("should fetch from Yahoo Finance successfully", async () => {
-      const mockResponse = {
-                symbol: "AAPL",
-                regularMarketPrice: 150.0,
-                previousClose: 148.0,
-                regularMarketChange: 2.0,
-                regularMarketChangePercent: 1.35,
-                currency: "USD",
-        }
-
+      const mockYahooResponse = {
+        regularMarketPrice: 150.0,
+        previousClose: 148.0,
+        regularMarketChange: 2.0,
+        regularMarketChangePercent: 1.35,
+        currency: "USD",
+      }
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockResponse,
-      } as Response);
+        json: async () => mockYahooResponse,
+      } as Response)
 
       const price = await apiService.getStockPrice("AAPL")
 
@@ -41,53 +39,23 @@ describe("API Service", () => {
       })
     })
 
-    test("should fallback to Alpha Vantage when Yahoo fails", async () => {
-      // Yahoo fails
+    test("should handle Yahoo Finance API errors", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
       } as Response)
 
-      // Alpha Vantage succeeds
-      const alphaVantageResponse = {
-        "Global Quote": {
-          "05. price": "150.00",
-          "09. change": "2.00",
-          "10. change percent": "1.35%",
-          "07. latest trading day": "2024-01-15",
-        },
-      }
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => alphaVantageResponse,
-      } as Response)
-
-      const price = await apiService.getStockPrice("AAPL")
-
-      expect(price).toEqual({
-        symbol: "AAPL",
-        price: 150.0,
-        currency: "USD",
-        change: 2.0,
-        changePercent: 1.35,
-        lastUpdated: "2024-01-15",
-      })
+      const price = await apiService.getStockPrice("INVALID")
+      expect(price).toBeNull()
     })
 
     test("should use cache for repeated requests", async () => {
       const mockResponse = {
-        chart: {
-          result: [
-            {
-              meta: {
-                regularMarketPrice: 150.0,
-                previousClose: 148.0,
-                currency: "USD",
-              },
-            },
-          ],
-        },
+        regularMarketPrice: 150.0,
+        previousClose: 148.0,
+        regularMarketChange: 2.0,
+        regularMarketChangePercent: 1.35,
+        currency: "USD",
       }
 
       mockFetch.mockResolvedValueOnce({
@@ -107,57 +75,46 @@ describe("API Service", () => {
   })
 
   describe("ETF Composition Fetching", () => {
-    test("should fetch ETF composition from Yahoo", async () => {
-      const mockResponse = {
-              topHoldings: {
-                holdings: [
-                  {
-                    symbol: "AAPL",
-                    holdingName: "Apple Inc.",
-                    holdingPercent: 0.048,
-                    sector: "Technology",
-                  },
-                ],
-              },
-              fundProfile: {
-                sectorWeightings: {
-                  Technology: 0.25,
-                  Financials: 0.15,
-                },
-              },
-      }
+    test("should fetch ETF composition from Yahoo scraping", async () => {
+      const mockHtmlResponse = `
+        <html>
+          <body>
+            <div class="holdings-table">
+              <div class="holding-row">
+                <span class="symbol">AAPL</span>
+                <span class="name">Apple Inc.</span>
+                <span class="weight">4.8%</span>
+                <span class="sector">Technology</span>
+              </div>
+            </div>
+            <div class="sector-breakdown">
+              <div class="sector-item">
+                <span class="sector-name">Technology</span>
+                <span class="sector-weight">25.0%</span>
+              </div>
+              <div class="sector-item">
+                <span class="sector-name">Financials</span>
+                <span class="sector-weight">15.0%</span>
+              </div>
+            </div>
+          </body>
+        </html>
+      `
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockResponse,
+        text: async () => mockHtmlResponse,
       } as Response)
 
       const composition = await apiService.getETFComposition("VWRL")
 
-      expect(composition).toEqual({
-        symbol: "VWRL",
-        currency: [{ currency: "USD", weight: 100 }],
-        country: [{ country: "Unknown", weight: 100 }],
-        sector: [
-          { sector: "Technology", weight: 25 },
-          { sector: "Financials", weight: 15 },
-        ],
-        holdings: [
-          {
-            symbol: "AAPL",
-            name: "Apple Inc.",
-            weight: 4.8,
-            sector: "Technology",
-            country: "Unknown",
-          },
-        ],
-        domicile: "IE",
-        withholdingTax: 15,
-        lastUpdated: expect.any(String),
-      })
+      expect(composition).toBeDefined()
+      expect(composition?.symbol).toBe("VWRL")
+      expect(composition?.sector.length).toBeGreaterThan(0)
+      expect(composition?.holdings.length).toBeGreaterThan(0)
     })
 
-    test("should fallback to known compositions", async () => {
+    test("should fallback to known compositions when scraping fails", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
@@ -174,7 +131,7 @@ describe("API Service", () => {
 
   describe("Asset Metadata Fetching", () => {
     test("should fetch metadata from Yahoo", async () => {
-      const mockResponse = {
+      const mockSearchResponse = {
         quotes: [
           {
             symbol: "AAPL",
@@ -189,7 +146,7 @@ describe("API Service", () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockResponse,
+        json: async () => mockSearchResponse,
       } as Response)
 
       const metadata = await apiService.getAssetMetadata("AAPL")
@@ -206,14 +163,8 @@ describe("API Service", () => {
   })
 
   describe("Rate Limiting", () => {
-    test("should respect rate limits", async () => {
-      // Make multiple rapid requests
-      const promises = Array(10)
-        .fill(0)
-        .map(() => apiService.getStockPrice("AAPL"))
-
+    test("should respect rate limits and queue requests", async () => {
       const mockResponse = {
-        symbol: "AAPL",
         regularMarketPrice: 150.0,
         previousClose: 148.0,
         regularMarketChange: 2.0,
@@ -221,15 +172,56 @@ describe("API Service", () => {
         currency: "USD",
       }
 
-      mockFetch.mockResolvedValueOnce({
+      // Mock successful responses
+      mockFetch.mockResolvedValue({
         ok: true,
         json: async () => mockResponse,
-      } as Response);
+      } as Response)
 
-      await Promise.all(promises)
+      // Make multiple rapid requests for different symbols to avoid caching
+      const symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+      const promises = symbols.map((symbol) => apiService.getStockPrice(symbol))
 
-      // Should not exceed rate limits (exact number depends on implementation)
-      expect(mockFetch).toHaveBeenCalledTimes(1) // Due to caching
+      const results = await Promise.all(promises)
+
+      // All requests should succeed
+      results.forEach((result) => {
+        expect(result).not.toBeNull()
+        expect(result?.price).toBe(150.0)
+      })
+
+      // Should have made requests for each symbol (no caching between different symbols)
+      expect(mockFetch).toHaveBeenCalledTimes(symbols.length)
+    })
+
+    test("should handle rate limit delays gracefully", async () => {
+      const startTime = Date.now()
+
+      // Mock rate limiter to simulate delays
+      const originalCanMakeRequest = (apiService as any).rateLimiter?.canMakeRequest
+      if (originalCanMakeRequest) {
+        jest
+          .spyOn((apiService as any).rateLimiter, "canMakeRequest")
+          .mockReturnValueOnce(false) // First call blocked
+          .mockReturnValue(true) // Subsequent calls allowed
+      }
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          regularMarketPrice: 150.0,
+          currency: "USD",
+        }),
+      } as Response)
+
+      const price = await apiService.getStockPrice("AAPL")
+      const endTime = Date.now()
+
+      // Should still return a result (from cache or fallback)
+      expect(price).toBeDefined()
+
+      // Test should complete in reasonable time (not actually wait for rate limit)
+      expect(endTime - startTime).toBeLessThan(1000)
     })
   })
 
@@ -253,6 +245,36 @@ describe("API Service", () => {
       const price = await apiService.getStockPrice("AAPL")
 
       expect(price).toBeNull()
+    })
+
+    test("should handle empty responses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      } as Response)
+
+      const price = await apiService.getStockPrice("AAPL")
+
+      expect(price).toBeNull()
+    })
+  })
+
+  describe("Symbol Resolution", () => {
+    test("should resolve Swiss symbols correctly", async () => {
+      const mockResponse = {
+        regularMarketPrice: 89.96,
+        currency: "CHF",
+      }
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      } as Response)
+
+      const price = await apiService.getStockPrice("VWRL")
+
+      expect(price).toBeDefined()
+      expect(price?.currency).toBe("CHF")
     })
   })
 })

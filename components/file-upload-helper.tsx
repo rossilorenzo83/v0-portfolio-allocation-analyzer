@@ -40,14 +40,18 @@ Solde espèces CHF 5'129.55
 Valeur des titres CHF 877'853.96
 
 Positions
+
 Actions
-AAPL Apple Inc. 100 150.00 USD
-MSFT Microsoft Corporation 75 330.00 USD
-NESN Nestlé SA 200 120.00 CHF
+AAPL Apple Inc. 100 150.00 USD 15'000.00
+MSFT Microsoft Corporation 75 330.00 USD 24'750.00
+NESN Nestlé SA 200 120.00 CHF 24'000.00
 
 ETF
-VWRL Vanguard FTSE All-World UCITS ETF 500 89.96 CHF
-IS3N iShares Core MSCI World UCITS ETF 300 30.50 CHF`
+VWRL Vanguard FTSE All-World UCITS ETF 500 89.96 CHF 44'980.00
+IS3N iShares Core MSCI World UCITS ETF 300 30.50 CHF 9'150.00
+
+Obligations
+US Treasury Bond 10 1000.00 USD 10'000.00`
 
   return (
     <Card>
@@ -218,6 +222,7 @@ IS3N iShares Core MSCI World UCITS ETF 300 30.50 CHF`
                     <li>Multi-currency portfolio (CHF, USD)</li>
                     <li>Real-time API integration</li>
                     <li>ETF look-through analysis</li>
+                    <li>Bonds and fixed income</li>
                   </ul>
                 </AlertDescription>
               </Alert>

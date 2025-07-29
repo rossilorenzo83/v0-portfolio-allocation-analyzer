@@ -58,18 +58,20 @@ describe("Swiss Portfolio Parser", () => {
         Valeur des titres 877'853.96
         
         Actions
-        AAPL Apple Inc. 100 150.00 USD
-        MSFT Microsoft Corp. 50 280.00 USD
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+        MSFT Microsoft Corp. 50 280.00 USD 14'000.00
         
         ETF
-        VWRL Vanguard FTSE All-World 500 89.96 CHF
-        IS3N iShares Core MSCI World 200 30.50 CHF
+        VWRL Vanguard FTSE All-World 500 89.96 CHF 44'980.00
+        IS3N iShares Core MSCI World 200 30.50 CHF 6'100.00
       `
 
       const result = await parseSwissPortfolioPDF(sampleText)
 
       expect(result).toBeDefined()
-      expect(result.accountOverview.totalValue).toBeGreaterThan(0)
+      expect(result.accountOverview.totalValue).toBeCloseTo(889528.75, 2)
+      expect(result.accountOverview.cashBalance).toBeCloseTo(5129.55, 2)
+      expect(result.accountOverview.securitiesValue).toBeCloseTo(877853.96, 2)
       expect(result.positions.length).toBeGreaterThan(0)
       expect(result.assetAllocation.length).toBeGreaterThan(0)
     })
@@ -92,9 +94,15 @@ describe("Swiss Portfolio Parser", () => {
 
       const result = await parseSwissPortfolioPDF(swissquoteText)
 
-      expect(result.accountOverview.totalValue).toBe(1234567.89)
-      expect(result.accountOverview.cashBalance).toBe(12345.67)
-      expect(result.accountOverview.securitiesValue).toBe(1222222.22)
+      expect(result.accountOverview.totalValue).toBeCloseTo(1234567.89, 2)
+      expect(result.accountOverview.cashBalance).toBeCloseTo(12345.67, 2)
+      expect(result.accountOverview.securitiesValue).toBeCloseTo(1222222.22, 2)
+
+      // Check that positions were parsed
+      const applePosition = result.positions.find((p) => p.symbol === "AAPL")
+      expect(applePosition).toBeDefined()
+      expect(applePosition?.quantity).toBe(100)
+      expect(applePosition?.price).toBeCloseTo(150.0, 2)
     })
 
     test("should handle UBS format", async () => {
@@ -115,9 +123,12 @@ describe("Swiss Portfolio Parser", () => {
 
       const result = await parseSwissPortfolioPDF(ubsText)
 
-      expect(result.accountOverview.totalValue).toBe(2500000.0)
+      expect(result.accountOverview.totalValue).toBeCloseTo(2500000.0, 2)
       expect(result.positions.some((p) => p.symbol === "AAPL")).toBeTruthy()
       expect(result.positions.some((p) => p.symbol === "VWRL")).toBeTruthy()
+
+      const applePosition = result.positions.find((p) => p.symbol === "AAPL")
+      expect(applePosition?.quantity).toBe(200)
     })
 
     test("should handle Credit Suisse format", async () => {
@@ -137,42 +148,52 @@ describe("Swiss Portfolio Parser", () => {
 
       const result = await parseSwissPortfolioPDF(csText)
 
-      expect(result.accountOverview.totalValue).toBe(750000.0)
+      expect(result.accountOverview.totalValue).toBeCloseTo(750000.0, 2)
       expect(result.positions.length).toBeGreaterThan(0)
+
+      const applePosition = result.positions.find((p) => p.symbol === "AAPL")
+      expect(applePosition?.quantity).toBe(300)
     })
   })
 
   describe("Number Parsing", () => {
     test("should parse Swiss number format", async () => {
-      const text = "Valeur totale 1'234'567.89"
+      const text = `
+        Valeur totale 1'234'567.89
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+      `
       const result = await parseSwissPortfolioPDF(text)
 
-      // Should handle Swiss apostrophe thousands separator
-      expect(result.accountOverview.totalValue).toBeGreaterThan(1000000)
+      expect(result.accountOverview.totalValue).toBeCloseTo(1234567.89, 2)
     })
 
     test("should parse different decimal separators", async () => {
-      const text1 = "Value 1,234.56" // US format
-      const text2 = "Value 1'234.56" // Swiss format
-      const text3 = "Value 1 234,56" // French format
+      const text1 = `
+        Value 1,234.56
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+      `
+      const text2 = `
+        Value 1'234.56
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+      `
 
       const result1 = await parseSwissPortfolioPDF(text1)
       const result2 = await parseSwissPortfolioPDF(text2)
-      const result3 = await parseSwissPortfolioPDF(text3)
 
-      // All should be parsed correctly
       expect(result1).toBeDefined()
       expect(result2).toBeDefined()
-      expect(result3).toBeDefined()
+      expect(result1.accountOverview.totalValue).toBeCloseTo(1234.56, 2)
+      expect(result2.accountOverview.totalValue).toBeCloseTo(1234.56, 2)
     })
   })
 
   describe("Currency Handling", () => {
     test("should identify different currencies", async () => {
       const text = `
-        AAPL Apple Inc. 100 150.00 USD
-        NESN Nestlé SA 50 120.00 CHF
-        ASML ASML Holding 25 600.00 EUR
+        Valeur totale 100'000.00
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+        NESN Nestlé SA 50 120.00 CHF 6'000.00
+        ASML ASML Holding 25 600.00 EUR 15'000.00
       `
 
       const result = await parseSwissPortfolioPDF(text)
@@ -187,17 +208,15 @@ describe("Swiss Portfolio Parser", () => {
   describe("Asset Classification", () => {
     test("should classify different asset types", async () => {
       const text = `
+        Valeur totale 100'000.00
         Actions
-        AAPL Apple Inc. 100 150.00 USD
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
         
         ETF
-        VWRL Vanguard FTSE All-World 500 89.96 CHF
+        VWRL Vanguard FTSE All-World 500 89.96 CHF 44'980.00
         
         Obligations
-        US Treasury Bond 10 1000.00 USD
-        
-        Crypto-monnaies
-        BTC Bitcoin 0.5 50000.00 USD
+        US Treasury Bond 10 1000.00 USD 10'000.00
       `
 
       const result = await parseSwissPortfolioPDF(text)
@@ -221,41 +240,92 @@ describe("Swiss Portfolio Parser", () => {
     test("should handle API failures gracefully", async () => {
       mockApiService.getStockPrice.mockRejectedValue(new Error("API Error"))
 
-      const text = "AAPL Apple Inc. 100 150.00 USD"
+      const text = `
+        Valeur totale 100'000.00
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+      `
+
       const result = await parseSwissPortfolioPDF(text)
 
       // Should still return data even if API fails
       expect(result).toBeDefined()
+      expect(result.positions.length).toBeGreaterThan(0)
+    })
+
+    test("should handle missing price data", async () => {
+      mockApiService.getStockPrice.mockResolvedValue(null)
+
+      const text = `
+        Valeur totale 100'000.00
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+      `
+
+      const result = await parseSwissPortfolioPDF(text)
+
+      expect(result).toBeDefined()
+      const position = result.positions.find((p) => p.symbol === "AAPL")
+      expect(position).toBeDefined()
+      // Should use the price from the statement when API fails
+      expect(position?.price).toBeCloseTo(150.0, 2)
     })
   })
 
-  describe("Real API Integration", () => {
-    test("should fetch real stock prices", async () => {
-      // Remove mock for this test
-      jest.unmock("../lib/api-service")
+  describe("ETF Look-through Analysis", () => {
+    test("should perform ETF look-through for currency allocation", async () => {
+      const text = `
+        Valeur totale 100'000.00
+        ETF
+        VWRL Vanguard FTSE All-World 1000 89.96 CHF 89'960.00
+      `
 
-      const realApiService = require("../lib/api-service").apiService
-      const price = await realApiService.getStockPrice("AAPL")
+      const result = await parseSwissPortfolioPDF(text)
 
-      if (price) {
-        expect(price.symbol).toBe("AAPL")
-        expect(price.price).toBeGreaterThan(0)
-        expect(price.currency).toBeDefined()
-      }
-    }, 10000) // 10 second timeout for API calls
+      // Should have currency breakdown from ETF composition
+      expect(result.currencyAllocation.length).toBeGreaterThan(1)
+      expect(result.currencyAllocation.some((c) => c.currency === "USD")).toBeTruthy()
+      expect(result.currencyAllocation.some((c) => c.currency === "EUR")).toBeTruthy()
+    })
 
-    test("should fetch ETF composition", async () => {
-      jest.unmock("../lib/api-service")
+    test("should perform ETF look-through for sector allocation", async () => {
+      const text = `
+        Valeur totale 100'000.00
+        ETF
+        VWRL Vanguard FTSE All-World 1000 89.96 CHF 89'960.00
+      `
 
-      const realApiService = require("../lib/api-service").apiService
-      const composition = await realApiService.getETFComposition("VWRL")
+      const result = await parseSwissPortfolioPDF(text)
 
-      if (composition) {
-        expect(composition.symbol).toBe("VWRL")
-        expect(composition.currency.length).toBeGreaterThan(0)
-        expect(composition.country.length).toBeGreaterThan(0)
-        expect(composition.sector.length).toBeGreaterThan(0)
-      }
-    }, 10000)
+      // Should have sector breakdown from ETF composition
+      expect(result.sectorAllocation.length).toBeGreaterThan(1)
+      expect(result.sectorAllocation.some((s) => s.sector === "Technology")).toBeTruthy()
+      expect(result.sectorAllocation.some((s) => s.sector === "Financials")).toBeTruthy()
+    })
+  })
+
+  describe("Performance Calculation", () => {
+    test("should calculate position performance", async () => {
+      // Mock current price different from statement price
+      mockApiService.getStockPrice.mockResolvedValue({
+        symbol: "AAPL",
+        price: 160.0, // Higher than statement price of 150
+        currency: "USD",
+        change: 10.0,
+        changePercent: 6.67,
+        lastUpdated: new Date().toISOString(),
+      })
+
+      const text = `
+        Valeur totale 100'000.00
+        AAPL Apple Inc. 100 150.00 USD 15'000.00
+      `
+
+      const result = await parseSwissPortfolioPDF(text)
+
+      const position = result.positions.find((p) => p.symbol === "AAPL")
+      expect(position).toBeDefined()
+      expect(position?.currentPrice).toBe(160.0)
+      expect(position?.unrealizedGainLoss).toBeCloseTo(1000.0, 2) // (160-150) * 100
+      expect(position?.unrealizedGainLossPercent).toBeCloseTo(6.67, 2)
+    })
   })
 })

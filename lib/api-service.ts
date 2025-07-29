@@ -1,591 +1,366 @@
-import { API_CONFIG, rateLimiter } from "./config"
-import finnhub, {DefaultApi} from 'finnhub-ts'
-import {resolveYahooSymbol} from "../portfolio-parser";
-
-
-export interface StockPrice {
-  symbol: string
+interface StockPrice {
   price: number
-  currency: string
-  change: number
   changePercent: number
-  lastUpdated: string
+  currency: string
 }
 
-export interface ETFComposition {
-  symbol: string
-  currency: Array<{ currency: string; weight: number }>
-  country: Array<{ country: string; weight: number }>
-  sector: Array<{ sector: string; weight: number }>
-  holdings: Array<{
-    symbol: string
-    name: string
-    weight: number
-    sector: string
-    country: string
-  }>
-  domicile: string
-  withholdingTax: number
-  lastUpdated: string
-}
-
-export interface AssetMetadata {
-  symbol: string
+interface AssetMetadata {
   name: string
   sector: string
   country: string
-  currency: string
-  type: "Stock" | "ETF" | "Bond" | "Crypto"
+  marketCap?: number
 }
 
-// Set up API key
-
-
-const finnhubClient = new DefaultApi({ apiKey: `${API_CONFIG.FINNHUB.KEY}` , isJsonMime: (input: string) => {
-  try {
-    JSON.parse(input);
-    return true;
-  } catch (error) {
-    return false;
-  }
-}});
+interface ETFComposition {
+  domicile: string
+  withholdingTax: number
+  currency: Array<{ currency: string; weight: number }>
+  country: Array<{ country: string; weight: number }>
+  sector: Array<{ sector: string; weight: number }>
+}
 
 class APIService {
-  private cache = new Map<string, { data: any; timestamp: number }>()
-  private readonly CACHE_DURATION = 5 * 60 * 1000 // 5 minutes for prices, longer for metadata
+  private cache = new Map<string, { data: any; timestamp: number; ttl: number }>()
+  private rateLimitMap = new Map<string, number>()
+  private readonly RATE_LIMIT_DELAY = 100 // 100ms between requests
 
+  private async rateLimit(key: string): Promise<void> {
+    const lastRequest = this.rateLimitMap.get(key) || 0
+    const now = Date.now()
+    const timeSinceLastRequest = now - lastRequest
 
-  private getCachedData(key: string, maxAge: number = this.CACHE_DURATION): any | null {
-    const cached = this.cache.get(key)
-    if (cached && Date.now() - cached.timestamp < maxAge) {
-      return cached.data
+    if (timeSinceLastRequest < this.RATE_LIMIT_DELAY) {
+      await new Promise((resolve) => setTimeout(resolve, this.RATE_LIMIT_DELAY - timeSinceLastRequest))
     }
+
+    this.rateLimitMap.set(key, Date.now())
+  }
+
+  private getCached<T>(key: string): T | null {
+    const cached = this.cache.get(key)
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      return cached.data as T
+    }
+    this.cache.delete(key)
     return null
   }
 
-  private setCachedData(key: string, data: any) {
-    this.cache.set(key, { data, timestamp: Date.now() })
+  private setCache<T>(key: string, data: T, ttlMinutes: number): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttlMinutes * 60 * 1000,
+    })
   }
 
   async getStockPrice(symbol: string): Promise<StockPrice | null> {
     const cacheKey = `price_${symbol}`
-    const cached = this.getCachedData(cacheKey)
+    const cached = this.getCached<StockPrice>(cacheKey)
     if (cached) return cached
 
+    await this.rateLimit("yahoo_price")
+
     try {
-      // Try multiple APIs in order of preference
-      let price = await this.fetchFromYahooFinance(symbol)
-      if (!price) {
-        price = await this.fetchFromAlphaVantage(symbol)
-      }
-      if (!price) {
-        price = await this.fetchFromFinnhub(symbol)
+      // Try Yahoo Finance API first
+      const response = await fetch(`/api/yahoo/quote/${symbol}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data && data.price) {
+          const result: StockPrice = {
+            price: data.price,
+            changePercent: data.changePercent || 0,
+            currency: data.currency || "USD",
+          }
+          this.setCache(cacheKey, result, 5) // Cache for 5 minutes
+          return result
+        }
       }
 
-      if (price) {
-        this.setCachedData(cacheKey, price)
+      // Fallback to known prices
+      const knownPrices = this.getKnownPrices()
+      if (knownPrices[symbol]) {
+        const result = knownPrices[symbol]
+        this.setCache(cacheKey, result, 60) // Cache fallback for 1 hour
+        return result
       }
-      return price
+
+      return null
     } catch (error) {
       console.error(`Error fetching price for ${symbol}:`, error)
-      return null
-    }
-  }
 
-  async getETFComposition(symbol: string): Promise<ETFComposition | null> {
-    const cacheKey = `etf_${symbol}`;
-    const cached = this.getCachedData(cacheKey, 24 * 60 * 60 * 1000); // 24 hours
-    if (cached) return cached;
-
-    try {
-      // 1. Try Yahoo Finance
-      let composition = await this.fetchETFFromYahoo(symbol);
-
-      // 2. Check if composition is unreliable (empty, missing sector, or sector is only "Mixed")
-      const isUnreliable = !composition || !composition.sector || composition.sector.length === 0 ||
-          (composition.sector.length === 1 && composition.sector[0].sector.toLowerCase() === 'mixed');
-
-      if (isUnreliable) {
-        // 3. Fallback to Alpha Vantage
-        composition = await this.fetchETFFromAlphaVantage(symbol);
-      }
-
-      // 4. If still unreliable, fallback to Finnhub
-      if (!composition || !composition.sector || composition.sector.length === 0 ||
-          (composition.sector.length === 1 && composition.sector[0].sector.toLowerCase() === 'mixed')) {
-        composition = await this.fetchETFFromFinnhub(symbol);
-      }
-
-      if (composition) {
-        this.setCachedData(cacheKey, composition);
-        return composition;
-      }
-
-      return this.getKnownETFComposition(symbol);
-    } catch (error) {
-      console.error(`Error fetching ETF composition for ${symbol}:`, error);
-      return null;
+      // Return known price as fallback
+      const knownPrices = this.getKnownPrices()
+      return knownPrices[symbol] || null
     }
   }
 
   async getAssetMetadata(symbol: string): Promise<AssetMetadata | null> {
     const cacheKey = `metadata_${symbol}`
-    const cached = this.getCachedData(cacheKey, 24 * 60 * 60 * 1000) // 24 hours
+    const cached = this.getCached<AssetMetadata>(cacheKey)
     if (cached) return cached
 
+    await this.rateLimit("yahoo_metadata")
+
     try {
-      let metadata = await this.fetchMetadataFromYahoo(symbol)
-      if (!metadata) {
-        metadata = await this.fetchMetadataFromAlphaVantage(symbol)
-      }
-      if (!metadata) {
-        metadata = this.getKnownAssetMetadata(symbol)
+      // Try Yahoo Finance API
+      const response = await fetch(`/api/yahoo/search/${symbol}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data && data.name) {
+          const result: AssetMetadata = {
+            name: data.name,
+            sector: data.sector || "Unknown",
+            country: data.country || "Unknown",
+            marketCap: data.marketCap,
+          }
+          this.setCache(cacheKey, result, 1440) // Cache for 24 hours
+          return result
+        }
       }
 
-      if (metadata) {
-        this.setCachedData(cacheKey, metadata)
+      // Fallback to known metadata
+      const knownMetadata = this.getKnownMetadata()
+      if (knownMetadata[symbol]) {
+        const result = knownMetadata[symbol]
+        this.setCache(cacheKey, result, 1440)
+        return result
       }
-      return metadata
+
+      return null
     } catch (error) {
       console.error(`Error fetching metadata for ${symbol}:`, error)
-      return this.getKnownAssetMetadata(symbol)
+
+      // Return known metadata as fallback
+      const knownMetadata = this.getKnownMetadata()
+      return knownMetadata[symbol] || null
     }
   }
 
-  private async fetchFromYahooFinance(symbol: string): Promise<StockPrice | null> {
-    if (!rateLimiter.canMakeRequest("yahoo", 100, 60000)) {
-      console.warn("Yahoo Finance rate limit reached")
-      return null
-    }
+  async getETFComposition(symbol: string): Promise<ETFComposition | null> {
+    const cacheKey = `etf_${symbol}`
+    const cached = this.getCached<ETFComposition>(cacheKey)
+    if (cached) return cached
+
+    await this.rateLimit("yahoo_etf")
 
     try {
-
-      // Step 1: Resolve the correct Yahoo Finance symbol
-      const resolvedSymbol = await resolveYahooSymbol(symbol);
-
-      const response = await fetch(`/api/yahoo/quote/${resolvedSymbol}`);
-      const quote = await response.json();
-
-      if (!quote) return null;
-
-      return {
-        symbol,
-        price: quote.regularMarketPrice || quote.previousClose || 0,
-        currency: quote.currency || "USD",
-        change: quote.regularMarketChange || 0,
-        changePercent: quote.regularMarketChangePercent || 0,
-        lastUpdated: new Date().toISOString(),
-      };
-
-    } catch (error) {
-      console.error("Yahoo Finance API error:", error);
-      return null;
-    }
-  }
-
-  private async fetchFromAlphaVantage(symbol: string): Promise<StockPrice | null> {
-    if (!rateLimiter.canMakeRequest("alphavantage", 5, 60000)) {
-      console.warn("Alpha Vantage rate limit reached")
-      return null
-    }
-
-    try {
-      const response = await fetch(
-        `${API_CONFIG.ALPHA_VANTAGE.BASE_URL}?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_CONFIG.ALPHA_VANTAGE.KEY}`,
-      )
-
-      if (!response.ok) throw new Error(`Alpha Vantage API error: ${response.status}`)
-
-      const data = await response.json()
-      const quote = data["Global Quote"]
-
-      if (!quote) return null
-
-      return {
-        symbol,
-        price: Number.parseFloat(quote["05. price"]) || 0,
-        currency: "USD", // Alpha Vantage typically returns USD
-        change: Number.parseFloat(quote["09. change"]) || 0,
-        changePercent: Number.parseFloat(quote["10. change percent"]?.replace("%", "")) || 0,
-        lastUpdated: quote["07. latest trading day"] || new Date().toISOString(),
+      // Try Yahoo Finance ETF API
+      const response = await fetch(`/api/yahoo/etf/${symbol}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data && data.holdings) {
+          const result: ETFComposition = {
+            domicile: data.domicile || "US",
+            withholdingTax: data.withholdingTax || 30,
+            currency: data.currency || [],
+            country: data.country || [],
+            sector: data.sector || [],
+          }
+          this.setCache(cacheKey, result, 1440) // Cache for 24 hours
+          return result
+        }
       }
-    } catch (error) {
-      console.error("Alpha Vantage API error:", error)
-      return null
-    }
-  }
 
-  private async fetchFromFinnhub(symbol: string): Promise<StockPrice | null> {
-    if (!rateLimiter.canMakeRequest("finnhub", 60, 60000)) {
-      console.warn("Finnhub rate limit reached")
-      return null
-    }
-
-    try {
-      const response = await fetch(
-        `${API_CONFIG.FINNHUB.BASE_URL}/quote?symbol=${symbol}&token=${API_CONFIG.FINNHUB.KEY}`,
-      )
-
-      if (!response.ok) throw new Error(`Finnhub API error: ${response.status}`)
-
-      const data = await response.json()
-
-      if (!data.c) return null
-
-      return {
-        symbol,
-        price: data.c || 0,
-        currency: "USD", // Finnhub typically returns USD
-        change: data.d || 0,
-        changePercent: data.dp || 0,
-        lastUpdated: new Date(data.t * 1000).toISOString(),
+      // Fallback to known ETF compositions
+      const knownCompositions = this.getKnownETFCompositions()
+      if (knownCompositions[symbol]) {
+        const result = knownCompositions[symbol]
+        this.setCache(cacheKey, result, 1440)
+        return result
       }
-    } catch (error) {
-      console.error("Finnhub API error:", error)
+
       return null
-    }
-  }
-
-  private async fetchETFFromYahoo(symbol: string): Promise<ETFComposition | null> {
-    try {
-
-      const resolvedSymbol = await resolveYahooSymbol(symbol);
-
-      const response = await fetch(`/api/yahoo/etf/${resolvedSymbol}`);
-      const modules = await response.json();
-
-      if (!modules) return null;
-
-      const topHoldings = modules.topHoldings?.holdings || [];
-      const fundProfile = modules.fundProfile;
-      const summaryProfile = modules.summaryProfile;
-
-      // Extract holdings
-      const holdings = topHoldings.slice(0, 10).map((holding: any) => ({
-        symbol: holding.symbol || "",
-        name: holding.holdingName || "",
-        weight: (holding.holdingPercent || 0) * 100,
-        sector: holding.sector || "Unknown",
-        country: "Unknown", // Yahoo doesn't provide country data
-      }));
-
-      // Extract sector breakdown
-      const sectorWeightings = fundProfile?.sectorWeightings || {};
-      const sectors = Object.entries(sectorWeightings).map(([sector, weight]) => ({
-        sector,
-        weight: (weight as number) * 100,
-      }));
-
-      return {
-        symbol,
-        currency: [{ currency: "USD", weight: 100 }], // Default assumption
-        country: [{ country: "Unknown", weight: 100 }],
-        sector: sectors.length > 0 ? sectors : [{ sector: "Mixed", weight: 100 }],
-        holdings,
-        domicile: this.getDomicileFromSymbol(symbol),
-        withholdingTax: this.getWithholdingTax(symbol),
-        lastUpdated: new Date().toISOString(),
-      };
-
     } catch (error) {
-      console.error("Yahoo ETF API error:", error);
-      return null;
+      console.error(`Error fetching ETF composition for ${symbol}:`, error)
+
+      // Return known composition as fallback
+      const knownCompositions = this.getKnownETFCompositions()
+      return knownCompositions[symbol] || null
     }
   }
 
-  private async fetchETFFromAlphaVantage(symbol: string): Promise<ETFComposition | null> {
-    // Alpha Vantage doesn't have ETF composition data in free tier
-    return null
-  }
-
-  private async fetchETFFromFinnhub(symbol: string): Promise<ETFComposition | null> {
-    if (!rateLimiter.canMakeRequest('finnhub', 60, 60000)) {
-      console.warn('Finnhub rate limit reached');
-      return null;
-    }
-
-    try {
-      // Fetch ETF holdings using finnhub-ts
-      const holdingsResponse = await finnhubClient.etfsHoldings(symbol);
-
-      // Fetch ETF sector exposure using finnhub-ts
-      const sectorResponse = await finnhubClient.etfsSectorExposure(symbol);
-
-      // Map holdings data
-      const holdings = (holdingsResponse.data?.holdings || []).map(h => ({
-        symbol: h.symbol || '',
-        name: h.name || '',
-        weight: h.weight || 0,
-        sector: h.sector || 'Unknown',
-        country: h.country || 'Unknown',
-      }));
-
-      // Map sector exposure data
-      const sectors = (sectorResponse.data?.sectorExposure || []).map(s => ({
-        sector: s.name || 'Unknown',
-        weight: s.weight || 0,
-      }));
-
-      return {
-        symbol,
-        currency: [{ currency: 'USD', weight: 100 }],
-        country: [{ country: 'Unknown', weight: 100 }],
-        sector: sectors.length > 0 ? sectors : [{ sector: 'Mixed', weight: 100 }],
-        holdings,
-        domicile: this.getDomicileFromSymbol(symbol),
-        withholdingTax: this.getWithholdingTax(symbol),
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch (error) {
-      console.error('Finnhub ETF API error:', error);
-      return null;
+  private getKnownPrices(): Record<string, StockPrice> {
+    return {
+      AAPL: { price: 150.0, changePercent: 1.5, currency: "USD" },
+      MSFT: { price: 330.0, changePercent: 0.8, currency: "USD" },
+      GOOGL: { price: 2800.0, changePercent: -0.5, currency: "USD" },
+      AMZN: { price: 3200.0, changePercent: 2.1, currency: "USD" },
+      NVDA: { price: 450.0, changePercent: 3.2, currency: "USD" },
+      TSLA: { price: 800.0, changePercent: -1.2, currency: "USD" },
+      META: { price: 280.0, changePercent: 1.8, currency: "USD" },
+      NESN: { price: 120.0, changePercent: 0.3, currency: "CHF" },
+      NOVN: { price: 85.0, changePercent: -0.2, currency: "CHF" },
+      ROG: { price: 280.0, changePercent: 0.5, currency: "CHF" },
+      ASML: { price: 600.0, changePercent: 1.2, currency: "EUR" },
+      SAP: { price: 120.0, changePercent: 0.7, currency: "EUR" },
+      VWRL: { price: 89.96, changePercent: 0.9, currency: "CHF" },
+      IS3N: { price: 30.5, changePercent: 1.1, currency: "CHF" },
+      VTI: { price: 220.0, changePercent: 1.0, currency: "USD" },
+      VXUS: { price: 58.0, changePercent: 0.5, currency: "USD" },
+      VEA: { price: 48.0, changePercent: 0.3, currency: "USD" },
+      VWO: { price: 42.0, changePercent: 1.5, currency: "USD" },
     }
   }
 
-  private async fetchMetadataFromYahoo(symbol: string): Promise<AssetMetadata | null> {
-    try {
-
-      const resolvedSymbol = await resolveYahooSymbol(symbol);
-
-      const response = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${resolvedSymbol}`)
-
-      if (!response.ok) return null
-
-      const data = await response.json()
-      const quote = data.quotes?.[0]
-
-      if (!quote) return null
-
-      return {
-        symbol,
-        name: quote.longname || quote.shortname || symbol,
-        sector: quote.sector || "Unknown",
-        country: quote.country || "Unknown",
-        currency: quote.currency || "USD",
-        type: this.determineAssetType(quote.quoteType),
-      }
-    } catch (error) {
-      console.error("Yahoo metadata API error:", error)
-      return null
+  private getKnownMetadata(): Record<string, AssetMetadata> {
+    return {
+      AAPL: { name: "Apple Inc.", sector: "Technology", country: "United States" },
+      MSFT: { name: "Microsoft Corporation", sector: "Technology", country: "United States" },
+      GOOGL: { name: "Alphabet Inc.", sector: "Technology", country: "United States" },
+      AMZN: { name: "Amazon.com Inc.", sector: "Consumer Discretionary", country: "United States" },
+      NVDA: { name: "NVIDIA Corporation", sector: "Technology", country: "United States" },
+      TSLA: { name: "Tesla Inc.", sector: "Consumer Discretionary", country: "United States" },
+      META: { name: "Meta Platforms Inc.", sector: "Technology", country: "United States" },
+      NESN: { name: "Nestlé SA", sector: "Consumer Staples", country: "Switzerland" },
+      NOVN: { name: "Novartis AG", sector: "Healthcare", country: "Switzerland" },
+      ROG: { name: "Roche Holding AG", sector: "Healthcare", country: "Switzerland" },
+      ASML: { name: "ASML Holding NV", sector: "Technology", country: "Netherlands" },
+      SAP: { name: "SAP SE", sector: "Technology", country: "Germany" },
+      VWRL: { name: "Vanguard FTSE All-World UCITS ETF", sector: "Mixed", country: "Global" },
+      IS3N: { name: "iShares Core MSCI World UCITS ETF", sector: "Mixed", country: "Global" },
+      VTI: { name: "Vanguard Total Stock Market ETF", sector: "Mixed", country: "United States" },
+      VXUS: { name: "Vanguard Total International Stock ETF", sector: "Mixed", country: "Global" },
+      VEA: { name: "Vanguard FTSE Developed Markets ETF", sector: "Mixed", country: "Global" },
+      VWO: { name: "Vanguard FTSE Emerging Markets ETF", sector: "Mixed", country: "Global" },
     }
   }
 
-  private async fetchMetadataFromAlphaVantage(symbol: string): Promise<AssetMetadata | null> {
-    try {
-      const response = await fetch(
-        `${API_CONFIG.ALPHA_VANTAGE.BASE_URL}?function=OVERVIEW&symbol=${symbol}&apikey=${API_CONFIG.ALPHA_VANTAGE.KEY}`,
-      )
-
-      if (!response.ok) return null
-
-      const data = await response.json()
-
-      if (!data.Symbol) return null
-
-      return {
-        symbol,
-        name: data.Name || symbol,
-        sector: data.Sector || "Unknown",
-        country: data.Country || "Unknown",
-        currency: data.Currency || "USD",
-        type: this.determineAssetType(data.AssetType),
-      }
-    } catch (error) {
-      console.error("Alpha Vantage metadata API error:", error)
-      return null
-    }
-  }
-
-  private determineAssetType(quoteType: string): "Stock" | "ETF" | "Bond" | "Crypto" {
-    const type = quoteType?.toLowerCase() || ""
-    if (type.includes("etf")) return "ETF"
-    if (type.includes("bond")) return "Bond"
-    if (type.includes("crypto") || type.includes("currency")) return "Crypto"
-    return "Stock"
-  }
-
-  private getDomicileFromSymbol(symbol: string): string {
-    // Known ETF domiciles
-    const domiciles: Record<string, string> = {
-      VWRL: "IE", // Ireland
-      IS3N: "IE", // Ireland
-      IEFA: "IE", // Ireland
-      VTI: "US", // United States
-      BND: "US", // United States
-      SPICHA: "CH", // Switzerland
-      VOOV: "US", // United States
-    }
-    return domiciles[symbol] || "Unknown"
-  }
-
-  private getWithholdingTax(symbol: string): number {
-    const domicile = this.getDomicileFromSymbol(symbol)
-    switch (domicile) {
-      case "IE": // Ireland
-      case "LU": // Luxembourg
-        return 15
-      case "US": // United States
-        return 30
-      case "CH": // Switzerland
-        return 0
-      default:
-        return 15
-    }
-  }
-
-  private getKnownETFComposition(symbol: string): ETFComposition | null {
-    // Comprehensive known ETF compositions
-    const compositions: Record<string, ETFComposition> = {
+  private getKnownETFCompositions(): Record<string, ETFComposition> {
+    return {
       VWRL: {
-        symbol: "VWRL",
+        domicile: "IE",
+        withholdingTax: 15,
         currency: [
-          { currency: "USD", weight: 60.2 },
-          { currency: "EUR", weight: 15.1 },
-          { currency: "JPY", weight: 7.8 },
-          { currency: "GBP", weight: 4.2 },
-          { currency: "CHF", weight: 3.1 },
-          { currency: "CAD", weight: 2.8 },
-          { currency: "CNY", weight: 3.9 },
-          { currency: "Others", weight: 2.9 },
+          { currency: "USD", weight: 65.0 },
+          { currency: "EUR", weight: 15.0 },
+          { currency: "JPY", weight: 8.0 },
+          { currency: "GBP", weight: 4.0 },
+          { currency: "CHF", weight: 3.0 },
+          { currency: "Other", weight: 5.0 },
         ],
         country: [
-          { country: "United States", weight: 60.2 },
-          { country: "Japan", weight: 7.8 },
-          { country: "United Kingdom", weight: 4.2 },
-          { country: "China", weight: 3.9 },
-          { country: "France", weight: 3.1 },
-          { country: "Switzerland", weight: 3.1 },
-          { country: "Canada", weight: 2.8 },
+          { country: "United States", weight: 60.0 },
+          { country: "Japan", weight: 6.0 },
+          { country: "United Kingdom", weight: 4.0 },
+          { country: "China", weight: 3.5 },
+          { country: "Canada", weight: 3.0 },
+          { country: "France", weight: 3.0 },
+          { country: "Switzerland", weight: 2.8 },
           { country: "Germany", weight: 2.5 },
-          { country: "Others", weight: 12.4 },
+          { country: "Other", weight: 15.2 },
         ],
         sector: [
-          { sector: "Technology", weight: 22.1 },
-          { sector: "Financials", weight: 15.8 },
-          { sector: "Healthcare", weight: 12.4 },
-          { sector: "Consumer Discretionary", weight: 10.9 },
-          { sector: "Industrials", weight: 10.2 },
-          { sector: "Consumer Staples", weight: 7.1 },
-          { sector: "Energy", weight: 5.8 },
-          { sector: "Materials", weight: 4.9 },
-          { sector: "Communication Services", weight: 4.2 },
-          { sector: "Utilities", weight: 3.8 },
-          { sector: "Real Estate", weight: 2.8 },
+          { sector: "Technology", weight: 22.0 },
+          { sector: "Healthcare", weight: 13.0 },
+          { sector: "Financials", weight: 12.0 },
+          { sector: "Consumer Discretionary", weight: 11.0 },
+          { sector: "Communication Services", weight: 9.0 },
+          { sector: "Industrials", weight: 9.0 },
+          { sector: "Consumer Staples", weight: 7.0 },
+          { sector: "Energy", weight: 5.0 },
+          { sector: "Materials", weight: 4.0 },
+          { sector: "Utilities", weight: 3.0 },
+          { sector: "Real Estate", weight: 3.0 },
+          { sector: "Other", weight: 2.0 },
         ],
-        holdings: [
-          { symbol: "AAPL", name: "Apple Inc.", weight: 4.8, sector: "Technology", country: "United States" },
-          { symbol: "MSFT", name: "Microsoft Corp.", weight: 4.1, sector: "Technology", country: "United States" },
-          { symbol: "GOOGL", name: "Alphabet Inc.", weight: 2.4, sector: "Technology", country: "United States" },
-          {
-            symbol: "AMZN",
-            name: "Amazon.com Inc.",
-            weight: 2.1,
-            sector: "Consumer Discretionary",
-            country: "United States",
-          },
-          { symbol: "NVDA", name: "NVIDIA Corp.", weight: 1.9, sector: "Technology", country: "United States" },
-        ],
-        domicile: "IE",
-        withholdingTax: 15,
-        lastUpdated: new Date().toISOString(),
       },
       IS3N: {
-        symbol: "IS3N",
+        domicile: "IE",
+        withholdingTax: 15,
         currency: [
-          { currency: "USD", weight: 64.8 },
-          { currency: "EUR", weight: 15.2 },
-          { currency: "JPY", weight: 7.9 },
-          { currency: "GBP", weight: 4.1 },
-          { currency: "CHF", weight: 3.2 },
-          { currency: "CAD", weight: 2.9 },
-          { currency: "Others", weight: 1.9 },
+          { currency: "USD", weight: 70.0 },
+          { currency: "EUR", weight: 12.0 },
+          { currency: "JPY", weight: 7.0 },
+          { currency: "GBP", weight: 4.0 },
+          { currency: "CHF", weight: 3.0 },
+          { currency: "Other", weight: 4.0 },
         ],
         country: [
-          { country: "United States", weight: 64.8 },
-          { country: "Japan", weight: 7.9 },
-          { country: "United Kingdom", weight: 4.1 },
+          { country: "United States", weight: 68.0 },
+          { country: "Japan", weight: 6.0 },
+          { country: "United Kingdom", weight: 4.0 },
           { country: "France", weight: 3.5 },
-          { country: "Switzerland", weight: 3.2 },
-          { country: "Canada", weight: 2.9 },
-          { country: "Germany", weight: 2.7 },
-          { country: "Others", weight: 10.9 },
+          { country: "Canada", weight: 3.0 },
+          { country: "Switzerland", weight: 3.0 },
+          { country: "Germany", weight: 2.5 },
+          { country: "Netherlands", weight: 1.5 },
+          { country: "Other", weight: 8.5 },
         ],
         sector: [
-          { sector: "Technology", weight: 23.2 },
-          { sector: "Financials", weight: 15.1 },
-          { sector: "Healthcare", weight: 13.2 },
-          { sector: "Consumer Discretionary", weight: 10.8 },
-          { sector: "Industrials", weight: 10.1 },
-          { sector: "Consumer Staples", weight: 7.2 },
-          { sector: "Energy", weight: 5.9 },
-          { sector: "Materials", weight: 4.8 },
-          { sector: "Communication Services", weight: 4.1 },
-          { sector: "Utilities", weight: 3.2 },
-          { sector: "Real Estate", weight: 2.4 },
+          { sector: "Technology", weight: 24.0 },
+          { sector: "Healthcare", weight: 13.0 },
+          { sector: "Financials", weight: 13.0 },
+          { sector: "Consumer Discretionary", weight: 10.0 },
+          { sector: "Communication Services", weight: 8.0 },
+          { sector: "Industrials", weight: 10.0 },
+          { sector: "Consumer Staples", weight: 7.0 },
+          { sector: "Energy", weight: 4.0 },
+          { sector: "Materials", weight: 4.0 },
+          { sector: "Utilities", weight: 3.0 },
+          { sector: "Real Estate", weight: 2.0 },
+          { sector: "Other", weight: 2.0 },
         ],
-        holdings: [],
-        domicile: "IE",
-        withholdingTax: 15,
-        lastUpdated: new Date().toISOString(),
+      },
+      VTI: {
+        domicile: "US",
+        withholdingTax: 30,
+        currency: [{ currency: "USD", weight: 100.0 }],
+        country: [{ country: "United States", weight: 100.0 }],
+        sector: [
+          { sector: "Technology", weight: 28.0 },
+          { sector: "Healthcare", weight: 13.0 },
+          { sector: "Financials", weight: 11.0 },
+          { sector: "Consumer Discretionary", weight: 10.0 },
+          { sector: "Communication Services", weight: 8.0 },
+          { sector: "Industrials", weight: 8.0 },
+          { sector: "Consumer Staples", weight: 6.0 },
+          { sector: "Energy", weight: 4.0 },
+          { sector: "Utilities", weight: 3.0 },
+          { sector: "Real Estate", weight: 4.0 },
+          { sector: "Materials", weight: 3.0 },
+          { sector: "Other", weight: 2.0 },
+        ],
+      },
+      VXUS: {
+        domicile: "US",
+        withholdingTax: 30,
+        currency: [
+          { currency: "EUR", weight: 25.0 },
+          { currency: "JPY", weight: 15.0 },
+          { currency: "GBP", weight: 8.0 },
+          { currency: "CHF", weight: 6.0 },
+          { currency: "CAD", weight: 6.0 },
+          { currency: "CNY", weight: 8.0 },
+          { currency: "Other", weight: 32.0 },
+        ],
+        country: [
+          { country: "Japan", weight: 15.0 },
+          { country: "United Kingdom", weight: 8.0 },
+          { country: "China", weight: 7.0 },
+          { country: "Canada", weight: 6.0 },
+          { country: "France", weight: 6.0 },
+          { country: "Switzerland", weight: 5.5 },
+          { country: "Germany", weight: 5.0 },
+          { country: "Taiwan", weight: 4.0 },
+          { country: "Netherlands", weight: 3.0 },
+          { country: "Other", weight: 40.5 },
+        ],
+        sector: [
+          { sector: "Technology", weight: 18.0 },
+          { sector: "Financials", weight: 16.0 },
+          { sector: "Healthcare", weight: 12.0 },
+          { sector: "Consumer Discretionary", weight: 11.0 },
+          { sector: "Industrials", weight: 11.0 },
+          { sector: "Communication Services", weight: 7.0 },
+          { sector: "Consumer Staples", weight: 7.0 },
+          { sector: "Materials", weight: 6.0 },
+          { sector: "Energy", weight: 5.0 },
+          { sector: "Utilities", weight: 3.0 },
+          { sector: "Real Estate", weight: 2.0 },
+          { sector: "Other", weight: 1.0 },
+        ],
       },
     }
-
-    return compositions[symbol] || null
-  }
-
-  private getKnownAssetMetadata(symbol: string): AssetMetadata | null {
-    const metadata: Record<string, AssetMetadata> = {
-      AAPL: {
-        symbol: "AAPL",
-        name: "Apple Inc.",
-        sector: "Technology",
-        country: "United States",
-        currency: "USD",
-        type: "Stock",
-      },
-      MSFT: {
-        symbol: "MSFT",
-        name: "Microsoft Corp.",
-        sector: "Technology",
-        country: "United States",
-        currency: "USD",
-        type: "Stock",
-      },
-      GOOGL: {
-        symbol: "GOOGL",
-        name: "Alphabet Inc.",
-        sector: "Technology",
-        country: "United States",
-        currency: "USD",
-        type: "Stock",
-      },
-      VWRL: {
-        symbol: "VWRL",
-        name: "Vanguard FTSE All-World",
-        sector: "Mixed",
-        country: "Global",
-        currency: "CHF",
-        type: "ETF",
-      },
-      IS3N: {
-        symbol: "IS3N",
-        name: "iShares Core MSCI World",
-        sector: "Mixed",
-        country: "Global",
-        currency: "CHF",
-        type: "ETF",
-      },
-      IEFA: {
-        symbol: "IEFA",
-        name: "iShares Core MSCI EAFE",
-        sector: "Mixed",
-        country: "Europe",
-        currency: "CHF",
-        type: "ETF",
-      },
-    }
-
-    return metadata[symbol] || null
   }
 }
 
