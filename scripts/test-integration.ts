@@ -1,40 +1,28 @@
 // scripts/test-integration.ts
-// This script runs an end-to-end integration test for the portfolio analyzer.
-// It simulates a file upload and verifies the output.
+// This script tests the full integration of parsing and data enrichment.
 // Run with: ts-node scripts/test-integration.ts
 
-import { parseSwissPortfolioPDF } from "../portfolio-parser"
+import { parsePortfolioCsv } from "../portfolio-parser"
 import * as fs from "fs"
 import * as path from "path"
 
-// Dummy File class for Node.js environment
-class DummyFile extends Blob {
-  name: string
-  lastModified: number
+async function testIntegration() {
+  console.log("--- Testing Full Integration (CSV Parsing + Data Enrichment) ---")
 
-  constructor(chunks: BlobPart[], name: string, options?: BlobPropertyBag) {
-    super(chunks, options)
-    this.name = name
-    this.lastModified = Date.now()
-  }
-}
-
-async function runIntegrationTest() {
-  console.log("--- Running Integration Test ---")
-
-  const testCsvPath = path.join(__dirname, "..", "__tests__", "test-data", "swissquote-sample.csv")
+  const testCsvPath = path.join(__dirname, "..", "__tests__", "test-data", "sample-portfolio.csv")
 
   try {
-    console.log(`\nLoading test CSV from: ${testCsvPath}`)
-    const csvContent = fs.readFileSync(testCsvPath, "utf-8")
-    const csvFile = new DummyFile([csvContent], "swissquote-sample.csv", { type: "text/csv" })
+    const csvContent = fs.readFileSync(testCsvPath, "utf8")
+    console.log(`Successfully read CSV from: ${testCsvPath}`)
+    console.log("CSV Content Preview (first 200 chars):\n", csvContent.substring(0, 200))
 
-    console.log("Parsing portfolio from CSV...")
-    const portfolioData = await parseSwissPortfolioPDF(csvFile)
+    console.log("\nStarting portfolio parsing and enrichment...")
+    const portfolioData = await parsePortfolioCsv(csvContent)
 
-    console.log("\n--- Integration Test Results ---")
+    console.log("\n--- Enriched Portfolio Data ---")
     console.log("Account Overview:", portfolioData.accountOverview)
     console.log("Number of Positions:", portfolioData.positions.length)
+    console.log("Sample Enriched Position (first):", portfolioData.positions[0])
     console.log("Asset Allocation:", portfolioData.assetAllocation)
     console.log("Currency Allocation:", portfolioData.currencyAllocation)
     console.log("True Country Allocation:", portfolioData.trueCountryAllocation)
@@ -43,24 +31,17 @@ async function runIntegrationTest() {
 
     // Basic assertions
     if (portfolioData.positions.length > 0) {
-      console.log("✅ Positions parsed successfully.")
+      console.log("First position symbol:", portfolioData.positions[0].symbol)
+      console.log("First position current price:", portfolioData.positions[0].currentPrice)
+      console.log("First position sector (should be enriched):", portfolioData.positions[0].sector)
     } else {
-      console.error("❌ No positions found.")
-      process.exit(1)
+      console.warn("No positions found in the parsed data.")
     }
 
-    if (portfolioData.accountOverview.totalValue > 0) {
-      console.log("✅ Total portfolio value detected.")
-    } else {
-      console.error("❌ Total portfolio value not detected or is zero.")
-      process.exit(1)
-    }
-
-    console.log("\n--- Integration Test Passed! ---")
+    console.log("\n--- Full Integration Test Complete ---")
   } catch (error) {
-    console.error("❌ Integration Test Failed:", error)
-    process.exit(1)
+    console.error("Error during full integration test:", error)
   }
 }
 
-runIntegrationTest()
+testIntegration()

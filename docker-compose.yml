@@ -1,20 +1,19 @@
 version: '3.8'
 
 services:
-  nextjs-app:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - YAHOO_FINANCE_API_KEY=${YAHOO_FINANCE_API_KEY}
     volumes:
       - .:/app
       - /app/node_modules
-    environment:
-      NODE_ENV: development
-      # Add any environment variables required by your Next.js app here
-      # For example:
-      # - NEXT_PUBLIC_API_URL=http://localhost:3000/api
+    command: npm run dev
 
   # Development service with hot reload
   portfolio-analyzer-dev:

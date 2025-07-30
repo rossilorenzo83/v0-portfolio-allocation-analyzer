@@ -1,75 +1,147 @@
 import { apiService } from "../lib/api-service"
-import jest from "jest"
+import { jest } from "@jest/globals"
 
-// Mock global fetch
-global.fetch = jest.fn()
+// Mock the global fetch function for API service tests
+global.fetch = jest.fn((url) => {
+  if (url.includes("/api/yahoo/quote/")) {
+    const symbol = url.split("/").pop()
+    return Promise.resolve({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          quoteResponse: {
+            result: [
+              {
+                symbol: symbol.toUpperCase(),
+                regularMarketPrice: 100.0,
+                currency: "USD",
+                regularMarketChangePercent: 1.25,
+              },
+            ],
+          },
+        }),
+    })
+  } else if (url.includes("/api/yahoo/etf/")) {
+    const symbol = url.split("/").pop()
+    return Promise.resolve({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          symbol: symbol.toUpperCase(),
+          domicile: "IE",
+          withholdingTax: 15,
+          country: [
+            { country: "United States", weight: 60 },
+            { country: "Ireland", weight: 10 },
+          ],
+          sector: [
+            { sector: "Technology", weight: 25 },
+            { sector: "Financial Services", weight: 15 },
+          ],
+          currency: [
+            { currency: "USD", weight: 70 },
+            { currency: "EUR", weight: 30 },
+          ],
+        }),
+    })
+  } else if (url.includes("/api/yahoo/search/")) {
+    const query = url.split("/").pop()
+    return Promise.resolve({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          quotes: [
+            {
+              symbol: query.toUpperCase(),
+              longname: `${query} Company`,
+              exchange: "NASDAQ",
+              currency: "USD",
+              sector: "Technology",
+              country: "United States",
+              quoteType: "EQUITY",
+            },
+          ],
+        }),
+    })
+  }
+  return Promise.reject(new Error(`Unhandled fetch request: ${url}`))
+})
 
-describe("apiService", () => {
+describe("APIService", () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    // Clear all mocks before each test
+    ;(global.fetch as jest.Mock).mockClear()
   })
 
-  it("getStockPrice fetches data correctly", async () => {
-    const mockResponse = { price: 150.0, changePercent: 1.2 }
-    ;(fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    })
+  it("should fetch stock price correctly", async () => {
+    const symbol = "AAPL"
+    const priceData = await apiService.getStockPrice(symbol)
 
-    const result = await apiService.getStockPrice("AAPL")
-    expect(result).toEqual(mockResponse)
-    expect(fetch).toHaveBeenCalledWith("/api/yahoo/quote/AAPL")
+    expect(priceData).toBeDefined()
+    expect(priceData?.symbol).toBe(symbol)
+    expect(priceData?.price).toBe(100.0)
+    expect(priceData?.currency).toBe("USD")
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining(`/api/yahoo/quote/${symbol}`))
   })
 
-  it("getAssetMetadata fetches data correctly", async () => {
-    const mockResponse = { name: "Apple Inc.", sector: "Technology", country: "United States" }
-    ;(fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    })
+  it("should fetch asset metadata correctly", async () => {
+    const symbol = "MSFT"
+    const metadata = await apiService.getAssetMetadata(symbol)
 
-    const result = await apiService.getAssetMetadata("AAPL")
-    expect(result).toEqual(mockResponse)
-    expect(fetch).toHaveBeenCalledWith("/api/yahoo/search/AAPL")
+    expect(metadata).toBeDefined()
+    expect(metadata?.symbol).toBe(symbol)
+    expect(metadata?.name).toBe("MSFT Company")
+    expect(metadata?.sector).toBe("Technology")
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining(`/api/yahoo/search/${symbol}`))
   })
 
-  it("getETFComposition fetches data correctly", async () => {
-    const mockResponse = {
-      domicile: "IE",
-      withholdingTax: 15,
-      country: [{ country: "US", weight: 60 }],
-      sector: [{ sector: "Technology", weight: 25 }],
-      currency: [{ currency: "USD", weight: 100 }],
-    }
-    ;(fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    })
+  it("should fetch ETF composition correctly", async () => {
+    const symbol = "VWRL"
+    const composition = await apiService.getETFComposition(symbol)
 
-    const result = await apiService.getETFComposition("VWRL")
-    expect(result).toEqual(mockResponse)
-    expect(fetch).toHaveBeenCalledWith("/api/yahoo/etf/VWRL")
+    expect(composition).toBeDefined()
+    expect(composition?.symbol).toBe(symbol)
+    expect(composition?.domicile).toBe("IE")
+    expect(composition?.country).toEqual(expect.arrayContaining([{ country: "United States", weight: 60 }]))
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining(`/api/yahoo/etf/${symbol}`))
   })
 
-  it("searchSymbol fetches data correctly", async () => {
-    const mockResponse = [{ symbol: "GOOG", name: "Alphabet Inc." }]
-    ;(fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    })
+  it("should search for a symbol correctly", async () => {
+    const query = "Google"
+    const searchResults = await apiService.searchSymbol(query)
 
-    const result = await apiService.searchSymbol("Google")
-    expect(result).toEqual(mockResponse)
-    expect(fetch).toHaveBeenCalledWith("/api/yahoo/search/Google")
+    expect(searchResults).toBeDefined()
+    expect(searchResults.length).toBeGreaterThan(0)
+    expect(searchResults[0].symbol).toBe("GOOGLE")
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining(`/api/yahoo/search/${query}`))
   })
 
-  it("handles API errors gracefully", async () => {
-    ;(fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-    })
+  it("should use cache for subsequent calls within TTL", async () => {
+    const symbol = "TSLA"
+    await apiService.getStockPrice(symbol)
+    await apiService.getStockPrice(symbol) // Second call
 
-    await expect(apiService.getStockPrice("INVALID")).rejects.toThrow("Failed to fetch stock price for INVALID")
+    expect(global.fetch).toHaveBeenCalledTimes(1) // Should only fetch once due to caching
+  })
+
+  it("should resolve European ETF symbols", async () => {
+    const symbol = "VWRL" // Common European ETF without suffix
+    const priceData = await apiService.getStockPrice(symbol)
+
+    expect(priceData).toBeDefined()
+    expect(priceData?.symbol).toBe(symbol)
+    // Expect fetch to have been called with a resolved symbol like VWRL.L or VWRL.AS
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/yahoo\/quote\/(VWRL(\.L|\.AS|\.DE|\.MI|\.PA|\.SW)?)$/),
+    )
+  })
+
+  it("should resolve Swiss stock symbols", async () => {
+    const symbol = "NESN" // Nestle
+    const metadata = await apiService.getAssetMetadata(symbol)
+
+    expect(metadata).toBeDefined()
+    expect(metadata?.symbol).toBe(symbol)
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining(`/api/yahoo/search/NESN.SW`))
   })
 })

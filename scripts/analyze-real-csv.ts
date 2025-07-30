@@ -1,59 +1,76 @@
-// scripts/analyze-real-csv.ts
-// This script fetches a real CSV from a URL and analyzes its structure
-// using the portfolio-parser.ts logic.
-// Run with: ts-node scripts/analyze-real-csv.ts <CSV_URL>
+import { parsePortfolioCsv } from "../portfolio-parser"
+import * as fs from "fs"
 
-import { parseSwissPortfolioPDF } from "../portfolio-parser"
+async function analyzeRealCsv(csvFilePath: string) {
+  console.log(`--- Analyzing Real CSV: ${csvFilePath} ---`)
 
-async function analyzeRealCsv(csvUrl: string) {
-  console.log(`--- Analyzing Real CSV from URL: ${csvUrl} ---`)
+  if (!fs.existsSync(csvFilePath)) {
+    console.error(`Error: File not found at ${csvFilePath}`)
+    return
+  }
 
   try {
-    console.log("Fetching CSV content...")
-    const response = await fetch(csvUrl)
+    const csvContent = fs.readFileSync(csvFilePath, "utf8")
+    console.log("CSV Content Preview (first 500 chars):\n", csvContent.substring(0, 500))
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch CSV: ${response.status} ${response.statusText}`)
+    console("\nStarting portfolio parsing and enrichment...")
+    const portfolioData = await parsePortfolioCsv(csvContent)
+
+    console.log("\n--- Parsed and Enriched Portfolio Data ---")
+    console.log("Account Overview:", portfolioData.accountOverview)
+    console.log("Total Portfolio Value (CHF):", portfolioData.accountOverview.totalValue.toFixed(2))
+    console.log("Securities Value (CHF):", portfolioData.accountOverview.securitiesValue.toFixed(2))
+    console.log("Cash Balance (CHF):", portfolioData.accountOverview.cashBalance.toFixed(2))
+
+    console.log("\n--- Portfolio Positions ---")
+    if (portfolioData.positions.length > 0) {
+      portfolioData.positions.forEach((p, index) => {
+        console.log(`Position ${index + 1}:`)
+        console.log(`  Symbol: ${p.symbol}`)
+        console.log(`  Name: ${p.name}`)
+        console.log(`  Quantity: ${p.quantity}`)
+        console.log(`  Price: ${p.price} ${p.currency}`)
+        console.log(`  Current Price: ${p.currentPrice} ${p.currency}`)
+        console.log(`  Total Value (CHF): ${p.totalValueCHF.toFixed(2)}`)
+        console.log(`  Category: ${p.category}`)
+        console.log(`  Sector: ${p.sector}`)
+        console.log(`  Country: ${p.geography}`)
+        console.log(`  Domicile: ${p.domicile}`)
+        console.log(`  Tax Optimized: ${p.taxOptimized}`)
+        console.log(`  Gain/Loss (CHF): ${p.gainLossCHF.toFixed(2)}`)
+        console.log(`  Unrealized Gain/Loss: ${p.unrealizedGainLoss?.toFixed(2)}`)
+        console.log(`  Unrealized Gain/Loss %: ${p.unrealizedGainLossPercent?.toFixed(2)}%`)
+        console.log(`  Position %: ${p.positionPercent.toFixed(2)}%`)
+        console.log(`  Daily Change %: ${p.dailyChangePercent.toFixed(2)}%`)
+        console.log("---")
+      })
+    } else {
+      console.log("No positions found in the parsed data.")
     }
 
-    const csvContent = await response.text()
-    console.log(`Fetched CSV content length: ${csvContent.length} characters.`)
-    console.log("First 500 characters of CSV:\n", csvContent.substring(0, 500))
-
-    console.log("\nStarting portfolio parsing...")
-    const portfolioData = await parseSwissPortfolioPDF(csvContent)
-
-    console.log("\n--- Analysis Results ---")
-    console.log("Account Overview:", portfolioData.accountOverview)
-    console.log("Number of Positions:", portfolioData.positions.length)
+    console.log("\n--- Allocation Breakdowns ---")
     console.log("Asset Allocation:", portfolioData.assetAllocation)
     console.log("Currency Allocation:", portfolioData.currencyAllocation)
     console.log("True Country Allocation:", portfolioData.trueCountryAllocation)
     console.log("True Sector Allocation:", portfolioData.trueSectorAllocation)
     console.log("Domicile Allocation:", portfolioData.domicileAllocation)
 
-    if (portfolioData.positions.length > 0) {
-      console.log("\nSample Positions (first 5):")
-      portfolioData.positions.slice(0, 5).forEach((p, i) => {
-        console.log(
-          `  ${i + 1}. Symbol: ${p.symbol}, Name: ${p.name}, Quantity: ${p.quantity}, Price: ${p.price}, Total CHF: ${p.totalValueCHF}`,
-        )
-      })
-    } else {
-      console.warn("No positions were parsed from the CSV.")
+    console.log("\n--- Real CSV Analysis Complete ---")
+  } catch (error: any) {
+    console.error("Error during real CSV analysis:", error.message)
+    if (error.stack) {
+      console.error(error.stack)
     }
-
-    console.log("\n--- Analysis Complete ---")
-  } catch (error) {
-    console.error("Error during real CSV analysis:", error)
-    process.exit(1)
   }
 }
 
+// Example usage:
+// To run this script, use: `ts-node scripts/analyze-real-csv.ts <path_to_your_csv_file>`
+// For example: `ts-node scripts/analyze-real-csv.ts ./__tests__/test-data/sample-portfolio.csv`
 const args = process.argv.slice(2)
-if (args.length < 1) {
-  console.error("Usage: ts-node scripts/analyze-real-csv.ts <CSV_URL>")
-  process.exit(1)
+if (args.length > 0) {
+  analyzeRealCsv(args[0])
+} else {
+  console.log("Usage: ts-node scripts/analyze-real-csv.ts <path_to_csv_file>")
+  console.log("Please provide the path to your CSV file as an argument.")
 }
-
-analyzeRealCsv(args[0])

@@ -45,6 +45,15 @@ const nextConfig = {
     // For PDF.js worker
     config.resolve.alias.canvas = false;
     config.resolve.alias.encoding = false;
+
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false, // Disable fs on the client side
+        path: false, // Disable path on the client side
+      };
+    }
+
     return config;
   },
 };

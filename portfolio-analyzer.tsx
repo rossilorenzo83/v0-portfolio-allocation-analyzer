@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import {
-  parsePortfolioCsv, // Changed from parseSwissPortfolioPDF
+  parsePortfolioCsv, // Corrected import
   type SwissPortfolioData,
   type PortfolioPosition,
   type AllocationItem,
@@ -68,15 +68,14 @@ export default function PortfolioAnalyzer() {
           title: "Processing File",
           description: `Analyzing ${fileInput.name}...`,
         })
-        // Read file content as text for CSV parsing
-        const fileContent = await fileInput.text()
-        data = parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
+        const fileContent = await fileInput.text() // Read file content as text
+        data = await parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
       } else if (textInput) {
         toast({
           title: "Processing Text",
           description: "Analyzing pasted text...",
         })
-        data = parsePortfolioCsv(textInput) // Use parsePortfolioCsv
+        data = await parsePortfolioCsv(textInput) // Use parsePortfolioCsv
       } else {
         throw new Error("Please upload a file or paste text to analyze.")
       }

@@ -7,9 +7,85 @@ import { parseSwissPortfolioPDF } from "../portfolio-parser"
 // Mock the parseSwissPortfolioPDF function
 jest.mock("../portfolio-parser", () => ({
   parseSwissPortfolioPDF: jest.fn(),
+  parsePortfolioCsv: jest.fn(async (content: string) => {
+    if (content.includes("error")) {
+      throw new Error("Simulated parsing error")
+    }
+    return {
+      accountOverview: {
+        totalValue: 100000,
+        securitiesValue: 90000,
+        cashBalance: 10000,
+      },
+      positions: [
+        {
+          symbol: "AAPL",
+          name: "Apple Inc.",
+          quantity: 10,
+          unitCost: 150,
+          price: 170,
+          currentPrice: 170,
+          totalValueCHF: 1700,
+          currency: "USD",
+          category: "Actions",
+          sector: "Technology",
+          geography: "United States",
+          domicile: "US",
+          withholdingTax: 15,
+          taxOptimized: true,
+          gainLossCHF: 200,
+          unrealizedGainLoss: 200,
+          unrealizedGainLossPercent: 13.33,
+          positionPercent: 1.7,
+          dailyChangePercent: 0.5,
+          isOTC: false,
+        },
+        {
+          symbol: "VWRL.L",
+          name: "Vanguard FTSE All-World UCITS ETF",
+          quantity: 50,
+          unitCost: 100,
+          price: 105,
+          currentPrice: 105,
+          totalValueCHF: 5250,
+          currency: "USD",
+          category: "ETF",
+          sector: "Diversified",
+          geography: "Ireland",
+          domicile: "IE",
+          withholdingTax: 15,
+          taxOptimized: true,
+          gainLossCHF: 250,
+          unrealizedGainLoss: 250,
+          unrealizedGainLossPercent: 5,
+          positionPercent: 5.25,
+          dailyChangePercent: 0.2,
+          isOTC: false,
+        },
+      ],
+      assetAllocation: [
+        { name: "Actions", value: 1700, percentage: 1.7 },
+        { name: "ETF", value: 5250, percentage: 5.25 },
+      ],
+      currencyAllocation: [
+        { name: "USD", value: 6000, percentage: 6 },
+        { name: "EUR", value: 950, percentage: 0.95 },
+      ],
+      trueCountryAllocation: [
+        { name: "United States", value: 5000, percentage: 5 },
+        { name: "Switzerland", value: 1000, percentage: 1 },
+      ],
+      trueSectorAllocation: [
+        { name: "Technology", value: 3000, percentage: 3 },
+        { name: "Financial Services", value: 1500, percentage: 1.5 },
+      ],
+      domicileAllocation: [
+        { name: "US", value: 1700, percentage: 1.7 },
+        { name: "IE", value: 5250, percentage: 5.25 },
+      ],
+    }
+  }),
 }))
-
-const mockParseSwissPortfolioPDF = parseSwissPortfolioPDF as jest.Mock
 
 // Mock recharts components
 jest.mock("recharts", () => ({
@@ -110,7 +186,7 @@ describe("PortfolioAnalyzer", () => {
 describe("PortfolioAnalyzer UI", () => {
   beforeEach(() => {
     // Reset mocks before each test
-    mockParseSwissPortfolioPDF.mockReset()
+    jest.clearAllMocks()
   })
 
   it("renders the main components", () => {
@@ -130,7 +206,10 @@ describe("PortfolioAnalyzer UI", () => {
   })
 
   it("displays loading state during analysis", async () => {
-    mockParseSwissPortfolioPDF.mockReturnValue(new Promise(() => {})) // Never resolve to keep it loading
+    jest.mock("../portfolio-parser", () => ({
+      parsePortfolioCsv: jest.fn(() => new Promise(() => {})), // Never resolve to keep it loading
+    }))
+
     render(<PortfolioAnalyzer />)
 
     fireEvent.click(screen.getByText("Paste Text"))
@@ -144,7 +223,10 @@ describe("PortfolioAnalyzer UI", () => {
   })
 
   it("displays error message on analysis failure", async () => {
-    mockParseSwissPortfolioPDF.mockRejectedValue(new Error("Test error message"))
+    jest.mock("../portfolio-parser", () => ({
+      parsePortfolioCsv: jest.fn(() => Promise.reject(new Error("Test error message"))),
+    }))
+
     render(<PortfolioAnalyzer />)
 
     fireEvent.click(screen.getByText("Paste Text"))
@@ -182,7 +264,9 @@ describe("PortfolioAnalyzer UI", () => {
       trueSectorAllocation: [{ name: "Technology", value: 9000, percentage: 90 }],
       domicileAllocation: [{ name: "US", value: 9000, percentage: 90 }],
     }
-    mockParseSwissPortfolioPDF.mockResolvedValue(mockPortfolioData)
+    jest.mock("../portfolio-parser", () => ({
+      parsePortfolioCsv: jest.fn(() => Promise.resolve(mockPortfolioData)),
+    }))
 
     render(<PortfolioAnalyzer />)
     fireEvent.click(screen.getByText("Paste Text"))
@@ -581,5 +665,84 @@ describe("SwissPortfolioAnalyzer", () => {
 
       expect(screen.getByText("Test error message")).toBeInTheDocument()
     })
+  })
+})
+
+describe("PortfolioAnalyzer Component", () => {
+  it("renders the main title and description", () => {
+    render(<PortfolioAnalyzer />)
+    expect(screen.getByText(/Swiss Portfolio Analyzer/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Upload your Swiss bank PDF\/CSV or paste text to get a detailed portfolio analysis./i),
+    ).toBeInTheDocument()
+  })
+
+  it("shows upload and paste tabs", () => {
+    render(<PortfolioAnalyzer />)
+    expect(screen.getByRole("tab", { name: /Upload File/i })).toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: /Paste Text/i })).toBeInTheDocument()
+  })
+
+  it("disables analyze button initially", () => {
+    render(<PortfolioAnalyzer />)
+    const analyzeButton = screen.getByRole("button", { name: /Analyze Portfolio/i })
+    expect(analyzeButton).toBeDisabled()
+  })
+
+  // Note: Testing file input and text area changes, and then clicking analyze,
+  // would require simulating user interactions and state updates, which is more complex
+  // for a simple unit test. The mock for parsePortfolioCsv helps test the data flow.
+
+  // Example of how you might test the display of data after analysis (simplified)
+  it("displays portfolio data after successful analysis", async () => {
+    const { rerender } = render(<PortfolioAnalyzer />)
+
+    // Simulate text input and trigger analysis
+    const textarea = screen.getByPlaceholderText(/Paste your portfolio data here/i)
+    await (window as any).act(async () => {
+      textarea.focus() // Simulate focusing the textarea
+      textarea.setSelectionRange(0, textarea.value.length) // Select all text
+      textarea.dispatchEvent(new Event("input", { bubbles: true })) // Trigger input event
+      textarea.value = "some csv content" // Set value
+      textarea.dispatchEvent(new Event("change", { bubbles: true })) // Trigger change event
+    })
+
+    const analyzeButton = screen.getByRole("button", { name: /Analyze Portfolio/i })
+    await (window as any).act(async () => {
+      analyzeButton.click()
+    })
+
+    // Check for elements that appear after analysis
+    expect(await screen.findByText(/Total Portfolio Value/i)).toBeInTheDocument()
+    expect(screen.getByText(/CHF 100000.00/i)).toBeInTheDocument()
+    expect(screen.getByText(/Apple Inc./i)).toBeInTheDocument()
+    expect(screen.getByText(/Vanguard FTSE All-World UCITS ETF/i)).toBeInTheDocument()
+    expect(screen.getByText(/Asset Allocation/i)).toBeInTheDocument()
+    expect(screen.getByText(/Currency Allocation/i)).toBeInTheDocument()
+    expect(screen.getByText(/True Country Allocation/i)).toBeInTheDocument()
+    expect(screen.getByText(/True Sector Allocation/i)).toBeInTheDocument()
+    expect(screen.getByText(/Domicile Allocation/i)).toBeInTheDocument()
+  })
+
+  it("displays error message on parsing failure", async () => {
+    const { rerender } = render(<PortfolioAnalyzer />)
+
+    // Simulate text input that causes an error
+    const textarea = screen.getByPlaceholderText(/Paste your portfolio data here/i)
+    await (window as any).act(async () => {
+      textarea.focus() // Simulate focusing the textarea
+      textarea.setSelectionRange(0, textarea.value.length) // Select all text
+      textarea.dispatchEvent(new Event("input", { bubbles: true })) // Trigger input event
+      textarea.value = "error content" // Set value to trigger mock error
+      textarea.dispatchEvent(new Event("change", { bubbles: true })) // Trigger change event
+    })
+
+    const analyzeButton = screen.getByRole("button", { name: /Analyze Portfolio/i })
+    await (window as any).act(async () => {
+      analyzeButton.click()
+    })
+
+    expect(await screen.findByText(/Error:/i)).toBeInTheDocument()
+    expect(screen.getByText(/Simulated parsing error/i)).toBeInTheDocument()
   })
 })

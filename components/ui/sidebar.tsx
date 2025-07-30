@@ -138,10 +138,10 @@ const Sidebar = React.forwardRef<
     variant?: "sidebar" | "floating" | "inset"
     collapsible?: "offcanvas" | "icon" | "none"
     links: {
-      title: string
-      label?: string
-      icon: React.ElementType
       href: string
+      label: string
+      icon: React.ElementType
+      count?: number
     }[]
   }
 >(({ side = "left", variant = "sidebar", collapsible = "offcanvas", className, links, ...props }, ref) => {
@@ -169,12 +169,12 @@ const Sidebar = React.forwardRef<
                       )}
                     >
                       <link.icon className="h-5 w-5" />
-                      <span className="sr-only">{link.title}</span>
+                      <span className="sr-only">{link.label}</span>
                     </Link>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="flex items-center gap-4">
-                    {link.title}
-                    {link.label && <span className="ml-auto text-muted-foreground">{link.label}</span>}
+                    {link.label}
+                    {link.count && <span className="ml-auto text-muted-foreground">{link.count}</span>}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -188,10 +188,10 @@ const Sidebar = React.forwardRef<
                 )}
               >
                 <link.icon className="h-4 w-4" />
-                {link.title}
-                {link.label && (
-                  <span className={cn("ml-auto", pathname === link.href && "text-background dark:text-white")}>
-                    {link.label}
+                {link.label}
+                {link.count && (
+                  <span className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
+                    {link.count}
                   </span>
                 )}
               </Link>
@@ -231,12 +231,12 @@ const Sidebar = React.forwardRef<
                           )}
                         >
                           <link.icon className="h-5 w-5" />
-                          <span className="sr-only">{link.title}</span>
+                          <span className="sr-only">{link.label}</span>
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent side="right" className="flex items-center gap-4">
-                        {link.title}
-                        {link.label && <span className="ml-auto text-muted-foreground">{link.label}</span>}
+                        {link.label}
+                        {link.count && <span className="ml-auto text-muted-foreground">{link.count}</span>}
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -250,10 +250,10 @@ const Sidebar = React.forwardRef<
                     )}
                   >
                     <link.icon className="h-4 w-4" />
-                    {link.title}
-                    {link.label && (
-                      <span className={cn("ml-auto", pathname === link.href && "text-background dark:text-white")}>
-                        {link.label}
+                    {link.label}
+                    {link.count && (
+                      <span className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
+                        {link.count}
                       </span>
                     )}
                   </Link>
@@ -318,12 +318,12 @@ const Sidebar = React.forwardRef<
                         )}
                       >
                         <link.icon className="h-5 w-5" />
-                        <span className="sr-only">{link.title}</span>
+                        <span className="sr-only">{link.label}</span>
                       </Link>
                     </TooltipTrigger>
                     <TooltipContent side="right" className="flex items-center gap-4">
-                      {link.title}
-                      {link.label && <span className="ml-auto text-muted-foreground">{link.label}</span>}
+                      {link.label}
+                      {link.count && <span className="ml-auto text-muted-foreground">{link.count}</span>}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -337,10 +337,10 @@ const Sidebar = React.forwardRef<
                   )}
                 >
                   <link.icon className="h-4 w-4" />
-                  {link.title}
-                  {link.label && (
-                    <span className={cn("ml-auto", pathname === link.href && "text-background dark:text-white")}>
-                      {link.label}
+                  {link.label}
+                  {link.count && (
+                    <span className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
+                      {link.count}
                     </span>
                   )}
                 </Link>

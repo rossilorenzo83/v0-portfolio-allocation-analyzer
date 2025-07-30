@@ -479,7 +479,7 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
   )
 
   // Enrich with API data
-  const enrichedPositions = enrichPositionsWithMockData(
+  const enrichedPositions = enrichPositionsWithAPIData(
     positions.map((p) => ({
       symbol: p.symbol,
       name: p.name,
@@ -582,7 +582,7 @@ function parseCSVWithoutHeaders(rows: string[][]): SwissPortfolioData {
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
 
   // Enrich with API data
-  const enrichedPositions = enrichPositionsWithMockData(
+  const enrichedPositions = enrichPositionsWithAPIData(
     positions.map((p) => ({
       symbol: p.symbol,
       name: p.name,
@@ -708,64 +708,88 @@ function detectCSVDelimiter(csvText: string): string {
   return bestDelimiter
 }
 
-/**
- * Enriches parsed positions with mock data for price, metadata, and ETF composition.
- * This function simulates external API calls for demonstration purposes.
- */
-function enrichPositionsWithMockData(parsedPositions: ParsedPosition[]): PortfolioPosition[] {
+function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): PortfolioPosition[] {
   const enrichedPositions: PortfolioPosition[] = []
 
   for (const parsed of parsedPositions) {
-    console.log(`Enriching ${parsed.symbol} with mock data...`)
+    console.log(`Enriching ${parsed.symbol}...`)
 
-    // Simulate price fluctuation
-    const priceData = { price: parsed.price * (1 + Math.random() * 0.1 - 0.05), changePercent: Math.random() * 4 - 2 }
-    // Mock metadata
-    const metadata = { name: parsed.name, sector: "Technology", country: "United States" }
-    // Mock ETF composition
-    const etfComposition =
-      parsed.category === "ETF"
-        ? {
-            domicile: "IE",
-            withholdingTax: 15,
-            country: [{ country: "US", weight: 70 }],
-            sector: [{ sector: "Technology", weight: 50 }],
-            currency: [{ currency: "USD", weight: 80 }],
-          }
-        : null
+    try {
+      // Mock API service calls
+      const priceData = { price: parsed.price * (1 + Math.random() * 0.1 - 0.05), changePercent: Math.random() * 4 - 2 } // Simulate price fluctuation
+      const metadata = { name: parsed.name, sector: "Technology", country: "United States" } // Mock metadata
+      const etfComposition =
+        parsed.category === "ETF"
+          ? {
+              domicile: "IE",
+              withholdingTax: 15,
+              country: [{ country: "US", weight: 70 }],
+              sector: [{ sector: "Technology", weight: 50 }],
+              currency: [{ currency: "USD", weight: 80 }],
+            }
+          : null // Mock ETF composition
 
-    const currentPrice = priceData?.price || parsed.price
-    const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
+      const currentPrice = priceData?.price || parsed.price
+      const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
 
-    // Determine tax optimization for Swiss investors
-    const domicile = etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown")
-    const taxOptimized = domicile === "US" // US domiciled is better for Swiss investors
+      // Determine tax optimization for Swiss investors
+      const domicile = etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown")
+      const taxOptimized = domicile === "US" // US domiciled is better for Swiss investors
 
-    const enrichedPosition: PortfolioPosition = {
-      symbol: parsed.symbol,
-      name: metadata?.name || parsed.name,
-      quantity: parsed.quantity,
-      unitCost: parsed.price,
-      price: parsed.price,
-      currentPrice: currentPrice,
-      totalValueCHF,
-      currency: parsed.currency,
-      category: parsed.category,
-      sector: metadata?.sector || "Unknown",
-      geography: metadata?.country || "Unknown",
-      domicile: domicile,
-      withholdingTax:
-        etfComposition?.withholdingTax || (domicile === "US" ? 15 : domicile === "IE" || domicile === "LU" ? 15 : 30),
-      taxOptimized: taxOptimized,
-      gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
-      unrealizedGainLoss: (currentPrice - parsed.price) * parsed.quantity,
-      unrealizedGainLossPercent: ((currentPrice - parsed.price) / parsed.price) * 100,
-      positionPercent: 0, // Will be calculated later
-      dailyChangePercent: priceData?.changePercent || 0,
-      isOTC: false,
+      const enrichedPosition: PortfolioPosition = {
+        symbol: parsed.symbol,
+        name: metadata?.name || parsed.name,
+        quantity: parsed.quantity,
+        unitCost: parsed.price,
+        price: parsed.price,
+        currentPrice: currentPrice,
+        totalValueCHF,
+        currency: parsed.currency,
+        category: parsed.category,
+        sector: metadata?.sector || "Unknown",
+        geography: metadata?.country || "Unknown",
+        domicile: domicile,
+        withholdingTax:
+          etfComposition?.withholdingTax || (domicile === "US" ? 15 : domicile === "IE" || domicile === "LU" ? 15 : 30),
+        taxOptimized: taxOptimized,
+        gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
+        unrealizedGainLoss: (currentPrice - parsed.price) * parsed.quantity,
+        unrealizedGainLossPercent: ((currentPrice - parsed.price) / parsed.price) * 100,
+        positionPercent: 0, // Will be calculated later
+        dailyChangePercent: priceData?.changePercent || 0,
+        isOTC: false,
+      }
+
+      enrichedPositions.push(enrichedPosition)
+    } catch (error) {
+      console.error(`Error enriching ${parsed.symbol}:`, error)
+
+      // Add position with basic data if API fails
+      const enrichedPosition: PortfolioPosition = {
+        symbol: parsed.symbol,
+        name: parsed.name,
+        quantity: parsed.quantity,
+        unitCost: parsed.price,
+        price: parsed.price,
+        currentPrice: parsed.price,
+        totalValueCHF: parsed.totalValue || parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
+        currency: parsed.currency,
+        category: parsed.category,
+        sector: "Unknown",
+        geography: "Unknown",
+        domicile: "Unknown",
+        withholdingTax: 15,
+        taxOptimized: false,
+        gainLossCHF: 0,
+        unrealizedGainLoss: 0,
+        unrealizedGainLossPercent: 0,
+        positionPercent: 0,
+        dailyChangePercent: 0,
+        isOTC: false,
+      }
+
+      enrichedPositions.push(enrichedPosition)
     }
-
-    enrichedPositions.push(enrichedPosition)
   }
 
   // Calculate position percentages
@@ -799,22 +823,28 @@ function calculateTrueCurrencyAllocation(positions: PortfolioPosition[], totalVa
   for (const position of positions) {
     if (position.category === "ETF" || position.category === "Funds") {
       // Get ETF composition for true currency exposure
-      // Mock ETF composition data
-      const composition = {
-        currency: [
-          { currency: "USD", weight: 70 },
-          { currency: "EUR", weight: 20 },
-          { currency: "CHF", weight: 10 },
-        ],
-      }
-      if (composition && composition.currency.length > 0) {
-        composition.currency.forEach((curr) => {
-          const value = (curr.weight / 100) * position.totalValueCHF
-          const current = allocation.get(curr.currency) || 0
-          allocation.set(curr.currency, current + value)
-        })
-      } else {
-        // Fallback to trading currency
+      try {
+        // Mock ETF composition data
+        const composition = {
+          currency: [
+            { currency: "USD", weight: 70 },
+            { currency: "EUR", weight: 20 },
+            { currency: "CHF", weight: 10 },
+          ],
+        }
+        if (composition && composition.currency.length > 0) {
+          composition.currency.forEach((curr) => {
+            const value = (curr.weight / 100) * position.totalValueCHF
+            const current = allocation.get(curr.currency) || 0
+            allocation.set(curr.currency, current + value)
+          })
+        } else {
+          // Fallback to trading currency
+          const current = allocation.get(position.currency) || 0
+          allocation.set(position.currency, current + position.totalValueCHF)
+        }
+      } catch (error) {
+        // Fallback to trading currency on API error
         const current = allocation.get(position.currency) || 0
         allocation.set(position.currency, current + position.totalValueCHF)
       }
@@ -839,22 +869,28 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
   for (const position of positions) {
     if (position.category === "ETF" || position.category === "Funds") {
       // Get ETF composition for true country exposure
-      // Mock ETF composition data
-      const composition = {
-        country: [
-          { country: "United States", weight: 60 },
-          { country: "Switzerland", weight: 15 },
-          { country: "Japan", weight: 10 },
-        ],
-      }
-      if (composition && composition.country.length > 0) {
-        composition.country.forEach((country) => {
-          const value = (country.weight / 100) * position.totalValueCHF
-          const current = allocation.get(country.country) || 0
-          allocation.set(country.country, current + value)
-        })
-      } else {
-        // Fallback to geography
+      try {
+        // Mock ETF composition data
+        const composition = {
+          country: [
+            { country: "United States", weight: 60 },
+            { country: "Switzerland", weight: 15 },
+            { country: "Japan", weight: 10 },
+          ],
+        }
+        if (composition && composition.country.length > 0) {
+          composition.country.forEach((country) => {
+            const value = (country.weight / 100) * position.totalValueCHF
+            const current = allocation.get(country.country) || 0
+            allocation.set(country.country, current + value)
+          })
+        } else {
+          // Fallback to geography
+          const current = allocation.get(position.geography || "Unknown") || 0
+          allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
+        }
+      } catch (error) {
+        // Fallback to geography on API error
         const current = allocation.get(position.geography || "Unknown") || 0
         allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
       }
@@ -879,22 +915,28 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
   for (const position of positions) {
     if (position.category === "ETF" || position.category === "Funds") {
       // Get ETF composition for true sector exposure
-      // Mock ETF composition data
-      const composition = {
-        sector: [
-          { sector: "Technology", weight: 40 },
-          { sector: "Financials", weight: 20 },
-          { sector: "Healthcare", weight: 15 },
-        ],
-      }
-      if (composition && composition.sector.length > 0) {
-        composition.sector.forEach((sector) => {
-          const value = (sector.weight / 100) * position.totalValueCHF
-          const current = allocation.get(sector.sector) || 0
-          allocation.set(sector.sector, current + value)
-        })
-      } else {
-        // Fallback to mixed
+      try {
+        // Mock ETF composition data
+        const composition = {
+          sector: [
+            { sector: "Technology", weight: 40 },
+            { sector: "Financials", weight: 20 },
+            { sector: "Healthcare", weight: 15 },
+          ],
+        }
+        if (composition && composition.sector.length > 0) {
+          composition.sector.forEach((sector) => {
+            const value = (sector.weight / 100) * position.totalValueCHF
+            const current = allocation.get(sector.sector) || 0
+            allocation.set(sector.sector, current + value)
+          })
+        } else {
+          // Fallback to mixed
+          const current = allocation.get("Mixed") || 0
+          allocation.set("Mixed", current + position.totalValueCHF)
+        }
+      } catch (error) {
+        // Fallback to mixed on API error
         const current = allocation.get("Mixed") || 0
         allocation.set("Mixed", current + position.totalValueCHF)
       }

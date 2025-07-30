@@ -8,15 +8,17 @@ const createJestConfig = nextJest({
 // Add any custom config to be passed to Jest
 const customJestConfig = {
   setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
-  testEnvironment: "jest-environment-jsdom",
   moduleNameMapper: {
+    // Handle module aliases (this will be automatically configured for you by Next.js, but you can add more here)
     "^@/components/(.*)$": "<rootDir>/components/$1",
     "^@/lib/(.*)$": "<rootDir>/lib/$1",
-    "^@/app/(.*)$": "<rootDir>/app/$1",
     "^@/hooks/(.*)$": "<rootDir>/hooks/$1",
-    "\\.(css|less|scss|sass)$": "identity-obj-proxy",
-    "\\.(gif|ttf|eot|svg|png)$": "<rootDir>/__mocks__/fileMock.js",
+    "^@/app/(.*)$": "<rootDir>/app/$1",
+    "^@/scripts/(.*)$": "<rootDir>/scripts/$1",
+    "^@/etf-data-service$": "<rootDir>/etf-data-service.ts",
+    "^@/portfolio-parser$": "<rootDir>/portfolio-parser.ts",
   },
+  testEnvironment: "jest-environment-jsdom",
   transform: {
     "^.+\\.(ts|tsx)$": "ts-jest",
   },
@@ -25,6 +27,11 @@ const customJestConfig = {
       tsconfig: "tsconfig.json",
     },
   },
+  testPathIgnorePatterns: [
+    "<rootDir>/.next/",
+    "<rootDir>/node_modules/",
+    "<rootDir>/scripts/", // Ignore scripts folder from Jest tests
+  ],
 }
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async

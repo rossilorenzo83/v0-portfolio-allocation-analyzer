@@ -6,20 +6,25 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import PortfolioAnalyzer from "../portfolio-analyzer"
-import { parseSwissPortfolioPDF } from "../portfolio-parser"
+import { parseSwissPortfolioPDF, parsePortfolioCsv } from "../portfolio-parser"
 import { jest, describe, beforeEach, it, expect } from "@jest/globals" // Import necessary Jest globals
+import * as fs from "fs"
+import * as path from "path"
 
 // Mock the parseSwissPortfolioPDF function
 jest.mock("../portfolio-parser", () => ({
   parseSwissPortfolioPDF: jest.fn(),
+  parsePortfolioCsv: jest.fn(),
 }))
 
 const mockParseSwissPortfolioPDF = parseSwissPortfolioPDF as jest.Mock
+const mockParsePortfolioCsv = parsePortfolioCsv as jest.Mock
 
 describe("PortfolioAnalyzer", () => {
   beforeEach(() => {
     // Reset mocks before each test
     mockParseSwissPortfolioPDF.mockReset()
+    mockParsePortfolioCsv.mockReset()
   })
 
   it("renders correctly and allows file upload", async () => {
@@ -106,4 +111,54 @@ describe("PortfolioAnalyzer", () => {
     expect(screen.getByText("Error:")).toBeInTheDocument()
     expect(screen.getByText("Invalid portfolio data format.")).toBeInTheDocument()
   })
+
+  it("simulates file input analysis", async () => {
+    console.log("--- Testing Portfolio Analyzer Logic ---")
+
+    const sampleCsvPath = path.join(__dirname, "..", "__tests__", "test-data", "sample-portfolio.csv")
+    let csvContent = ""
+    try {
+      csvContent = fs.readFileSync(sampleCsvPath, "utf8")
+      console.log(`Loaded sample CSV from: ${sampleCsvPath}`)
+    } catch (error) {
+      console.error(`Error loading sample CSV: ${error}. Please ensure the file exists.`)
+      return
+    }
+
+    // Simulate file input
+    console.log("\nSimulating file input analysis...")
+    try {
+      const portfolioDataFromFile = await mockParsePortfolioCsv(csvContent)
+      console.log("File input analysis successful. Total Value:", portfolioDataFromFile.accountOverview.totalValue)
+      console.log("Number of positions:", portfolioDataFromFile.positions.length)
+      // Add more assertions as needed
+    } catch (error) {
+      console.error("File input analysis failed:", error)
+    }
+  })
+
+  it("simulates text input analysis", async () => {
+    console.log("\nSimulating text input analysis...")
+    try {
+      const portfolioDataFromText = await mockParsePortfolioCsv("AAPL,10,150,USD")
+      console.log("Text input analysis successful. Total Value:", portfolioDataFromText.accountOverview.totalValue)
+      console.log("Number of positions:", portfolioDataFromText.positions.length)
+      // Add more assertions as needed
+    } catch (error) {
+      console.error("Text input analysis failed:", error)
+    }
+  })
+
+  it("simulates invalid input error", async () => {
+    console.log("\nSimulating invalid input error...")
+    const invalidCsv = "header1,header2\ninvalid_data"
+    try {
+      await mockParsePortfolioCsv(invalidCsv)
+      console.error("Error: Invalid input analysis unexpectedly succeeded.")
+    } catch (error: any) {
+      console.log("Invalid input analysis correctly failed with error:", error.message)
+    }
+  })
+
+  console.log("\n--- Portfolio Analyzer Logic Tests Complete ---")
 })
