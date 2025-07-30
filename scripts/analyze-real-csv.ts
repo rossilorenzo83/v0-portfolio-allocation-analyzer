@@ -1,121 +1,113 @@
 // Script to analyze the real CSV file structure
 async function analyzeRealCSV() {
   try {
-    console.log("Fetching CSV file...")
-    const response = await fetch(
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_09072025_09_30-8BYtc8aZsR9VuFmgEixezIFg2JyFVD.csv",
-    )
+    console.log("🔍 Analyzing real CSV file structure...")
+
+    const csvUrl =
+      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_09072025_09_30-8BYtc8aZsR9VuFmgEixezIFg2JyFVD.csv"
+
+    console.log("📥 Fetching CSV file...")
+    const response = await fetch(csvUrl)
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error(`Failed to fetch CSV: ${response.status} ${response.statusText}`)
     }
 
     const csvText = await response.text()
-    console.log("CSV file fetched successfully")
-    console.log("File size:", csvText.length, "characters")
+    console.log(`📊 CSV file size: ${csvText.length} characters`)
 
     // Split into lines
     const lines = csvText.split(/\r?\n/)
-    console.log("Total lines:", lines.length)
+    console.log(`📋 Total lines: ${lines.length}`)
 
     // Analyze first 20 lines
-    console.log("\n=== FIRST 20 LINES ===")
+    console.log("\n🔍 First 20 lines analysis:")
     lines.slice(0, 20).forEach((line, index) => {
-      console.log(`Line ${index + 1}: ${line}`)
+      console.log(`Line ${index + 1}: ${line.substring(0, 100)}${line.length > 100 ? "..." : ""}`)
     })
 
-    // Find header line
-    let headerLineIndex = -1
-    let headerLine = ""
+    // Detect delimiter
+    const delimiters = [",", ";", "\t", "|"]
+    const firstDataLine =
+      lines.find((line) => (line.trim() && line.includes("Symbole")) || line.includes("Symbol")) || lines[0]
+
+    console.log("\n🔧 Delimiter analysis:")
+    delimiters.forEach((delimiter) => {
+      const count = (firstDataLine.match(new RegExp(`\\${delimiter}`, "g")) || []).length
+      console.log(`${delimiter}: ${count} occurrences`)
+    })
+
+    // Find header row
+    let headerRowIndex = -1
+    let headers: string[] = []
 
     for (let i = 0; i < Math.min(lines.length, 50); i++) {
       const line = lines[i]
       if (
-        line.includes("Symbole") ||
-        line.includes("Symbol") ||
-        line.includes("Quantité") ||
-        line.includes("Quantity") ||
-        line.includes("Prix") ||
-        line.includes("Price")
+        line.toLowerCase().includes("symbole") ||
+        line.toLowerCase().includes("symbol") ||
+        line.toLowerCase().includes("quantité") ||
+        line.toLowerCase().includes("quantity")
       ) {
-        headerLineIndex = i
-        headerLine = line
+        headerRowIndex = i
+        // Try different delimiters
+        const semicolonSplit = line.split(";")
+        const commaSplit = line.split(",")
+        headers = semicolonSplit.length > commaSplit.length ? semicolonSplit : commaSplit
         break
       }
     }
 
-    if (headerLineIndex >= 0) {
-      console.log(`\n=== HEADER FOUND AT LINE ${headerLineIndex + 1} ===`)
-      console.log("Header:", headerLine)
-
-      // Detect delimiter
-      const delimiters = [",", ";", "\t", "|"]
-      const delimiterCounts = delimiters.map((d) => ({
-        delimiter: d,
-        count: (headerLine.match(new RegExp(`\\${d}`, "g")) || []).length,
-      }))
-
-      const bestDelimiter = delimiterCounts.reduce((a, b) => (b.count > a.count ? b : a))
-      console.log("Delimiter analysis:", delimiterCounts)
-      console.log("Best delimiter:", bestDelimiter.delimiter)
-
-      // Split header by delimiter
-      const headers = headerLine.split(bestDelimiter.delimiter).map((h) => h.trim().replace(/"/g, ""))
-      console.log("Headers:", headers)
-
-      // Analyze data rows
-      console.log("\n=== SAMPLE DATA ROWS ===")
-      const dataStartIndex = headerLineIndex + 1
-      const sampleRows = lines
-        .slice(dataStartIndex, dataStartIndex + 10)
-        .filter((line) => line.trim() && !line.startsWith("Total") && !line.startsWith("Sous-total"))
-
-      sampleRows.forEach((row, index) => {
-        const cells = row.split(bestDelimiter.delimiter).map((c) => c.trim().replace(/"/g, ""))
-        console.log(`Data row ${index + 1}:`, cells)
-      })
-
-      // Look for total values
-      console.log("\n=== LOOKING FOR TOTALS ===")
-      lines.forEach((line, index) => {
-        if (
-          line.toLowerCase().includes("total") ||
-          line.toLowerCase().includes("valeur") ||
-          line.toLowerCase().includes("solde")
-        ) {
-          console.log(`Line ${index + 1}: ${line}`)
-        }
-      })
-    } else {
-      console.log("No header line found in first 50 lines")
-
-      // Look for any lines with numbers that might be totals
-      console.log("\n=== LOOKING FOR NUMERIC PATTERNS ===")
-      lines.slice(0, 50).forEach((line, index) => {
-        if (line.match(/\d{3}['\s,]\d{3}/) || line.match(/\d{6,}/)) {
-          console.log(`Line ${index + 1}: ${line}`)
-        }
+    if (headerRowIndex >= 0) {
+      console.log(`\n📋 Header found at line ${headerRowIndex + 1}:`)
+      headers.forEach((header, index) => {
+        console.log(`Column ${index + 1}: "${header.trim()}"`)
       })
     }
 
-    return {
-      totalLines: lines.length,
-      headerLineIndex,
-      headerLine,
-      sampleLines: lines.slice(0, 20),
+    // Analyze data rows
+    console.log("\n📊 Sample data rows:")
+    const dataStartIndex = headerRowIndex + 1
+    for (let i = dataStartIndex; i < Math.min(dataStartIndex + 10, lines.length); i++) {
+      if (lines[i] && lines[i].trim()) {
+        const delimiter = headers.length > 0 && lines[i].split(";").length === headers.length ? ";" : ","
+        const cells = lines[i].split(delimiter)
+        console.log(`\nData row ${i - dataStartIndex + 1}:`)
+        cells.forEach((cell, index) => {
+          if (index < headers.length) {
+            console.log(`  ${headers[index]}: "${cell.trim()}"`)
+          }
+        })
+      }
     }
+
+    // Look for total values
+    console.log("\n💰 Looking for total values:")
+    lines.forEach((line, index) => {
+      if (line.toLowerCase().includes("total") && (line.includes("CHF") || line.match(/\d{3,}/))) {
+        console.log(`Line ${index + 1}: ${line}`)
+      }
+    })
+
+    // Analyze number formats
+    console.log("\n🔢 Number format analysis:")
+    const numberSamples = []
+    lines.slice(headerRowIndex + 1, headerRowIndex + 20).forEach((line) => {
+      if (line.trim()) {
+        const matches = line.match(/\d+['\s,.]?\d*['\s,.]?\d*/g)
+        if (matches) {
+          numberSamples.push(...matches.slice(0, 3))
+        }
+      }
+    })
+
+    console.log("Sample numbers found:", numberSamples.slice(0, 10))
+
+    console.log("\n✅ CSV analysis complete!")
   } catch (error) {
-    console.error("Error analyzing CSV:", error)
-    throw error
+    console.error("❌ Error analyzing CSV:", error)
   }
 }
 
 // Run the analysis
 analyzeRealCSV()
-  .then((result) => {
-    console.log("\n=== ANALYSIS COMPLETE ===")
-    console.log("Result:", result)
-  })
-  .catch((error) => {
-    console.error("Analysis failed:", error)
-  })

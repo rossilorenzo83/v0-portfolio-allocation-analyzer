@@ -29,26 +29,29 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
     const data = await response.json()
     console.log(`Raw search data for ${symbol}:`, JSON.stringify(data, null, 2))
 
-    if (!data.quotes?.[0]) {
+    const quotes = data.quotes || []
+    if (quotes.length === 0) {
       throw new Error("No search results found")
     }
 
-    const quote = data.quotes[0]
+    const quote = quotes[0]
 
-    const metadata = {
-      symbol: quote.symbol || symbol,
-      name: quote.longname || quote.shortname || symbol,
-      sector: quote.sector || "Unknown",
+    const assetMetadata = {
+      symbol: symbol.toUpperCase(),
+      name: quote.longname || quote.shortname || symbol.toUpperCase(),
+      sector: quote.sector || mapSector(symbol) || "Unknown",
       industry: quote.industry || "Unknown",
-      country: quote.country || "Unknown",
-      currency: quote.currency || "USD",
-      exchange: quote.exchange || "Unknown",
-      quoteType: quote.quoteType || "EQUITY",
+      country: quote.country || mapCountry(symbol) || "Unknown",
+      currency: quote.currency || mapCurrency(symbol) || "USD",
+      exchange: quote.exchange || quote.fullExchangeName || "Unknown",
+      quoteType: quote.quoteType || (isETF(symbol) ? "ETF" : "EQUITY"),
+      marketCap: quote.marketCap || 0,
+      regularMarketPrice: quote.regularMarketPrice || 0,
     }
 
-    console.log(`Processed metadata for ${symbol}:`, metadata)
+    console.log(`Processed search result for ${symbol}:`, assetMetadata)
 
-    return NextResponse.json(metadata, {
+    return NextResponse.json(assetMetadata, {
       headers: {
         "Cache-Control": "public, max-age=3600", // 1 hour
         "Access-Control-Allow-Origin": "*",
@@ -57,19 +60,21 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
   } catch (error) {
     console.error(`Error searching for ${symbol}:`, error)
 
-    // Return fallback metadata
-    const fallbackMetadata = {
-      symbol: symbol,
-      name: symbol,
-      sector: guessSector(symbol),
+    // Return estimated metadata
+    const estimatedMetadata = {
+      symbol: symbol.toUpperCase(),
+      name: getKnownName(symbol) || symbol.toUpperCase(),
+      sector: mapSector(symbol) || "Unknown",
       industry: "Unknown",
-      country: guessCountry(symbol),
-      currency: guessCurrency(symbol),
-      exchange: "Unknown",
-      quoteType: "EQUITY",
+      country: mapCountry(symbol) || "Unknown",
+      currency: mapCurrency(symbol) || "USD",
+      exchange: mapExchange(symbol) || "Unknown",
+      quoteType: isETF(symbol) ? "ETF" : "EQUITY",
+      marketCap: 0,
+      regularMarketPrice: 0,
     }
 
-    return NextResponse.json(fallbackMetadata, {
+    return NextResponse.json(estimatedMetadata, {
       headers: {
         "Cache-Control": "public, max-age=300", // 5 minutes for fallback
         "Access-Control-Allow-Origin": "*",
@@ -78,40 +83,231 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
   }
 }
 
-function guessSector(symbol: string): string {
-  const techSymbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META"]
-  const financeSymbols = ["JPM", "BAC", "WFC", "GS", "MS", "C"]
-  const healthSymbols = ["JNJ", "PFE", "UNH", "ABBV", "MRK", "TMO", "NOVN", "ROG"]
-  const consumerSymbols = ["NESN", "PG", "KO", "PEP"]
+function mapSector(symbol: string): string | null {
+  const sectorMap: Record<string, string> = {
+    // Technology
+    AAPL: "Technology",
+    MSFT: "Technology",
+    GOOGL: "Technology",
+    AMZN: "Technology",
+    NVDA: "Technology",
+    META: "Technology",
+    TSLA: "Technology",
+    ASML: "Technology",
+    SAP: "Technology",
 
-  const upperSymbol = symbol.toUpperCase()
+    // Healthcare
+    NOVN: "Healthcare",
+    ROG: "Healthcare",
+    JNJ: "Healthcare",
+    PFE: "Healthcare",
+    UNH: "Healthcare",
 
-  if (techSymbols.includes(upperSymbol)) return "Technology"
-  if (financeSymbols.includes(upperSymbol)) return "Financial Services"
-  if (healthSymbols.includes(upperSymbol)) return "Healthcare"
-  if (consumerSymbols.includes(upperSymbol)) return "Consumer Staples"
+    // Consumer Staples
+    NESN: "Consumer Staples",
+    PG: "Consumer Staples",
+    KO: "Consumer Staples",
 
-  return "Unknown"
+    // Financial Services
+    JPM: "Financial Services",
+    BAC: "Financial Services",
+    WFC: "Financial Services",
+    UBSG: "Financial Services",
+    CSGN: "Financial Services",
+
+    // Industrials
+    ABBN: "Industrials",
+    GEBN: "Industrials",
+    SCMN: "Industrials",
+
+    // Consumer Discretionary
+    UHR: "Consumer Discretionary",
+    SREN: "Consumer Discretionary",
+
+    // Materials
+    GIVN: "Materials",
+    HOLN: "Materials",
+  }
+
+  return sectorMap[symbol.toUpperCase()] || null
 }
 
-function guessCountry(symbol: string): string {
-  // Swiss symbols
-  if (symbol.match(/^(NESN|NOVN|ROG|UHR|ABBN|LONN|GIVN|SLHN|SREN|BAER)$/)) return "Switzerland"
+function mapCountry(symbol: string): string | null {
+  const countryMap: Record<string, string> = {
+    // Swiss symbols
+    NESN: "Switzerland",
+    NOVN: "Switzerland",
+    ROG: "Switzerland",
+    UHR: "Switzerland",
+    ABBN: "Switzerland",
+    LONN: "Switzerland",
+    GIVN: "Switzerland",
+    CFR: "Switzerland",
+    SREN: "Switzerland",
+    GEBN: "Switzerland",
+    SLHN: "Switzerland",
+    AMS: "Switzerland",
+    SCMN: "Switzerland",
+    UBSG: "Switzerland",
+    CSGN: "Switzerland",
+    BAER: "Switzerland",
+    ZURN: "Switzerland",
+    ADEN: "Switzerland",
+    HOLN: "Switzerland",
+    PGHN: "Switzerland",
 
-  // European symbols
-  if (symbol.match(/^(ASML|SAP|SAN|INGA|OR|MC|AI|DTE|SU|RDSA)$/)) return "Europe"
+    // European ETFs (domiciled in Ireland/Luxembourg)
+    VWRL: "Ireland",
+    VWCE: "Ireland",
+    IS3N: "Ireland",
+    IWDA: "Ireland",
+    EUNL: "Ireland",
 
-  // Default to US for most symbols
-  return "United States"
+    // European symbols
+    ASML: "Netherlands",
+    SAP: "Germany",
+    SAN: "Spain",
+    INGA: "Netherlands",
+
+    // US symbols
+    AAPL: "United States",
+    MSFT: "United States",
+    GOOGL: "United States",
+    AMZN: "United States",
+    NVDA: "United States",
+    META: "United States",
+    TSLA: "United States",
+  }
+
+  return countryMap[symbol.toUpperCase()] || null
 }
 
-function guessCurrency(symbol: string): string {
-  // Swiss symbols
-  if (symbol.match(/^(NESN|NOVN|ROG|UHR|ABBN|LONN|GIVN|SLHN|SREN|BAER)$/)) return "CHF"
+function mapCurrency(symbol: string): string | null {
+  const currencyMap: Record<string, string> = {
+    // Swiss symbols
+    NESN: "CHF",
+    NOVN: "CHF",
+    ROG: "CHF",
+    UHR: "CHF",
+    ABBN: "CHF",
+    LONN: "CHF",
+    GIVN: "CHF",
+    CFR: "CHF",
+    SREN: "CHF",
+    GEBN: "CHF",
+    SLHN: "CHF",
+    AMS: "CHF",
+    SCMN: "CHF",
+    UBSG: "CHF",
+    CSGN: "CHF",
+    BAER: "CHF",
+    ZURN: "CHF",
+    ADEN: "CHF",
+    HOLN: "CHF",
+    PGHN: "CHF",
 
-  // European symbols
-  if (symbol.match(/^(ASML|SAP|SAN|INGA|OR|MC|AI|DTE|SU|RDSA)$/)) return "EUR"
+    // European ETFs (trading currency)
+    VWRL: "CHF", // When traded in Switzerland
+    VWCE: "EUR",
+    IS3N: "CHF", // When traded in Switzerland
+    IWDA: "EUR",
+    EUNL: "EUR",
 
-  // Default to USD
-  return "USD"
+    // European symbols
+    ASML: "EUR",
+    SAP: "EUR",
+    SAN: "EUR",
+    INGA: "EUR",
+  }
+
+  return currencyMap[symbol.toUpperCase()] || null
+}
+
+function mapExchange(symbol: string): string | null {
+  const exchangeMap: Record<string, string> = {
+    // Swiss symbols
+    NESN: "SWX Swiss Exchange",
+    NOVN: "SWX Swiss Exchange",
+    ROG: "SWX Swiss Exchange",
+    UHR: "SWX Swiss Exchange",
+    ABBN: "SWX Swiss Exchange",
+    LONN: "SWX Swiss Exchange",
+
+    // European ETFs
+    VWRL: "London Stock Exchange",
+    VWCE: "Xetra",
+    IS3N: "SWX Swiss Exchange",
+    IWDA: "London Stock Exchange",
+    EUNL: "Xetra",
+
+    // European symbols
+    ASML: "Euronext Amsterdam",
+    SAP: "Xetra",
+
+    // US symbols
+    AAPL: "NASDAQ",
+    MSFT: "NASDAQ",
+    GOOGL: "NASDAQ",
+    AMZN: "NASDAQ",
+    NVDA: "NASDAQ",
+    META: "NASDAQ",
+    TSLA: "NASDAQ",
+  }
+
+  return exchangeMap[symbol.toUpperCase()] || null
+}
+
+function isETF(symbol: string): boolean {
+  const etfSymbols = ["VWRL", "VWCE", "IS3N", "IWDA", "EUNL", "VTI", "VXUS", "VEA", "VWO"]
+  return etfSymbols.includes(symbol.toUpperCase())
+}
+
+function getKnownName(symbol: string): string | null {
+  const nameMap: Record<string, string> = {
+    // US stocks
+    AAPL: "Apple Inc.",
+    MSFT: "Microsoft Corporation",
+    GOOGL: "Alphabet Inc.",
+    AMZN: "Amazon.com Inc.",
+    NVDA: "NVIDIA Corporation",
+    META: "Meta Platforms Inc.",
+    TSLA: "Tesla Inc.",
+
+    // Swiss stocks
+    NESN: "Nestlé SA",
+    NOVN: "Novartis AG",
+    ROG: "Roche Holding AG",
+    UHR: "The Swatch Group AG",
+    ABBN: "ABB Ltd",
+    LONN: "Lonza Group AG",
+    GIVN: "Givaudan SA",
+    CFR: "Compagnie Financière Richemont SA",
+    SREN: "Swiss Re AG",
+    GEBN: "Geberit AG",
+    SLHN: "Sonova Holding AG",
+    AMS: "AMS AG",
+    SCMN: "Schindler Holding AG",
+    UBSG: "UBS Group AG",
+    CSGN: "Credit Suisse Group AG",
+    BAER: "Julius Baer Group Ltd",
+    ZURN: "Zurich Insurance Group AG",
+    ADEN: "Adecco Group AG",
+    HOLN: "Holcim Ltd",
+    PGHN: "Partners Group Holding AG",
+
+    // European stocks
+    ASML: "ASML Holding NV",
+    SAP: "SAP SE",
+
+    // ETFs
+    VWRL: "Vanguard FTSE All-World UCITS ETF",
+    VWCE: "Vanguard FTSE All-World UCITS ETF Accumulating",
+    IS3N: "iShares Core MSCI World UCITS ETF",
+    IWDA: "iShares Core MSCI World UCITS ETF",
+    EUNL: "iShares Core MSCI World UCITS ETF EUR Hedged",
+    VTI: "Vanguard Total Stock Market ETF",
+    VXUS: "Vanguard Total International Stock ETF",
+  }
+
+  return nameMap[symbol.toUpperCase()] || null
 }
