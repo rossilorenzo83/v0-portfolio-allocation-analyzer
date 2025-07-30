@@ -1,4 +1,4 @@
-import { YAHOO_FINANCE_API_KEY, YAHOO_FINANCE_API_BASE_URL } from "./config"
+import { YAHOO_FINANCE_API_BASE_URL } from "./config"
 
 interface StockPrice {
   symbol: string
@@ -16,6 +16,7 @@ interface AssetMetadata {
   country: string
   currency: string
   type: string
+  exchange: string
 }
 
 interface ETFComposition {
@@ -52,6 +53,11 @@ interface YahooEtfHolding {
   holdingName: string
   holdingPercent: number
   // Add other fields as needed
+}
+
+interface SearchResult {
+  symbol: string
+  name: string
 }
 
 // European ETF symbol mapping for Yahoo Finance
@@ -245,6 +251,7 @@ class APIService {
           country: data.country || this.inferCountry(resolvedSymbol),
           currency: data.currency || this.inferCurrency(resolvedSymbol),
           type: data.type || this.inferAssetType(symbol),
+          exchange: data.exchange || this.inferExchange(symbol),
         }
 
         this.setCache(cacheKey, result, 1440) // Cache for 24 hours
@@ -301,6 +308,21 @@ class APIService {
     const fallback = this.getFallbackETFComposition(symbol)
     this.setCache(cacheKey, fallback, 1440)
     return fallback
+  }
+
+  async searchSymbol(query: string): Promise<SearchResult[]> {
+    try {
+      const data = await fetch(`${this.baseUrl}/search/${query}`)
+      if (data.ok) {
+        const result = await data.json()
+        console.log(`✅ Search results for ${query}:`, result)
+        return result ? [result] : []
+      }
+    } catch (error) {
+      console.error(`Error searching for symbol ${query}:`, error)
+    }
+
+    return []
   }
 
   private processCurrencyData(currencies: any[]): Array<{ currency: string; weight: number }> {
@@ -404,6 +426,16 @@ class APIService {
     return "Stock"
   }
 
+  private inferExchange(symbol: string): string {
+    if (symbol.endsWith(".L")) return "London"
+    if (symbol.endsWith(".DE")) return "Frankfurt"
+    if (symbol.endsWith(".AS")) return "Amsterdam"
+    if (symbol.endsWith(".MI")) return "Milan"
+    if (symbol.endsWith(".PA")) return "Paris"
+    if (symbol.endsWith(".SW")) return "Zurich"
+    return "New York"
+  }
+
   private inferDomicile(symbol: string): string {
     // US ETFs
     if (symbol.match(/^(VTI|VXUS|VEA|VWO|SPY|QQQ|IVV)$/)) {
@@ -462,6 +494,7 @@ class APIService {
       country: this.inferCountry(symbol),
       currency: this.inferCurrency(symbol),
       type: this.inferAssetType(symbol),
+      exchange: this.inferExchange(symbol),
     }
   }
 
@@ -606,29 +639,17 @@ class APIService {
 
 export const apiService = new APIService()
 
-async function fetchYahooFinanceApi<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const url = new URL(`${YAHOO_FINANCE_API_BASE_URL}${path}`)
-  if (params) {
-    Object.keys(params).forEach((key) => url.searchParams.append(key, params[key]))
-  }
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      "X-API-KEY": YAHOO_FINANCE_API_KEY,
-    },
-  })
-
+const fetchApi = async (path: string) => {
+  const response = await fetch(`${YAHOO_FINANCE_API_BASE_URL}${path}`)
   if (!response.ok) {
-    const errorBody = await response.text()
-    throw new Error(`Yahoo Finance API request failed: ${response.status} ${response.statusText} - ${errorBody}`)
+    throw new Error(`Failed to fetch data from ${path}: ${response.statusText}`)
   }
-
   return response.json()
 }
 
 export async function getQuote(symbol: string): Promise<YahooQuoteResult | null> {
   try {
-    const data = await fetchYahooFinanceApi<{ quoteResponse: { result: YahooQuoteResult[] } }>(`/quote/${symbol}`)
+    const data = await fetchApi(`/quote/${symbol}`)
     return data.quoteResponse?.result?.[0] || null
   } catch (error) {
     console.error(`Error fetching quote for ${symbol}:`, error)
@@ -636,9 +657,9 @@ export async function getQuote(symbol: string): Promise<YahooQuoteResult | null>
   }
 }
 
-export async function searchSymbol(query: string): Promise<YahooSearchResult[]> {
+export async function searchSymbol(query: string): Promise<SearchResult[]> {
   try {
-    const data = await fetchYahooFinanceApi<{ quotes: YahooSearchResult[] }>(`/search/${query}`)
+    const data = await fetchApi(`/search/${query}`)
     return data.quotes || []
   } catch (error) {
     console.error(`Error searching for ${query}:`, error)
@@ -650,7 +671,7 @@ export async function getEtfHoldings(symbol: string): Promise<YahooEtfHolding[]>
   try {
     // Note: Yahoo Finance API's /v6/finance/quote/detail endpoint often contains fundHoldings
     // We are proxying to this endpoint via our Next.js API route.
-    const data = await fetchYahooFinanceApi<{ fundHoldings?: { holdings: YahooEtfHolding[] } }>(`/etf/${symbol}`)
+    const data = await fetchApi(`/etf/${symbol}`)
     return data.fundHoldings?.holdings || []
   } catch (error) {
     console.error(`Error fetching ETF holdings for ${symbol}:`, error)

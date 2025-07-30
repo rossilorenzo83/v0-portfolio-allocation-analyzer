@@ -1,14 +1,15 @@
 import type React from "react"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { jest } from "@jest/globals"
-import SwissPortfolioAnalyzer from "../swiss-portfolio-analyzer"
-import PortfolioAnalyzer from "../portfolio-analyzer" // Adjust path as necessary
-import { parseSwissPortfolioPDF, type SwissPortfolioData } from "../portfolio-parser"
+import PortfolioAnalyzer from "../portfolio-analyzer"
+import { parseSwissPortfolioPDF } from "../portfolio-parser"
 
-// Mock the portfolio parser
+// Mock the parseSwissPortfolioPDF function
 jest.mock("../portfolio-parser", () => ({
   parseSwissPortfolioPDF: jest.fn(),
 }))
+
+const mockParseSwissPortfolioPDF = parseSwissPortfolioPDF as jest.Mock
 
 // Mock recharts components
 jest.mock("recharts", () => ({
@@ -44,7 +45,7 @@ jest.mock("@/components/ui/chart", () => ({
   ChartLegendContent: () => <div data-testid="chart-legend-content" />,
 }))
 
-const mockPortfolioData: SwissPortfolioData = {
+const mockPortfolioData = {
   accountOverview: {
     totalValue: 100000,
     cashBalance: 10000,
@@ -106,6 +107,121 @@ describe("PortfolioAnalyzer", () => {
   // This would require mocking the file input and the parsing logic.
 })
 
+describe("PortfolioAnalyzer UI", () => {
+  beforeEach(() => {
+    // Reset mocks before each test
+    mockParseSwissPortfolioPDF.mockReset()
+  })
+
+  it("renders the main components", () => {
+    render(<PortfolioAnalyzer />)
+    expect(screen.getByText("Swiss Portfolio Analyzer")).toBeInTheDocument()
+    expect(screen.getByText("Upload File")).toBeInTheDocument()
+    expect(screen.getByText("Paste Text")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Analyze Portfolio" })).toBeInTheDocument()
+  })
+
+  it("allows switching between upload and paste tabs", () => {
+    render(<PortfolioAnalyzer />)
+    fireEvent.click(screen.getByText("Paste Text"))
+    expect(screen.getByPlaceholderText(/paste your portfolio data here/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByText("Upload File"))
+    expect(screen.getByLabelText(/drag and drop your file here/i)).toBeInTheDocument()
+  })
+
+  it("displays loading state during analysis", async () => {
+    mockParseSwissPortfolioPDF.mockReturnValue(new Promise(() => {})) // Never resolve to keep it loading
+    render(<PortfolioAnalyzer />)
+
+    fireEvent.click(screen.getByText("Paste Text"))
+    fireEvent.change(screen.getByPlaceholderText(/paste your portfolio data here/i), {
+      target: { value: "dummy data" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Analyze Portfolio" }))
+
+    expect(screen.getByText("Analyzing...")).toBeInTheDocument()
+    expect(screen.getByRole("progressbar")).toBeInTheDocument()
+  })
+
+  it("displays error message on analysis failure", async () => {
+    mockParseSwissPortfolioPDF.mockRejectedValue(new Error("Test error message"))
+    render(<PortfolioAnalyzer />)
+
+    fireEvent.click(screen.getByText("Paste Text"))
+    fireEvent.change(screen.getByPlaceholderText(/paste your portfolio data here/i), {
+      target: { value: "dummy data" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Analyze Portfolio" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("Analysis Failed")).toBeInTheDocument()
+      expect(screen.getByText("Test error message")).toBeInTheDocument()
+    })
+  })
+
+  it("displays portfolio data after successful analysis", async () => {
+    const mockPortfolioData = {
+      accountOverview: { totalValue: 10000, securitiesValue: 9000, cashBalance: 1000 },
+      positions: [
+        {
+          symbol: "AAPL",
+          name: "Apple Inc.",
+          quantity: 10,
+          price: 150,
+          currency: "USD",
+          totalValueCHF: 1350,
+          category: "Actions",
+          domicile: "US",
+          positionPercent: 15,
+          dailyChangePercent: 1.2,
+        },
+      ],
+      assetAllocation: [{ name: "Actions", value: 9000, percentage: 90 }],
+      currencyAllocation: [{ name: "USD", value: 9000, percentage: 90 }],
+      trueCountryAllocation: [{ name: "US", value: 9000, percentage: 90 }],
+      trueSectorAllocation: [{ name: "Technology", value: 9000, percentage: 90 }],
+      domicileAllocation: [{ name: "US", value: 9000, percentage: 90 }],
+    }
+    mockParseSwissPortfolioPDF.mockResolvedValue(mockPortfolioData)
+
+    render(<PortfolioAnalyzer />)
+    fireEvent.click(screen.getByText("Paste Text"))
+    fireEvent.change(screen.getByPlaceholderText(/paste your portfolio data here/i), {
+      target: { value: "dummy data" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Analyze Portfolio" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("Analysis Complete")).toBeInTheDocument()
+    })
+
+    // Check Account Overview
+    expect(screen.getByText("CHF 10,000.00")).toBeInTheDocument()
+    expect(screen.getByText("CHF 9,000.00")).toBeInTheDocument()
+    expect(screen.getByText("CHF 1,000.00")).toBeInTheDocument()
+
+    // Check Positions Table
+    expect(screen.getByText("Portfolio Positions")).toBeInTheDocument()
+    expect(screen.getByText("AAPL")).toBeInTheDocument()
+    expect(screen.getByText("Apple Inc.")).toBeInTheDocument()
+    expect(screen.getByText("10.00")).toBeInTheDocument() // Quantity
+    expect(screen.getByText("150.00")).toBeInTheDocument() // Price
+    expect(screen.getByText("USD")).toBeInTheDocument()
+    expect(screen.getByText("1,350.00")).toBeInTheDocument() // Total Value CHF
+    expect(screen.getByText("Actions")).toBeInTheDocument()
+    expect(screen.getByText("US")).toBeInTheDocument() // Domicile
+    expect(screen.getByText("15.00%")).toBeInTheDocument() // Position %
+    expect(screen.getByText("1.20%")).toBeInTheDocument() // Daily Change %
+
+    // Check Allocation Charts (by title)
+    expect(screen.getByText("Asset Allocation")).toBeInTheDocument()
+    expect(screen.getByText("Currency Allocation")).toBeInTheDocument()
+    expect(screen.getByText("True Country Allocation")).toBeInTheDocument()
+    expect(screen.getByText("True Sector Allocation")).toBeInTheDocument()
+    expect(screen.getByText("Domicile Allocation")).toBeInTheDocument()
+  })
+})
+
 describe("SwissPortfolioAnalyzer", () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -113,14 +229,14 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Initial State", () => {
     test("renders upload interface when no data provided", () => {
-      render(<SwissPortfolioAnalyzer />)
+      render(<PortfolioAnalyzer />)
 
       expect(screen.getByText("Swiss Portfolio Analyzer")).toBeInTheDocument()
       expect(screen.getByText(/Upload your Swiss bank portfolio statement/)).toBeInTheDocument()
     })
 
     test("renders portfolio analysis when data provided", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
       expect(screen.getByText(/Comprehensive analysis of your Swiss portfolio with 1 positions/)).toBeInTheDocument()
@@ -129,7 +245,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Account Overview Cards", () => {
     test("displays correct account overview values", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByText("CHF 100,000.00")).toBeInTheDocument() // Total Value
       expect(screen.getByText("CHF 90,000.00")).toBeInTheDocument() // Securities Value
@@ -138,7 +254,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("displays correct icons in overview cards", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByText("Total Value")).toBeInTheDocument()
       expect(screen.getByText("Securities Value")).toBeInTheDocument()
@@ -149,7 +265,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Tab Navigation", () => {
     test("renders all tab triggers", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument()
       expect(screen.getByRole("tab", { name: "Positions" })).toBeInTheDocument()
@@ -160,7 +276,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("switches between tabs correctly", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       // Click on Positions tab
       fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
@@ -178,7 +294,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Overview Tab", () => {
     test("renders pie charts for asset and currency allocation", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByText("Asset Allocation")).toBeInTheDocument()
       expect(screen.getByText("Currency Allocation")).toBeInTheDocument()
@@ -186,7 +302,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("renders bar charts for sectors and countries", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByText("Top 10 Sectors")).toBeInTheDocument()
       expect(screen.getByText("Top 10 Countries")).toBeInTheDocument()
@@ -195,7 +311,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Positions Tab", () => {
     test("displays positions table with correct data", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
 
@@ -206,7 +322,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("sorts positions by value descending", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
 
@@ -219,7 +335,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("displays correct badges for currency and category", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
 
@@ -232,7 +348,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Asset Allocation Tab", () => {
     test("displays asset allocation breakdown", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Asset Allocation" }))
 
@@ -246,7 +362,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Geography Tab", () => {
     test("displays geographic distribution", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Geography" }))
 
@@ -260,7 +376,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Sectors Tab", () => {
     test("displays sector analysis", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Sectors" }))
 
@@ -275,7 +391,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Tax Analysis Tab", () => {
     test("displays tax optimization summary", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Tax Analysis" }))
 
@@ -288,7 +404,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("shows correct tax optimization counts", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Tax Analysis" }))
 
@@ -300,7 +416,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("displays tax optimization recommendations", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Tax Analysis" }))
 
@@ -318,7 +434,7 @@ describe("SwissPortfolioAnalyzer", () => {
       const mockParseSwissPortfolioPDF = parseSwissPortfolioPDF as jest.MockedFunction<typeof parseSwissPortfolioPDF>
       mockParseSwissPortfolioPDF.mockResolvedValueOnce(mockPortfolioData)
 
-      render(<SwissPortfolioAnalyzer />)
+      render(<PortfolioAnalyzer />)
 
       // Initially shows upload interface
       expect(screen.getByText("Swiss Portfolio Analyzer")).toBeInTheDocument()
@@ -331,7 +447,7 @@ describe("SwissPortfolioAnalyzer", () => {
       const mockParseSwissPortfolioPDF = parseSwissPortfolioPDF as jest.MockedFunction<typeof parseSwissPortfolioPDF>
       mockParseSwissPortfolioPDF.mockRejectedValueOnce(new Error("Invalid file format"))
 
-      render(<SwissPortfolioAnalyzer />)
+      render(<PortfolioAnalyzer />)
 
       // Error handling would be tested in integration tests
     })
@@ -339,7 +455,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Currency Formatting", () => {
     test("formats CHF currency correctly", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByText("CHF 100,000.00")).toBeInTheDocument()
       expect(screen.getByText("CHF 90,000.00")).toBeInTheDocument()
@@ -349,7 +465,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Percentage Formatting", () => {
     test("formats percentages correctly", async () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
 
@@ -361,7 +477,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Reset Functionality", () => {
     test("allows analyzing another portfolio", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       const resetButton = screen.getByText("Analyze Another Portfolio")
       expect(resetButton).toBeInTheDocument()
@@ -384,7 +500,7 @@ describe("SwissPortfolioAnalyzer", () => {
   describe("Error Handling", () => {
     test("displays error messages when analysis fails", () => {
       const errorMessage = "Failed to parse portfolio data"
-      render(<SwissPortfolioAnalyzer />)
+      render(<PortfolioAnalyzer />)
 
       // Error display would be tested in integration with FileUploadHelper
     })
@@ -392,7 +508,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Responsive Design", () => {
     test("renders correctly on different screen sizes", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       // Grid layouts should be responsive
       expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
@@ -404,7 +520,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("Chart Rendering", () => {
     test("renders pie charts with correct data", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       // Should render multiple pie charts
       expect(screen.getAllByTestId("pie-chart").length).toBeGreaterThan(0)
@@ -412,7 +528,7 @@ describe("SwissPortfolioAnalyzer", () => {
     })
 
     test("renders bar charts with correct data", () => {
-      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+      render(<PortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       // Should render bar charts for sectors and countries
       expect(screen.getAllByTestId("bar-chart").length).toBeGreaterThan(0)
@@ -431,7 +547,7 @@ describe("SwissPortfolioAnalyzer", () => {
         domicileAllocation: [],
       }
 
-      render(<SwissPortfolioAnalyzer defaultData={emptyData} />)
+      render(<PortfolioAnalyzer defaultData={emptyData} />)
 
       expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
       expect(screen.getByText(/with 0 positions/)).toBeInTheDocument()
@@ -447,7 +563,7 @@ describe("SwissPortfolioAnalyzer", () => {
         })),
       }
 
-      render(<SwissPortfolioAnalyzer defaultData={incompleteData} />)
+      render(<PortfolioAnalyzer defaultData={incompleteData} />)
 
       expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
     })
@@ -455,13 +571,13 @@ describe("SwissPortfolioAnalyzer", () => {
 
   describe("SwissPortfolioAnalyzer with Error Prop", () => {
     it("displays error message when error prop is set", () => {
-      render(<SwissPortfolioAnalyzer defaultData={null} />) // Render without data first
+      render(<PortfolioAnalyzer defaultData={null} />) // Render without data first
       const fileUploadHelper = screen.getByText(/Upload your Swiss bank portfolio statement/i).closest("div")
 
       // Simulate an error being set (this would typically happen via state update)
       // For testing purposes, we can re-render with an error.
-      const { rerender } = render(<SwissPortfolioAnalyzer defaultData={null} />)
-      rerender(<SwissPortfolioAnalyzer defaultData={null} error="Test error message" />)
+      const { rerender } = render(<PortfolioAnalyzer defaultData={null} />)
+      rerender(<PortfolioAnalyzer defaultData={null} error="Test error message" />)
 
       expect(screen.getByText("Test error message")).toBeInTheDocument()
     })

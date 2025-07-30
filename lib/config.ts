@@ -17,10 +17,13 @@ export const API_CONFIG = {
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
 
 // Yahoo Finance API base URL from environment variable
-export const YAHOO_FINANCE_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api/yahoo"
+export const YAHOO_FINANCE_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/yahoo"
 
 // Yahoo Finance API key from environment variable
 export const YAHOO_FINANCE_API_KEY = process.env.YAHOO_FINANCE_API_KEY || "YOUR_YAHOO_FINANCE_API_KEY"
+
+// PDF Worker URL
+export const PDF_WORKER_URL = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.mjs`
 
 // Validate API configuration
 export function validateAPIConfig() {

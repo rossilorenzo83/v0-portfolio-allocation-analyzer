@@ -1,51 +1,59 @@
-import { parsePortfolioCsv } from "../portfolio-parser"
+// scripts/test-real-csv.ts
+// This script fetches a real CSV from a URL and analyzes its structure
+// using the portfolio-parser.ts logic.
+// Run with: ts-node scripts/test-real-csv.ts <CSV_URL>
 
-async function fetchCsvContent(url: string): Promise<string> {
+import { parseSwissPortfolioPDF } from "../portfolio-parser"
+
+async function testRealCsv(csvUrl: string) {
+  console.log(`--- Testing Real CSV from URL: ${csvUrl} ---`)
+
   try {
-    const response = await fetch(url)
+    console.log("Fetching CSV content...")
+    const response = await fetch(csvUrl)
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error(`Failed to fetch CSV: ${response.status} ${response.statusText}`)
     }
-    return await response.text()
+
+    const csvContent = await response.text()
+    console.log(`Fetched CSV content length: ${csvContent.length} characters.`)
+    console.log("First 500 characters of CSV:\n", csvContent.substring(0, 500))
+
+    console.log("\nStarting portfolio parsing...")
+    const portfolioData = await parseSwissPortfolioPDF(csvContent)
+
+    console.log("\n--- Analysis Results ---")
+    console.log("Account Overview:", portfolioData.accountOverview)
+    console.log("Number of Positions:", portfolioData.positions.length)
+    console.log("Asset Allocation:", portfolioData.assetAllocation)
+    console.log("Currency Allocation:", portfolioData.currencyAllocation)
+    console.log("True Country Allocation:", portfolioData.trueCountryAllocation)
+    console.log("True Sector Allocation:", portfolioData.trueSectorAllocation)
+    console.log("Domicile Allocation:", portfolioData.domicileAllocation)
+
+    if (portfolioData.positions.length > 0) {
+      console.log("\nSample Positions (first 5):")
+      portfolioData.positions.slice(0, 5).forEach((p, i) => {
+        console.log(
+          `  ${i + 1}. Symbol: ${p.symbol}, Name: ${p.name}, Quantity: ${p.quantity}, Price: ${p.price}, Total CHF: ${p.totalValueCHF}`,
+        )
+      })
+    } else {
+      console.warn("No positions were parsed from the CSV.")
+    }
+
+    console.log("\n--- Analysis Complete ---")
   } catch (error) {
-    console.error(`Failed to fetch CSV from ${url}:`, error)
-    throw error
+    console.error("Error during real CSV analysis:", error)
+    process.exit(1)
   }
 }
 
-async function testRealCsvParsing() {
-  const csvUrl = "https://raw.githubusercontent.com/vercel/v0-portfolio-analyzer/main/public/sample-portfolio.csv" // Example URL
-  console.log(`Fetching CSV from: ${csvUrl}`)
-
-  try {
-    const csvContent = await fetchCsvContent(csvUrl)
-    console.log("\n--- Fetched CSV Content (first 500 chars) ---")
-    console.log(csvContent.substring(0, 500) + "...")
-
-    console.log("\n--- Parsing CSV Content ---")
-    const portfolio = parsePortfolioCsv(csvContent)
-
-    console.log("\n--- Parsing Successful! ---")
-    console.log("Total Positions:", portfolio.positions.length)
-    console.log("Total Portfolio Value:", portfolio.totalValue.toFixed(2))
-    console.log("Total Portfolio Cost:", portfolio.totalCost.toFixed(2))
-
-    console.log("\n--- Detailed Positions ---")
-    portfolio.positions.forEach((pos, index) => {
-      console.log(`Position ${index + 1}:`)
-      console.log(`  Symbol: ${pos.symbol}`)
-      console.log(`  Quantity: ${pos.quantity}`)
-      console.log(`  Average Price: ${pos.averagePrice}`)
-      console.log(`  Currency: ${pos.currency}`)
-      if (pos.exchange) console.log(`  Exchange: ${pos.exchange}`)
-      if (pos.name) console.log(`  Name: ${pos.name}`)
-      console.log("---")
-    })
-  } catch (error: any) {
-    console.error("\n--- CSV Parsing Failed ---")
-    console.error("Error:", error.message)
-  }
+const args = process.argv.slice(2)
+if (args.length < 1) {
+  console.error("Usage: ts-node scripts/test-real-csv.ts <CSV_URL>")
+  process.exit(1)
 }
 
-// Execute the test function
-testRealCsvParsing()
+testRealCsv(args[0])

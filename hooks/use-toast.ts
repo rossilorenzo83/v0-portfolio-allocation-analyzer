@@ -1,6 +1,7 @@
 "use client"
 
-import * as React from "react"
+import type * as React from "react"
+import { ToastAction } from "@/components/ui/toast"
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast"
 
@@ -128,24 +129,20 @@ function toast({ ...props }: Toast) {
   }
 }
 
-function useToast() {
-  const [state, setState] = React.useState<State>(memoryState)
-
-  React.useEffect(() => {
-    listeners.push(setState)
-    return () => {
-      const index = listeners.indexOf(setState)
-      if (index > -1) {
-        listeners.splice(index, 1)
-      }
-    }
-  }, [state])
-
+export function useToast() {
+  const { toast: showToast } = showToast()
   return {
-    ...state,
-    toast,
-    dismiss: React.useCallback((toastId?: string) => dispatch({ type: actionTypes.DISMISS_TOAST, toastId }), []),
+    toast: ({ title, description, action, ...props }: Parameters<typeof showToast>[0]) => {
+      showToast({
+        title,
+        description,
+        action: action ? (
+          <ToastAction altText={action.altText} onClick={action.onClick}>
+            {action.label}
+          </ToastAction>
+        ) : undefined,
+        ...props,
+      })
+    },
   }
 }
-
-export { useToast, toast }

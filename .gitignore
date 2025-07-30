@@ -1,62 +1,35 @@
 # Next.js
 .next/
 out/
+.env.local
+.env
+.env.*.local
 
 # Dependencies
 node_modules/
-.pnp/
-.pnp.js
 
-# Production
-/build
+# TypeScript
+*.tsbuildinfo
 
-# Misc
-.DS_Store
-*.pem
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.env*.local
-.vercel/
-.turbo/
-
-# Local
-.env
-.env.development.local
-.env.test.local
-.env.production.local
+# Jest
+.jest/
 
 # Logs
-logs/
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
 
-# IDEs and editors
+# IDEs and other tools
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
-
-# OS generated files
-.DS_Store
+*.DS_Store
 Thumbs.db
 
-# Test coverage
-coverage/
+# macOS
+.DS_Store
 
-# Generated files
-dist/
-
-# Vercel specific
-.vercel/
-
-# Docker
-.dockerignore
-
-# Custom additions
-*.csv
-*.pdf
-!__tests__/test-data/*.csv
-!__tests__/test-data/*.pdf
+# Windows
+Thumbs.db

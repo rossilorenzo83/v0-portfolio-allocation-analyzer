@@ -184,12 +184,14 @@ export async function generatePdfFromHtml(htmlContent: string): Promise<Buffer> 
   return Buffer.from("This is a dummy PDF content generated from HTML.")
 }
 
-async function loadPdf(file: File | string): Promise<pdfjs.PDFDocumentProxy> {
-  const loadingTask = pdfjs.getDocument(typeof file === "string" ? file : await file.arrayBuffer())
+export async function loadPdf(file: File | ArrayBuffer | string): Promise<pdfjs.PDFDocumentProxy> {
+  const loadingTask = pdfjs.getDocument(
+    typeof file === "string" ? file : file instanceof File ? await file.arrayBuffer() : file,
+  )
   return loadingTask.promise
 }
 
-async function getPdfText(pdf: pdfjs.PDFDocumentProxy): Promise<string> {
+export async function getPdfText(pdf: pdfjs.PDFDocumentProxy): Promise<string> {
   let fullText = ""
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)

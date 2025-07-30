@@ -1,462 +1,312 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useCallback } from "react"
-import { Upload, FileText, PieChart, BarChart3, Globe, DollarSign, Building2 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useCallback, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
+import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
 import {
-  Pie,
-  PieChart as RechartsPieChart,
-  Cell,
-  Bar,
-  BarChart,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-} from "recharts"
+  parseSwissPortfolioPDF,
+  type SwissPortfolioData,
+  type PortfolioPosition,
+  type AllocationItem,
+} from "./portfolio-parser"
+import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { FileUploadHelper } from "@/components/file-upload-helper"
+import { LoadingProgress } from "@/components/loading-progress"
 
-interface PortfolioItem {
-  symbol: string
-  name: string
-  quantity: number
-  price: number
-  value: number
-  currency: string
-  type: "Stock" | "ETF" | "Bond" | "Crypto" | "Other"
-  sector?: string
-  geography?: string
-}
-
-interface ETFHolding {
-  symbol: string
-  name: string
-  weight: number
-  sector: string
-  geography: string
-}
-
-// Mock ETF data - in a real app, this would come from an API
-const mockETFData: Record<string, ETFHolding[]> = {
-  VTI: [
-    { symbol: "AAPL", name: "Apple Inc.", weight: 7.2, sector: "Technology", geography: "US" },
-    { symbol: "MSFT", name: "Microsoft Corp.", weight: 6.8, sector: "Technology", geography: "US" },
-    { symbol: "GOOGL", name: "Alphabet Inc.", weight: 4.1, sector: "Technology", geography: "US" },
-    { symbol: "AMZN", name: "Amazon.com Inc.", weight: 3.4, sector: "Consumer Discretionary", geography: "US" },
-    { symbol: "NVDA", name: "NVIDIA Corp.", weight: 2.9, sector: "Technology", geography: "US" },
-  ],
-  VXUS: [
-    { symbol: "ASML", name: "ASML Holding NV", weight: 1.8, sector: "Technology", geography: "Europe" },
-    { symbol: "TSM", name: "Taiwan Semiconductor", weight: 4.2, sector: "Technology", geography: "Asia" },
-    { symbol: "NESN", name: "Nestle SA", weight: 1.1, sector: "Consumer Staples", geography: "Europe" },
-    { symbol: "BABA", name: "Alibaba Group", weight: 0.8, sector: "Consumer Discretionary", geography: "Asia" },
-  ],
-}
+const COLORS = [
+  "#0088FE",
+  "#00C49F",
+  "#FFBB28",
+  "#FF8042",
+  "#8884d8",
+  "#82ca9d",
+  "#ffc658",
+  "#d0ed57",
+  "#a4de6c",
+  "#8dd1e1",
+]
 
 export default function PortfolioAnalyzer() {
-  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [portfolioData, setPortfolioData] = useState<SwissPortfolioData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [fileInput, setFileInput] = useState<File | null>(null)
+  const [textInput, setTextInput] = useState<string>("")
+  const { toast } = useToast()
 
-  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setIsLoading(true)
+  const handleFileChange = useCallback((file: File | null) => {
+    setFileInput(file)
+    setTextInput("") // Clear text input if file is selected
+    setPortfolioData(null)
     setError(null)
-
-    try {
-      const text = await file.text()
-      const lines = text.split("\n").filter((line) => line.trim())
-      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase())
-
-      const portfolioData: PortfolioItem[] = []
-
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(",").map((v) => v.trim())
-        if (values.length < headers.length) continue
-
-        const item: PortfolioItem = {
-          symbol: values[headers.indexOf("symbol")] || "",
-          name: values[headers.indexOf("name")] || "",
-          quantity: Number.parseFloat(values[headers.indexOf("quantity")] || "0"),
-          price: Number.parseFloat(values[headers.indexOf("price")] || "0"),
-          value: 0,
-          currency: values[headers.indexOf("currency")] || "USD",
-          type: (values[headers.indexOf("type")] as PortfolioItem["type"]) || "Stock",
-          sector: values[headers.indexOf("sector")] || "Unknown",
-          geography: values[headers.indexOf("geography")] || "Unknown",
-        }
-
-        item.value = item.quantity * item.price
-        portfolioData.push(item)
-      }
-
-      setPortfolio(portfolioData)
-    } catch (err) {
-      setError("Error parsing CSV file. Please check the format.")
-    } finally {
-      setIsLoading(false)
-    }
   }, [])
 
-  const totalValue = portfolio.reduce((sum, item) => sum + item.value, 0)
+  const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setTextInput(e.target.value)
+    setFileInput(null) // Clear file input if text is entered
+    setPortfolioData(null)
+    setError(null)
+  }, [])
 
-  const getCurrencyBreakdown = () => {
-    const breakdown = portfolio.reduce(
-      (acc, item) => {
-        acc[item.currency] = (acc[item.currency] || 0) + item.value
-        return acc
-      },
-      {} as Record<string, number>,
-    )
+  const handleAnalyze = useCallback(async () => {
+    setLoading(true)
+    setProgress(0)
+    setError(null)
+    setPortfolioData(null)
 
-    return Object.entries(breakdown).map(([currency, value]) => ({
-      name: currency,
-      value,
-      percentage: (value / totalValue) * 100,
-    }))
-  }
+    try {
+      let data: SwissPortfolioData | null = null
+      if (fileInput) {
+        toast({
+          title: "Processing File",
+          description: `Analyzing ${fileInput.name}...`,
+        })
+        data = await parseSwissPortfolioPDF(fileInput)
+      } else if (textInput) {
+        toast({
+          title: "Processing Text",
+          description: "Analyzing pasted text...",
+        })
+        data = await parseSwissPortfolioPDF(textInput)
+      } else {
+        throw new Error("Please upload a file or paste text to analyze.")
+      }
 
-  const getGeographyBreakdown = () => {
-    const breakdown = portfolio.reduce(
-      (acc, item) => {
-        // For ETFs, we'd analyze underlying holdings
-        if (item.type === "ETF" && mockETFData[item.symbol]) {
-          mockETFData[item.symbol].forEach((holding) => {
-            const holdingValue = (holding.weight / 100) * item.value
-            acc[holding.geography] = (acc[holding.geography] || 0) + holdingValue
-          })
-        } else {
-          acc[item.geography || "Unknown"] = (acc[item.geography || "Unknown"] || 0) + item.value
-        }
-        return acc
-      },
-      {} as Record<string, number>,
-    )
+      setPortfolioData(data)
+      toast({
+        title: "Analysis Complete",
+        description: "Your portfolio has been successfully analyzed.",
+        variant: "success",
+      })
+    } catch (err: any) {
+      console.error("Analysis error:", err)
+      setError(err.message || "An unknown error occurred during analysis.")
+      toast({
+        title: "Analysis Failed",
+        description: err.message || "Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      setProgress(100)
+    }
+  }, [fileInput, textInput, toast])
 
-    return Object.entries(breakdown).map(([geography, value]) => ({
-      name: geography,
-      value,
-      percentage: (value / totalValue) * 100,
-    }))
-  }
+  useEffect(() => {
+    // Simulate progress for demonstration
+    if (loading) {
+      const interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(interval)
+            return prev
+          }
+          return prev + 10
+        })
+      }, 200)
+      return () => clearInterval(interval)
+    }
+  }, [loading])
 
-  const getSectorBreakdown = () => {
-    const breakdown = portfolio.reduce(
-      (acc, item) => {
-        // For ETFs, analyze underlying sector allocation
-        if (item.type === "ETF" && mockETFData[item.symbol]) {
-          mockETFData[item.symbol].forEach((holding) => {
-            const holdingValue = (holding.weight / 100) * item.value
-            acc[holding.sector] = (acc[holding.sector] || 0) + holdingValue
-          })
-        } else {
-          acc[item.sector || "Unknown"] = (acc[item.sector || "Unknown"] || 0) + item.value
-        }
-        return acc
-      },
-      {} as Record<string, number>,
-    )
-
-    return Object.entries(breakdown).map(([sector, value]) => ({
-      name: sector,
-      value,
-      percentage: (value / totalValue) * 100,
-    }))
-  }
-
-  const getAssetTypeBreakdown = () => {
-    const breakdown = portfolio.reduce(
-      (acc, item) => {
-        acc[item.type] = (acc[item.type] || 0) + item.value
-        return acc
-      },
-      {} as Record<string, number>,
-    )
-
-    return Object.entries(breakdown).map(([type, value]) => ({
-      name: type,
-      value,
-      percentage: (value / totalValue) * 100,
-    }))
-  }
-
-  const colors = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D", "#FFC658", "#FF7C7C"]
-
-  const renderPieChart = (data: any[], title: string) => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <PieChart className="h-5 w-5" />
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={{}} className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <RechartsPieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                dataKey="value"
-                label={({ name, percentage }) => `${name}: ${percentage.toFixed(1)}%`}
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+  const renderAllocationChart = (data: AllocationItem[], title: string) => {
+    if (!data || data.length === 0) {
+      return <p className="text-center text-gray-500">No data available for {title}.</p>
+    }
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>Breakdown of your portfolio by {title.toLowerCase()}.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center p-4">
+          <ChartContainer
+            config={data.reduce((acc, item, idx) => {
+              acc[item.name.toLowerCase().replace(/\s/g, "-")] = {
+                label: item.name,
+                color: COLORS[idx % COLORS.length],
+              }
+              return acc
+            }, {})}
+            className="h-[300px] w-full"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data} cx="50%" cy="50%" outerRadius={100} fill="#8884d8" dataKey="value" labelLine={false}>
+                  {data.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<ChartTooltipContent />} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartContainer>
+          <div className="mt-4 w-full">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Category</TableHead>
+                  <TableHead className="text-right">Value (CHF)</TableHead>
+                  <TableHead className="text-right">Percentage</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell className="text-right">{item.value.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{item.percentage.toFixed(2)}%</TableCell>
+                  </TableRow>
                 ))}
-              </Pie>
-              <ChartTooltip
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload
-                    return (
-                      <div className="bg-white p-2 border rounded shadow">
-                        <p className="font-medium">{data.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          ${data.value.toLocaleString()} ({data.percentage.toFixed(1)}%)
-                        </p>
-                      </div>
-                    )
-                  }
-                  return null
-                }}
-              />
-            </RechartsPieChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
-  const renderBarChart = (data: any[], title: string) => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5" />
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={{}} className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <ChartTooltip
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload
-                    return (
-                      <div className="bg-white p-2 border rounded shadow">
-                        <p className="font-medium">{label}</p>
-                        <p className="text-sm text-muted-foreground">
-                          ${data.value.toLocaleString()} ({data.percentage.toFixed(1)}%)
-                        </p>
-                      </div>
-                    )
-                  }
-                  return null
-                }}
-              />
-              <Bar dataKey="value" fill="#0088FE" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
+  const renderPositionsTable = (positions: PortfolioPosition[]) => {
+    if (!positions || positions.length === 0) {
+      return <p className="text-center text-gray-500">No positions found.</p>
+    }
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Portfolio Positions</CardTitle>
+          <CardDescription>Detailed breakdown of all your holdings.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
+                  <TableHead>Currency</TableHead>
+                  <TableHead className="text-right">Total Value (CHF)</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Domicile</TableHead>
+                  <TableHead className="text-right">Position %</TableHead>
+                  <TableHead className="text-right">Daily Change %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {positions.map((position, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{position.symbol}</TableCell>
+                    <TableCell>{position.name}</TableCell>
+                    <TableCell className="text-right">{position.quantity.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{position.price.toFixed(2)}</TableCell>
+                    <TableCell>{position.currency}</TableCell>
+                    <TableCell className="text-right">{position.totalValueCHF.toFixed(2)}</TableCell>
+                    <TableCell>{position.category}</TableCell>
+                    <TableCell>{position.domicile}</TableCell>
+                    <TableCell className="text-right">{position.positionPercent.toFixed(2)}%</TableCell>
+                    <TableCell className="text-right">{position.dailyChangePercent.toFixed(2)}%</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold">Portfolio Allocation Analyzer</h1>
-          <p className="text-muted-foreground">
-            Upload your portfolio CSV to analyze allocation by currency, geography, and sector
-          </p>
-        </div>
+    <div className="flex min-h-screen w-full flex-col items-center bg-gray-100 p-4 dark:bg-gray-950">
+      <Card className="w-full max-w-4xl">
+        <CardHeader>
+          <CardTitle className="text-3xl font-bold">Swiss Portfolio Analyzer</CardTitle>
+          <CardDescription>
+            Upload your Swiss bank PDF/CSV or paste text to get a detailed portfolio analysis.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <Tabs defaultValue="upload">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="upload">Upload File</TabsTrigger>
+              <TabsTrigger value="paste">Paste Text</TabsTrigger>
+            </TabsList>
+            <TabsContent value="upload" className="space-y-4">
+              <FileUploadHelper onFileChange={handleFileChange} />
+              {fileInput && <p className="text-sm text-gray-600 dark:text-gray-400">Selected file: {fileInput.name}</p>}
+            </TabsContent>
+            <TabsContent value="paste" className="space-y-4">
+              <Textarea
+                placeholder="Paste your portfolio data here (e.g., from a PDF or CSV file)"
+                rows={10}
+                value={textInput}
+                onChange={handleTextChange}
+                className="w-full"
+              />
+            </TabsContent>
+          </Tabs>
 
-        {/* File Upload */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload Portfolio Data
-            </CardTitle>
-            <CardDescription>
-              Upload a CSV file with columns: symbol, name, quantity, price, currency, type, sector, geography
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-              <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
-              <label htmlFor="csv-upload" className="cursor-pointer">
-                <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-lg font-medium">Click to upload CSV file</p>
-                <p className="text-sm text-muted-foreground">Supports .csv files up to 10MB</p>
-              </label>
+          <Button onClick={handleAnalyze} className="w-full" disabled={loading || (!fileInput && !textInput)}>
+            {loading ? "Analyzing..." : "Analyze Portfolio"}
+          </Button>
+
+          {loading && <LoadingProgress progress={progress} />}
+
+          {error && (
+            <div className="rounded-md bg-red-100 p-4 text-red-700 dark:bg-red-900 dark:text-red-200">
+              <h3 className="font-semibold">Error:</h3>
+              <p>{error}</p>
             </div>
-            {isLoading && (
-              <div className="mt-4">
-                <Progress value={50} className="w-full" />
-                <p className="text-sm text-muted-foreground mt-2">Processing portfolio data...</p>
+          )}
+
+          {portfolioData && (
+            <div className="space-y-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Account Overview</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Total Portfolio Value</span>
+                    <span className="text-2xl font-bold">
+                      CHF {portfolioData.accountOverview.totalValue.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Securities Value</span>
+                    <span className="text-2xl font-bold">
+                      CHF {portfolioData.accountOverview.securitiesValue.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Cash Balance</span>
+                    <span className="text-2xl font-bold">
+                      CHF {portfolioData.accountOverview.cashBalance.toFixed(2)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {renderPositionsTable(portfolioData.positions)}
+
+              <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                {renderAllocationChart(portfolioData.assetAllocation, "Asset Allocation")}
+                {renderAllocationChart(portfolioData.currencyAllocation, "Currency Allocation")}
+                {renderAllocationChart(portfolioData.trueCountryAllocation, "True Country Allocation")}
+                {renderAllocationChart(portfolioData.trueSectorAllocation, "True Sector Allocation")}
+                {renderAllocationChart(portfolioData.domicileAllocation, "Domicile Allocation")}
               </div>
-            )}
-            {error && (
-              <Alert className="mt-4">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-
-        {portfolio.length > 0 && (
-          <>
-            {/* Portfolio Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">${totalValue.toLocaleString()}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Total Holdings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{portfolio.length}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Asset Types</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{new Set(portfolio.map((p) => p.type)).size}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Currencies</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{new Set(portfolio.map((p) => p.currency)).size}</div>
-                </CardContent>
-              </Card>
             </div>
-
-            {/* Analysis Tabs */}
-            <Tabs defaultValue="overview" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="currency">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Currency
-                </TabsTrigger>
-                <TabsTrigger value="geography">
-                  <Globe className="h-4 w-4 mr-2" />
-                  Geography
-                </TabsTrigger>
-                <TabsTrigger value="sector">
-                  <Building2 className="h-4 w-4 mr-2" />
-                  Sector
-                </TabsTrigger>
-                <TabsTrigger value="holdings">Holdings</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="overview" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getAssetTypeBreakdown(), "Asset Type Distribution")}
-                  {renderPieChart(getCurrencyBreakdown(), "Currency Distribution")}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="currency" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getCurrencyBreakdown(), "Currency Allocation")}
-                  {renderBarChart(getCurrencyBreakdown(), "Currency Breakdown")}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="geography" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getGeographyBreakdown(), "Geographic Allocation")}
-                  {renderBarChart(getGeographyBreakdown(), "Geographic Breakdown")}
-                </div>
-                <Alert>
-                  <AlertDescription>
-                    ETF holdings are analyzed based on their underlying geographic distribution for more accurate
-                    allocation.
-                  </AlertDescription>
-                </Alert>
-              </TabsContent>
-
-              <TabsContent value="sector" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getSectorBreakdown(), "Sector Allocation")}
-                  {renderBarChart(getSectorBreakdown(), "Sector Breakdown")}
-                </div>
-                <Alert>
-                  <AlertDescription>
-                    ETF sector allocation is calculated from underlying holdings for deeper analysis.
-                  </AlertDescription>
-                </Alert>
-              </TabsContent>
-
-              <TabsContent value="holdings" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Portfolio Holdings</CardTitle>
-                    <CardDescription>Detailed view of all your investments</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {portfolio.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{item.symbol}</span>
-                              <Badge variant="outline">{item.type}</Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground">{item.name}</p>
-                            <div className="flex gap-4 text-xs text-muted-foreground">
-                              <span>Qty: {item.quantity}</span>
-                              <span>
-                                Price: {item.currency} {item.price}
-                              </span>
-                              <span>Sector: {item.sector}</span>
-                              <span>Geography: {item.geography}</span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-medium">${item.value.toLocaleString()}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {((item.value / totalValue) * 100).toFixed(1)}%
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </>
-        )}
-      </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

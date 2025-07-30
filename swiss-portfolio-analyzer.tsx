@@ -1,596 +1,312 @@
 "use client"
-import { useState, useCallback } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Separator } from "@/components/ui/separator"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
-import { FileUploadHelper } from "@/components/file-upload-helper"
-import { parseSwissPortfolioPDF, type SwissPortfolioData, type AllocationItem } from "./portfolio-parser"
-import {
-  AlertTriangle,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  PieChartIcon,
-  BarChart3,
-  Globe,
-  Building2,
-  Info,
-} from "lucide-react"
 
-// Color palette for charts
+import type React from "react"
+import { useState, useCallback, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { useToast } from "@/hooks/use-toast"
+import {
+  parseSwissPortfolioPDF,
+  type SwissPortfolioData,
+  type PortfolioPosition,
+  type AllocationItem,
+} from "./portfolio-parser"
+import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { FileUploadHelper } from "@/components/file-upload-helper"
+import { LoadingProgress } from "@/components/loading-progress"
+
 const COLORS = [
   "#0088FE",
   "#00C49F",
   "#FFBB28",
   "#FF8042",
-  "#8884D8",
-  "#82CA9D",
-  "#FFC658",
-  "#FF7C7C",
-  "#8DD1E1",
-  "#D084D0",
-  "#87D068",
-  "#FFA07A",
-  "#98D8C8",
-  "#F7DC6F",
-  "#BB8FCE",
+  "#8884d8",
+  "#82ca9d",
+  "#ffc658",
+  "#d0ed57",
+  "#a4de6c",
+  "#8dd1e1",
 ]
 
-interface SwissPortfolioAnalyzerProps {
-  defaultData?: SwissPortfolioData
-  error?: string | null
-}
+export default function SwissPortfolioAnalyzer() {
+  const [portfolioData, setPortfolioData] = useState<SwissPortfolioData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const [fileInput, setFileInput] = useState<File | null>(null)
+  const [textInput, setTextInput] = useState<string>("")
+  const { toast } = useToast()
 
-export default function SwissPortfolioAnalyzer({ defaultData, error: propError }: SwissPortfolioAnalyzerProps) {
-  const [portfolioData, setPortfolioData] = useState<SwissPortfolioData | null>(defaultData || null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(propError || null)
-
-  const handleFileUpload = useCallback(async (input: File | string) => {
-    setIsLoading(true)
+  const handleFileChange = useCallback((file: File | null) => {
+    setFileInput(file)
+    setTextInput("") // Clear text input if file is selected
+    setPortfolioData(null)
     setError(null)
-
-    try {
-      console.log("Starting portfolio analysis...")
-      const data = await parseSwissPortfolioPDF(input)
-      console.log("Portfolio analysis complete:", data)
-      setPortfolioData(data)
-    } catch (err) {
-      console.error("Portfolio analysis failed:", err)
-      setError(err instanceof Error ? err.message : "An unknown error occurred")
-    } finally {
-      setIsLoading(false)
-    }
   }, [])
 
-  const formatCurrency = (amount: number, currency = "CHF") => {
-    // Validate currency code and provide fallback
-    const validCurrency = currency && currency.length === 3 && /^[A-Z]{3}$/.test(currency) ? currency : "CHF"
+  const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setTextInput(e.target.value)
+    setFileInput(null) // Clear file input if text is entered
+    setPortfolioData(null)
+    setError(null)
+  }, [])
+
+  const handleAnalyze = useCallback(async () => {
+    setLoading(true)
+    setProgress(0)
+    setError(null)
+    setPortfolioData(null)
 
     try {
-      return new Intl.NumberFormat("de-CH", {
-        style: "currency",
-        currency: validCurrency,
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(amount)
-    } catch (error) {
-      // Fallback formatting if currency is still invalid
-      return `${validCurrency} ${amount.toLocaleString("de-CH", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+      let data: SwissPortfolioData | null = null
+      if (fileInput) {
+        toast({
+          title: "Processing File",
+          description: `Analyzing ${fileInput.name}...`,
+        })
+        data = await parseSwissPortfolioPDF(fileInput)
+      } else if (textInput) {
+        toast({
+          title: "Processing Text",
+          description: "Analyzing pasted text...",
+        })
+        data = await parseSwissPortfolioPDF(textInput)
+      } else {
+        throw new Error("Please upload a file or paste text to analyze.")
+      }
+
+      setPortfolioData(data)
+      toast({
+        title: "Analysis Complete",
+        description: "Your portfolio has been successfully analyzed.",
+        variant: "success",
+      })
+    } catch (err: any) {
+      console.error("Analysis error:", err)
+      setError(err.message || "An unknown error occurred during analysis.")
+      toast({
+        title: "Analysis Failed",
+        description: err.message || "Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      setProgress(100)
     }
-  }
+  }, [fileInput, textInput, toast])
 
-  const formatPercentage = (value: number) => {
-    return `${value.toFixed(1)}%`
-  }
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload
-      return (
-        <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-          <p className="font-semibold">{data.name}</p>
-          <p className="text-blue-600">Value: {formatCurrency(data.value)}</p>
-          <p className="text-green-600">Percentage: {formatPercentage(data.percentage)}</p>
-        </div>
-      )
+  useEffect(() => {
+    // Simulate progress for demonstration
+    if (loading) {
+      const interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(interval)
+            return prev
+          }
+          return prev + 10
+        })
+      }, 200)
+      return () => clearInterval(interval)
     }
-    return null
-  }
+  }, [loading])
 
-  const renderPieChart = (data: AllocationItem[], title: string) => (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <PieChartIcon className="h-5 w-5" />
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={{}} className="h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percentage }) => `${name}: ${formatPercentage(percentage)}`}
-                outerRadius={120}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <ChartTooltip content={<CustomTooltip />} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
-
-  const renderBarChart = (data: AllocationItem[], title: string) => (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5" />
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={{}} className="h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} interval={0} fontSize={12} />
-              <YAxis />
-              <ChartTooltip content={<CustomTooltip />} />
-              <Bar dataKey="value" fill="#8884d8">
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
-
-  // Calculate tax efficiency for Swiss investors
-  const calculateTaxEfficiency = () => {
-    if (!portfolioData) return { optimized: 0, nonOptimized: 0, usDomiciled: 0, europeanDomiciled: 0 }
-
-    const usDomiciled = portfolioData.positions.filter((p) => p.domicile === "US")
-    const europeanDomiciled = portfolioData.positions.filter((p) => p.domicile === "IE" || p.domicile === "LU")
-    const other = portfolioData.positions.filter(
-      (p) => p.domicile !== "US" && p.domicile !== "IE" && p.domicile !== "LU",
-    )
-
-    return {
-      optimized: usDomiciled.length, // US domiciled are more tax efficient for Swiss
-      nonOptimized: europeanDomiciled.length + other.length,
-      usDomiciled: usDomiciled.length,
-      europeanDomiciled: europeanDomiciled.length,
+  const renderAllocationChart = (data: AllocationItem[], title: string) => {
+    if (!data || data.length === 0) {
+      return <p className="text-center text-gray-500">No data available for {title}.</p>
     }
-  }
-
-  if (!portfolioData) {
     return (
-      <div className="container mx-auto p-6 max-w-4xl">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">Swiss Portfolio Analyzer</h1>
-          <p className="text-gray-600">
-            Upload your Swiss bank portfolio statement to get detailed analysis and insights
-          </p>
-        </div>
-
-        <FileUploadHelper onFileUpload={handleFileUpload} isLoading={isLoading} error={error} />
-      </div>
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>Breakdown of your portfolio by {title.toLowerCase()}.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center p-4">
+          <ChartContainer
+            config={data.reduce((acc, item, idx) => {
+              acc[item.name.toLowerCase().replace(/\s/g, "-")] = {
+                label: item.name,
+                color: COLORS[idx % COLORS.length],
+              }
+              return acc
+            }, {})}
+            className="h-[300px] w-full"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data} cx="50%" cy="50%" outerRadius={100} fill="#8884d8" dataKey="value" labelLine={false}>
+                  {data.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<ChartTooltipContent />} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartContainer>
+          <div className="mt-4 w-full">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Category</TableHead>
+                  <TableHead className="text-right">Value (CHF)</TableHead>
+                  <TableHead className="text-right">Percentage</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell className="text-right">{item.value.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{item.percentage.toFixed(2)}%</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
-  const {
-    accountOverview,
-    positions,
-    assetAllocation,
-    currencyAllocation,
-    trueCountryAllocation,
-    trueSectorAllocation,
-    domicileAllocation,
-  } = portfolioData
-
-  const taxEfficiency = calculateTaxEfficiency()
+  const renderPositionsTable = (positions: PortfolioPosition[]) => {
+    if (!positions || positions.length === 0) {
+      return <p className="text-center text-gray-500">No positions found.</p>
+    }
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Portfolio Positions</CardTitle>
+          <CardDescription>Detailed breakdown of all your holdings.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
+                  <TableHead>Currency</TableHead>
+                  <TableHead className="text-right">Total Value (CHF)</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Domicile</TableHead>
+                  <TableHead className="text-right">Position %</TableHead>
+                  <TableHead className="text-right">Daily Change %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {positions.map((position, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{position.symbol}</TableCell>
+                    <TableCell>{position.name}</TableCell>
+                    <TableCell className="text-right">{position.quantity.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{position.price.toFixed(2)}</TableCell>
+                    <TableCell>{position.currency}</TableCell>
+                    <TableCell className="text-right">{position.totalValueCHF.toFixed(2)}</TableCell>
+                    <TableCell>{position.category}</TableCell>
+                    <TableCell>{position.domicile}</TableCell>
+                    <TableCell className="text-right">{position.positionPercent.toFixed(2)}%</TableCell>
+                    <TableCell className="text-right">{position.dailyChangePercent.toFixed(2)}%</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Portfolio Analysis</h1>
-        <p className="text-gray-600">
-          Comprehensive analysis of your Swiss portfolio with {positions.length} positions
-        </p>
-      </div>
+    <div className="flex min-h-screen w-full flex-col items-center bg-gray-100 p-4 dark:bg-gray-950">
+      <Card className="w-full max-w-4xl">
+        <CardHeader>
+          <CardTitle className="text-3xl font-bold">Swiss Portfolio Analyzer</CardTitle>
+          <CardDescription>
+            Upload your Swiss bank PDF/CSV or paste text to get a detailed portfolio analysis.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <Tabs defaultValue="upload">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="upload">Upload File</TabsTrigger>
+              <TabsTrigger value="paste">Paste Text</TabsTrigger>
+            </TabsList>
+            <TabsContent value="upload" className="space-y-4">
+              <FileUploadHelper onFileChange={handleFileChange} />
+              {fileInput && <p className="text-sm text-gray-600 dark:text-gray-400">Selected file: {fileInput.name}</p>}
+            </TabsContent>
+            <TabsContent value="paste" className="space-y-4">
+              <Textarea
+                placeholder="Paste your portfolio data here (e.g., from a PDF or CSV file)"
+                rows={10}
+                value={textInput}
+                onChange={handleTextChange}
+                className="w-full"
+              />
+            </TabsContent>
+          </Tabs>
 
-      {error && (
-        <Alert className="mb-6">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+          <Button onClick={handleAnalyze} className="w-full" disabled={loading || (!fileInput && !textInput)}>
+            {loading ? "Analyzing..." : "Analyze Portfolio"}
+          </Button>
 
-      {/* Account Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(accountOverview.totalValue)}</div>
-          </CardContent>
-        </Card>
+          {loading && <LoadingProgress progress={progress} />}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Securities Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(accountOverview.securitiesValue)}</div>
-          </CardContent>
-        </Card>
+          {error && (
+            <div className="rounded-md bg-red-100 p-4 text-red-700 dark:bg-red-900 dark:text-red-200">
+              <h3 className="font-semibold">Error:</h3>
+              <p>{error}</p>
+            </div>
+          )}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cash Balance</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(accountOverview.cashBalance)}</div>
-          </CardContent>
-        </Card>
+          {portfolioData && (
+            <div className="space-y-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Account Overview</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Total Portfolio Value</span>
+                    <span className="text-2xl font-bold">
+                      CHF {portfolioData.accountOverview.totalValue.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Securities Value</span>
+                    <span className="text-2xl font-bold">
+                      CHF {portfolioData.accountOverview.securitiesValue.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Cash Balance</span>
+                    <span className="text-2xl font-bold">
+                      CHF {portfolioData.accountOverview.cashBalance.toFixed(2)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Positions</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{positions.length}</div>
-          </CardContent>
-        </Card>
-      </div>
+              {renderPositionsTable(portfolioData.positions)}
 
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="positions">Positions</TabsTrigger>
-          <TabsTrigger value="allocation">Asset Allocation</TabsTrigger>
-          <TabsTrigger value="geography">Geography</TabsTrigger>
-          <TabsTrigger value="sectors">Sectors</TabsTrigger>
-          <TabsTrigger value="tax">Tax Analysis</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {renderPieChart(assetAllocation, "Asset Allocation")}
-            {renderPieChart(currencyAllocation, "Currency Allocation")}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {renderBarChart(trueSectorAllocation.slice(0, 10), "Top 10 Sectors")}
-            {renderBarChart(trueCountryAllocation.slice(0, 10), "Top 10 Countries")}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="positions" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Portfolio Positions</CardTitle>
-              <CardDescription>Detailed view of all positions in your portfolio</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Value (CHF)</TableHead>
-                      <TableHead>Currency</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Domicile</TableHead>
-                      <TableHead>% of Portfolio</TableHead>
-                      <TableHead>Daily Change</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {positions
-                      .sort((a, b) => b.totalValueCHF - a.totalValueCHF)
-                      .map((position) => (
-                        <TableRow key={position.symbol}>
-                          <TableCell className="font-medium">{position.symbol}</TableCell>
-                          <TableCell className="max-w-[200px] truncate">{position.name}</TableCell>
-                          <TableCell>{position.quantity.toLocaleString()}</TableCell>
-                          <TableCell>{formatCurrency(position.price, position.currency)}</TableCell>
-                          <TableCell>{formatCurrency(position.totalValueCHF)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{position.currency || "CHF"}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{position.category}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={position.domicile === "US" ? "default" : "outline"}
-                              className={position.domicile === "US" ? "bg-green-100 text-green-800" : ""}
-                            >
-                              {position.domicile || "Unknown"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{formatPercentage(position.positionPercent)}</TableCell>
-                          <TableCell>
-                            <div
-                              className={`flex items-center gap-1 ${
-                                position.dailyChangePercent >= 0 ? "text-green-600" : "text-red-600"
-                              }`}
-                            >
-                              {position.dailyChangePercent >= 0 ? (
-                                <TrendingUp className="h-4 w-4" />
-                              ) : (
-                                <TrendingDown className="h-4 w-4" />
-                              )}
-                              {formatPercentage(Math.abs(position.dailyChangePercent))}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
+              <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+                {renderAllocationChart(portfolioData.assetAllocation, "Asset Allocation")}
+                {renderAllocationChart(portfolioData.currencyAllocation, "Currency Allocation")}
+                {renderAllocationChart(portfolioData.trueCountryAllocation, "True Country Allocation")}
+                {renderAllocationChart(portfolioData.trueSectorAllocation, "True Sector Allocation")}
+                {renderAllocationChart(portfolioData.domicileAllocation, "Domicile Allocation")}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="allocation" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {renderPieChart(assetAllocation, "Asset Type Distribution")}
-            {renderPieChart(currencyAllocation, "Currency Exposure")}
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Asset Allocation Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {assetAllocation.map((item, index) => (
-                  <div key={item.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-4 h-4 rounded-full"
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                      />
-                      <span className="font-medium">{item.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{formatCurrency(item.value)}</div>
-                      <div className="text-sm text-gray-500">{formatPercentage(item.percentage)}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="geography" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {renderPieChart(trueCountryAllocation, "Geographic Distribution")}
-            {renderBarChart(trueCountryAllocation.slice(0, 15), "Country Breakdown")}
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="h-5 w-5" />
-                Geographic Allocation Details
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {trueCountryAllocation.slice(0, 10).map((item, index) => (
-                  <div key={item.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                      />
-                      <span className="font-medium">{item.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold text-sm">{formatCurrency(item.value)}</div>
-                      <div className="text-xs text-gray-500">{formatPercentage(item.percentage)}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="sectors" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {renderPieChart(trueSectorAllocation, "Sector Distribution")}
-            {renderBarChart(trueSectorAllocation, "Sector Breakdown")}
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Sector Analysis</CardTitle>
-              <CardDescription>True sector exposure including ETF look-through analysis</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {trueSectorAllocation.map((item, index) => (
-                  <div key={item.name} className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{item.name}</span>
-                      <div className="text-right">
-                        <span className="font-semibold">{formatCurrency(item.value)}</span>
-                        <span className="text-sm text-gray-500 ml-2">({formatPercentage(item.percentage)})</span>
-                      </div>
-                    </div>
-                    <Progress value={item.percentage} className="h-2" />
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="tax" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {renderPieChart(domicileAllocation, "Domicile Distribution")}
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Tax Efficiency for Swiss Investors</CardTitle>
-                <CardDescription>Based on US-Switzerland tax treaty benefits</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
-                    <span className="font-medium text-green-800">US Domiciled (Tax Efficient)</span>
-                    <span className="font-bold text-green-600">{taxEfficiency.usDomiciled}</span>
-                  </div>
-
-                  <div className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
-                    <span className="font-medium text-orange-800">European Domiciled</span>
-                    <span className="font-bold text-orange-600">{taxEfficiency.europeanDomiciled}</span>
-                  </div>
-
-                  <Separator />
-
-                  <div className="space-y-2">
-                    <h4 className="font-semibold">Withholding Tax Rates</h4>
-                    {domicileAllocation.map((item) => (
-                      <div key={item.name} className="flex justify-between items-center">
-                        <span className="text-sm">{item.name}</span>
-                        <span className="text-sm font-medium">
-                          {item.name.includes("US")
-                            ? "15%"
-                            : item.name.includes("IE") || item.name.includes("LU")
-                              ? "15%"
-                              : "30%"}{" "}
-                          WHT
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              <strong>For Swiss Investors:</strong> US-domiciled ETFs are generally more tax-efficient than European
-              ones. The US-Switzerland tax treaty allows only 15% withholding tax on US dividends, and this can be fully
-              reclaimed on your Swiss tax return. European ETFs face an additional layer of withholding tax that cannot
-              be fully recovered.
-            </AlertDescription>
-          </Alert>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Tax Optimization Recommendations</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 border rounded-lg">
-                    <h4 className="font-semibold text-green-600 mb-2">Tax Efficient (US Domiciled)</h4>
-                    <ul className="text-sm space-y-1">
-                      {positions
-                        .filter((p) => p.domicile === "US")
-                        .slice(0, 5)
-                        .map((p) => (
-                          <li key={p.symbol} className="flex justify-between">
-                            <span>{p.symbol}</span>
-                            <span className="text-green-600">15% WHT (reclaimable)</span>
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-
-                  <div className="p-4 border rounded-lg">
-                    <h4 className="font-semibold text-orange-600 mb-2">Consider US Alternatives</h4>
-                    <ul className="text-sm space-y-1">
-                      {positions
-                        .filter(
-                          (p) =>
-                            (p.domicile === "IE" || p.domicile === "LU") &&
-                            (p.category === "ETF" || p.category === "Funds"),
-                        )
-                        .slice(0, 5)
-                        .map((p) => (
-                          <li key={p.symbol} className="flex justify-between">
-                            <span>{p.symbol}</span>
-                            <span className="text-orange-600">15% WHT (partial loss)</span>
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <h4 className="font-semibold text-blue-800 mb-2">US ETF Alternatives</h4>
-                  <div className="text-sm text-blue-700 space-y-1">
-                    <p>
-                      <strong>VWRL/VWCE → VTI + VXUS:</strong> Total US market + International markets
-                    </p>
-                    <p>
-                      <strong>IWDA → VTI:</strong> US total market exposure
-                    </p>
-                    <p>
-                      <strong>European ETFs → VEA:</strong> Developed markets excluding US
-                    </p>
-                    <p>
-                      <strong>Emerging Markets → VWO:</strong> Emerging markets exposure
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <div className="mt-8 text-center">
-        <button
-          onClick={() => {
-            setPortfolioData(null)
-            setError(null)
-          }}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Analyze Another Portfolio
-        </button>
-      </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

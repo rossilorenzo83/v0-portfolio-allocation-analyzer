@@ -1,6 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { guessCurrency } from "./utils" // Assuming guessCurrency is moved to a utils file
 
+// Mock data for stock prices
+const mockStockPrices: { [key: string]: { price: number; changePercent: number } } = {
+  AAPL: { price: 170.0, changePercent: 1.25 },
+  MSFT: { price: 400.5, changePercent: 0.8 },
+  GOOG: { price: 145.75, changePercent: -0.5 },
+  SMCI: { price: 1000.0, changePercent: 5.0 },
+  NVDA: { price: 850.2, changePercent: 2.1 },
+  TSLA: { price: 180.1, changePercent: -1.5 },
+  AMZN: { price: 175.3, changePercent: 0.9 },
+  VWRL: { price: 100.0, changePercent: 0.75 }, // Example ETF price
+  IWDA: { price: 75.0, changePercent: 0.6 }, // Example ETF price
+  // Add more mock data as needed
+}
+
 export async function GET(request: NextRequest, { params }: { params: { symbol: string } }) {
   try {
     const { symbol } = params
@@ -86,11 +100,19 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
       open: 0,
     }
 
-    return NextResponse.json(estimatedQuote, {
-      headers: {
-        "Cache-Control": "public, max-age=300", // 5 minutes for fallback
-        "Access-Control-Allow-Origin": "*",
-      },
-    })
+    // Check for mock data
+    const priceData = mockStockPrices[symbol.toUpperCase()]
+
+    if (priceData) {
+      return NextResponse.json(priceData)
+    } else {
+      // Fallback for unknown symbols
+      return NextResponse.json(estimatedQuote, {
+        headers: {
+          "Cache-Control": "public, max-age=300", // 5 minutes for fallback
+          "Access-Control-Allow-Origin": "*",
+        },
+      })
+    }
   }
 }

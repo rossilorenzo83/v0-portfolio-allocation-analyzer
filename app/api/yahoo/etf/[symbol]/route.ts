@@ -8,10 +8,72 @@ import {
   estimateCurrencyAllocation,
 } from "./utils" // Assuming utils file exists for these functions
 
+// Mock data for ETF composition
+const mockEtfCompositionData: { [key: string]: any } = {
+  VWRL: {
+    domicile: "IE",
+    withholdingTax: 15, // Example for Irish domicile
+    country: [
+      { country: "United States", weight: 60 },
+      { country: "Japan", weight: 7 },
+      { country: "United Kingdom", weight: 4 },
+      { country: "China", weight: 3 },
+      { country: "Switzerland", weight: 2 },
+      { country: "Other", weight: 24 },
+    ],
+    sector: [
+      { sector: "Technology", weight: 25 },
+      { sector: "Financials", weight: 15 },
+      { sector: "Healthcare", weight: 12 },
+      { sector: "Consumer Discretionary", weight: 10 },
+      { sector: "Industrials", weight: 8 },
+      { sector: "Other", weight: 30 },
+    ],
+    currency: [
+      { currency: "USD", weight: 55 },
+      { currency: "EUR", weight: 15 },
+      { currency: "JPY", weight: 10 },
+      { currency: "GBP", weight: 5 },
+      { currency: "CHF", weight: 3 },
+      { currency: "Other", weight: 12 },
+    ],
+  },
+  SPY: {
+    domicile: "US",
+    withholdingTax: 30, // Example for US domicile
+    country: [{ country: "United States", weight: 100 }],
+    sector: [
+      { sector: "Technology", weight: 28 },
+      { sector: "Financials", weight: 13 },
+      { sector: "Healthcare", weight: 13 },
+      { sector: "Consumer Discretionary", weight: 10 },
+      { sector: "Communication Services", weight: 9 },
+      { sector: "Industrials", weight: 8 },
+      { sector: "Consumer Staples", weight: 7 },
+      { sector: "Energy", weight: 4 },
+      { sector: "Utilities", weight: 3 },
+      { sector: "Real Estate", weight: 3 },
+      { sector: "Materials", weight: 2 },
+    ],
+    currency: [{ currency: "USD", weight: 100 }],
+  },
+  // Add more ETF mock data as needed
+}
+
 export async function GET(request: NextRequest, { params }: { params: { symbol: string } }) {
   const { symbol } = params
   const apiKey = process.env.YAHOO_FINANCE_API_KEY
   const baseUrl = "https://yfapi.net/v6/finance/quote/detail" // Endpoint for detailed quote, which includes fundHoldings for ETFs
+
+  if (!symbol) {
+    return NextResponse.json({ error: "Symbol is required" }, { status: 400 })
+  }
+
+  const etfData = mockEtfCompositionData[symbol.toUpperCase()]
+
+  if (etfData) {
+    return NextResponse.json(etfData)
+  }
 
   if (!apiKey) {
     return NextResponse.json({ error: "Yahoo Finance API key not configured." }, { status: 500 })
@@ -32,10 +94,10 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
     }
 
     const data = await response.json()
-    const etfData = data.quoteResponse?.result?.[0]
+    const etfDataFromApi = data.quoteResponse?.result?.[0]
 
-    if (etfData && etfData.fundHoldings) {
-      return NextResponse.json(etfData.fundHoldings)
+    if (etfDataFromApi && etfDataFromApi.fundHoldings) {
+      return NextResponse.json(etfDataFromApi.fundHoldings)
     } else {
       console.log(`Fetching ETF composition for symbol: ${symbol}`)
 

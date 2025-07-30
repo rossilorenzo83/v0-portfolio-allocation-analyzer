@@ -1,32 +1,16 @@
-# Portfolio Allocation Analyzer
+# Swiss Portfolio Analyzer
 
-This project is a web application designed to help users analyze their investment portfolio allocation. It allows users to upload their portfolio data (e.g., via CSV or PDF statements) and visualizes the allocation by various metrics such as currency, geography, and sector. It also includes features for Swiss tax optimization analysis for ETFs.
+This project is a web application designed to help Swiss investors analyze their investment portfolios. It allows users to upload PDF or CSV statements from various Swiss banks (e.g., Swissquote, UBS, Credit Suisse) or paste text content, and then provides a detailed breakdown of their holdings, including asset allocation, currency exposure, country exposure, sector exposure, and domicile allocation.
 
 ## Features
 
-- **CSV Upload**: Upload portfolio data from a CSV file.
-- **PDF Statement Parsing**: (Planned/Partial) Parse Swiss bank PDF statements for automated data extraction.
-- **Portfolio Summary**: Display total portfolio value, number of holdings, asset types, and currencies.
-- **Allocation Analysis**:
-  - **Asset Type Distribution**: Pie chart showing allocation across stocks, ETFs, bonds, crypto, etc.
-  - **Currency Distribution**: Pie and bar charts showing exposure to different currencies.
-  - **Geographic Allocation**: Pie and bar charts showing country/region exposure, with ETF look-through.
-  - **Sector Allocation**: Pie and bar charts showing industry sector exposure, with ETF look-through.
-- **Detailed Holdings Table**: A sortable table of all individual positions with key metrics.
-- **Swiss Tax Optimization**: Specific analysis and recommendations for Swiss investors regarding ETF domicile and withholding taxes.
-- **Responsive Design**: Optimized for various screen sizes.
-
-## Technologies Used
-
-- **Next.js 14**: React framework for building the web application.
-- **React**: Frontend library for UI.
-- **TypeScript**: Type-safe JavaScript.
-- **Tailwind CSS**: Utility-first CSS framework for styling.
-- **shadcn/ui**: Reusable UI components built with Radix UI and Tailwind CSS.
-- **Recharts**: Composable charting library for React.
-- **PDF.js**: For parsing PDF documents (client-side).
-- **Yahoo Finance API (via proxy)**: For fetching real-time ETF data and holdings (mocked for now, but API routes are set up).
-- **Jest & React Testing Library**: For unit and integration testing.
+- **PDF/CSV Upload & Text Paste**: Easily import your portfolio data.
+- **Automated Parsing**: Intelligently extracts and structures data from various bank statement formats.
+- **Real-time Data Integration (Mocked)**: Fetches (mocked) real-time prices and asset metadata for accurate valuations.
+- **ETF Look-through Analysis**: Provides true underlying exposure for ETFs by analyzing their compositions (mocked data).
+- **Swiss Tax Optimization Insights**: Identifies tax-optimized investments based on domicile and withholding tax (mocked logic).
+- **Detailed Allocations**: Visualizes asset, currency, country, sector, and domicile breakdowns.
+- **Responsive UI**: Built with Next.js and Shadcn UI for a modern and accessible user experience.
 
 ## Getting Started
 
@@ -37,141 +21,83 @@ This project is a web application designed to help users analyze their investmen
 
 ### Installation
 
-1.  **Clone the repository:**
-    \`\`\`bash
-    git clone https://github.com/your-username/portfolio-analyzer.git
-    cd portfolio-analyzer
-    \`\`\`
+1. **Clone the repository**:
+   \`\`\`bash
+   git clone https://github.com/your-username/swiss-portfolio-analyzer.git
+   cd swiss-portfolio-analyzer
+   \`\`\`
 
-2.  **Install dependencies:**
-    \`\`\`bash
-    npm install
-    # or
-    yarn install
-    \`\`\`
+2. **Install dependencies**:
+   \`\`\`bash
+   npm install
+   # or
+   yarn install
+   \`\`\`
 
-3.  **Environment Variables:**
-    Create a `.env.local` file in the root directory and add your Yahoo Finance API key:
-    \`\`\`
-    YAHOO_FINANCE_API_KEY=YOUR_YAHOO_FINANCE_API_KEY
-    NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api/yahoo
-    \`\`\`
-    Replace `YOUR_YAHOO_FINANCE_API_KEY` with your actual API key from Yahoo Finance API (e.g., from RapidAPI).
+3. **Run the development server**:
+   \`\`\`bash
+   npm run dev
+   # or
+   yarn dev
+   \`\`\`
 
-### Running the Development Server
-
-\`\`\`bash
-npm run dev
-# or
-yarn dev
-\`\`\`
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-### Building for Production
-
-\`\`\`bash
-npm run build
-# or
-yarn build
-\`\`\`
-
-This builds the application for production to the `.next` folder.
+   Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
 ### Running Tests
 
+- **Unit Tests**:
+  \`\`\`bash
+  npm test
+  \`\`\`
+- **Integration Tests**:
+  \`\`\`bash
+  ts-node scripts/test-integration.ts
+  \`\`\`
+  (Ensure you have `ts-node` installed: `npm install -g ts-node`)
+
+### Analyzing CSV Structure
+
+If you have a new CSV format and want to understand its structure for parsing, you can use the `analyze-csv-structure.ts` script:
+
 \`\`\`bash
-npm test
-# or
-yarn test
+ts-node scripts/analyze-csv-structure.ts <path_to_your_csv_file>
 \`\`\`
+This script will output detected headers, sample data, and inferred column types, which can help in refining the `portfolio-parser.ts` logic.
 
-To run tests in watch mode:
+### Testing with Real CSV URL
+
+You can test the parser with a real CSV file available online using `test-real-csv.ts`:
+
 \`\`\`bash
-npm run test:watch
-# or
-yarn test:watch
+ts-node scripts/test-real-csv.ts <URL_to_your_csv_file>
 \`\`\`
-
-### Running Scripts
-
-You can run various utility scripts located in the `scripts/` directory using `npx ts-node`.
-
-- **Analyze CSV Structure**:
-  \`\`\`bash
-  npx ts-node scripts/analyze-csv-structure.ts
-  \`\`\`
-  This script helps understand the column structure of a CSV file.
-
-- **Analyze Real CSV (with parsing logic)**:
-  \`\`\`bash
-  npx ts-node scripts/analyze-real-csv.ts
-  \`\`\`
-  This script runs the CSV parsing logic on a sample file and logs the detailed output.
-
-- **Test API Service**:
-  \`\`\`bash
-  npx ts-node scripts/test-api-service.ts
-  \`\`\`
-  This script tests the integration with the Yahoo Finance API proxy.
-
-- **Test File Upload (simulated)**:
-  \`\`\`bash
-  npx ts-node scripts/test-file-upload.ts
-  \`\`\`
-  This script simulates a file upload to the `PortfolioAnalyzer` component.
-
-- **Test Integration (CSV & PDF parsing)**:
-  \`\`\`bash
-  npx ts-node scripts/test-integration.ts
-  \`\`\`
-  This script runs a broader integration test including both CSV and PDF parsing.
+This will fetch the CSV from the provided URL and print the parsing output.
 
 ## Project Structure
 
-\`\`\`
-.
-├── app/                      # Next.js App Router routes and API routes
-│   ├── api/                  # API routes (e.g., Yahoo Finance proxy)
-│   ├── globals.css           # Global styles
-│   ├── layout.tsx            # Root layout
-│   └── page.tsx              # Main page (renders SwissPortfolioAnalyzer)
-├── components/               # React components
-│   ├── ui/                   # shadcn/ui components (generated)
-│   ├── file-upload-helper.tsx
-│   └── loading-progress.tsx
-├── hooks/                    # Custom React hooks
-│   ├── use-mobile.tsx
-│   └── use-toast.ts
-├── lib/                      # Utility functions and configurations
-│   ├── api-service.ts        # Yahoo Finance API client
-│   ├── config.ts             # Environment configurations
-│   ├── pdf-config.ts         # PDF.js worker configuration
-│   ├── pdf-utils.ts          # PDF loading and text extraction utilities
-│   └── utils.ts              # General utilities (e.g., cn for tailwind)
-├── public/                   # Static assets
-├── scripts/                  # Node.js/TypeScript scripts for testing/analysis
-├── __tests__/                # Jest tests
-│   ├── test-data/            # Sample data for tests (CSV, PDF)
-│   ├── api-service.test.ts
-│   ├── portfolio-parser.test.ts
-│   └── portfolio-views.test.ts
-├── portfolio-analyzer.tsx    # Main CSV portfolio analysis component
-├── portfolio-parser.ts       # Logic for parsing Swiss PDF statements
-├── swiss-portfolio-analyzer.tsx # Main Swiss portfolio analysis component
-├── etf-data-service.ts       # (Placeholder) For real-time ETF data fetching
-├── jest.config.js            # Jest configuration
-├── jest.setup.js             # Jest setup file
-├── next.config.mjs           # Next.js configuration
-├── package.json              # Project dependencies and scripts
-├── postcss.config.mjs        # PostCSS configuration
-├── tailwind.config.ts        # Tailwind CSS configuration
-└── tsconfig.json             # TypeScript configuration
-\`\`\`
+- `app/`: Next.js App Router pages and API routes.
+- `components/`: Reusable React components, including Shadcn UI components.
+- `lib/`: Utility functions and API service integrations.
+- `portfolio-parser.ts`: Core logic for parsing PDF/CSV data and enriching it.
+- `public/`: Static assets.
+- `scripts/`: Utility scripts for testing and analysis.
+- `__tests__/`: Jest test files.
+
+## Technologies Used
+
+- [Next.js](https://nextjs.org/)
+- [React](https://react.dev/)
+- [TypeScript](https://www.typescriptlang.org/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Shadcn UI](https://ui.shadcn.com/)
+- [Recharts](https://recharts.org/) (for charts)
+- [PapaParse](https://www.papaparse.com/) (for CSV parsing)
+- [PDF.js](https://mozilla.github.io/pdf.js/) (for PDF text extraction)
+- [Jest](https://jestjs.io/) (for testing)
 
 ## Contributing
 
-Feel free to fork the repository and submit pull requests.
+Contributions are welcome! Please feel free to open issues or submit pull requests.
 
 ## License
 
