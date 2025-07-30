@@ -1,9 +1,8 @@
 // PDF parsing utilities with local worker and better error handling
 
 import * as pdfjs from "pdfjs-dist"
-import { PDF_WORKER_URL } from "./pdf-config"
-
-pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
+// Removed direct assignment of pdfjs.GlobalWorkerOptions.workerSrc here.
+// It will be configured via configurePDFJS() on the client side.
 
 export async function safePDFExtraction(file: File): Promise<string> {
   // Try multiple approaches for PDF text extraction in order of reliability

@@ -11,24 +11,29 @@ export const PDF_OPTIONS = {
   },
 }
 
+// Use the .mjs worker for modern module compatibility
 export const PDF_WORKER_URL = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.mjs`
 
 export function configurePDFJS() {
   // Only configure if we're in the browser
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") {
+    console.log("Skipping PDF.js configuration on server.")
+    return
+  }
 
   // Try to configure PDF.js without external worker
   try {
     import("pdfjs-dist")
       .then((pdfjsLib) => {
-        // Disable worker to avoid CDN issues
+        // Disable worker to avoid CDN issues and use a simple inline worker
+        // This is crucial for environments where direct CDN access might be blocked or slow.
         pdfjsLib.GlobalWorkerOptions.workerSrc = ""
 
-        // Use a simple inline worker
         const workerCode = `
         // Minimal PDF.js worker
         self.onmessage = function(e) {
-          // Simple message handling
+          // Simple message handling for demonstration.
+          // In a full PDF.js setup, this worker would handle complex PDF operations.
           self.postMessage({ type: 'ready' });
         };
       `
@@ -38,12 +43,12 @@ export function configurePDFJS() {
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
-        console.log("PDF.js configured with local worker")
+        console.log("PDF.js configured with local worker.")
       })
       .catch((error) => {
         console.warn("PDF.js configuration failed:", error)
       })
   } catch (error) {
-    console.warn("PDF.js not available:", error)
+    console.warn("PDF.js not available or configuration error:", error)
   }
 }
