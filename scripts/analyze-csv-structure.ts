@@ -1,99 +1,148 @@
-// Script to analyze the CSV structure from the provided URL
-async function analyzeCsvStructure() {
+// This script is for analyzing the structure of a CSV file.
+// It's useful for debugging and understanding the layout of an unknown CSV.
+
+async function analyzeCsvStructure(csvUrl: string) {
   try {
-    console.log("Fetching CSV from URL...")
-    const response = await fetch(
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_30072025_09_52-2pA6mub91t5KX9pPZHD5lGMTwk5gD6.csv",
-    )
+    console.log(`Fetching CSV from: ${csvUrl}`)
+    const response = await fetch(csvUrl)
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
 
     const csvText = await response.text()
-    console.log("CSV fetched successfully!")
-    console.log("File size:", csvText.length, "characters")
-    console.log("\n=== FIRST 2000 CHARACTERS ===")
-    console.log(csvText.substring(0, 2000))
+    console.log("CSV fetched successfully. Size:", csvText.length, "characters.")
 
-    // Split into lines for analysis
     const lines = csvText.split(/\r?\n/)
-    console.log("\n=== CSV ANALYSIS ===")
     console.log("Total lines:", lines.length)
 
-    // Analyze first 20 lines
-    console.log("\n=== FIRST 20 LINES ===")
-    lines.slice(0, 20).forEach((line, index) => {
-      console.log(`Line ${index}: "${line}"`)
+    console.log("\n--- First 10 lines ---")
+    lines.slice(0, 10).forEach((line, index) => {
+      console.log(`${index + 1}: "${line}"`)
     })
 
-    // Detect delimiter
+    console.log("\n--- Delimiter Analysis (first 2 lines) ---")
     const delimiters = [",", ";", "\t", "|"]
-    console.log("\n=== DELIMITER ANALYSIS ===")
-
     for (const delimiter of delimiters) {
-      const firstLineColumns = lines[0]?.split(delimiter).length || 0
-      const secondLineColumns = lines[1]?.split(delimiter).length || 0
-      const thirdLineColumns = lines[2]?.split(delimiter).length || 0
-
-      console.log(`Delimiter '${delimiter}':`)
-      console.log(`  Line 0: ${firstLineColumns} columns`)
-      console.log(`  Line 1: ${secondLineColumns} columns`)
-      console.log(`  Line 2: ${thirdLineColumns} columns`)
+      const line1Cols = lines[0]?.split(delimiter).length || 0
+      const line2Cols = lines[1]?.split(delimiter).length || 0
+      console.log(`Delimiter '${delimiter}': Line 1 has ${line1Cols} columns, Line 2 has ${line2Cols} columns.`)
+      if (line1Cols > 1) {
+        console.log(
+          `  Sample split (Line 1 with '${delimiter}'): [${lines[0]
+            ?.split(delimiter)
+            .slice(0, 5)
+            .map((s) => `"${s.trim()}"`)
+            .join(", ")}...]`,
+        )
+      }
     }
 
-    // Look for header patterns
-    console.log("\n=== HEADER DETECTION ===")
-    const headerKeywords = [
-      "symbol",
+    console.log("\n--- Header Candidate Analysis (first 20 lines) ---")
+    const commonHeaderKeywords = [
       "symbole",
+      "symbol",
       "ticker",
       "isin",
-      "name",
-      "nom",
-      "description",
-      "libellé",
-      "quantity",
+      "code",
+      "instrument",
+      "titre",
+      "security",
       "quantité",
+      "quantity",
       "qty",
       "nombre",
-      "price",
+      "qte",
+      "units",
+      "shares",
+      "parts",
       "prix",
+      "price",
       "cours",
       "valeur",
-      "currency",
+      "current price",
+      "market price",
+      "last price",
+      "quote",
+      "cotation",
       "devise",
+      "currency",
       "dev",
       "ccy",
+      "curr",
+      "monnaie",
+      "nom",
+      "name",
+      "description",
+      "libellé",
+      "libelle",
+      "designation",
+      "intitulé",
+      "intitule",
+      "security name",
+      "instrument name",
       "total",
       "montant",
-      "value",
+      "valeur totale",
+      "market value",
+      "chf",
+      "usd",
+      "eur",
+      "gain",
+      "loss",
+      "p&l",
+      "profit",
+      "unrealized",
+      "performance",
+      "rendement",
+      "position",
+      "weight",
+      "allocation",
     ]
 
-    lines.slice(0, 10).forEach((line, index) => {
-      const lowerLine = line.toLowerCase()
-      const matchedKeywords = headerKeywords.filter((keyword) => lowerLine.includes(keyword))
-
+    for (let i = 0; i < Math.min(lines.length, 20); i++) {
+      const line = lines[i]
+      const lowerCaseLine = line.toLowerCase()
+      const matchedKeywords = commonHeaderKeywords.filter((keyword) => lowerCaseLine.includes(keyword))
       if (matchedKeywords.length > 0) {
-        console.log(`Line ${index} matches keywords:`, matchedKeywords)
-        console.log(`Content: "${line}"`)
+        console.log(
+          `Line ${i + 1} (potential header): "${line.substring(0, 100)}..." - Matched keywords: [${matchedKeywords.join(", ")}] (${matchedKeywords.length} matches)`,
+        )
       }
-    })
+    }
 
-    // Sample data rows
-    console.log("\n=== SAMPLE DATA ROWS ===")
-    lines.slice(1, 10).forEach((line, index) => {
+    console.log("\n--- Sample Data Rows (after potential header) ---")
+    // Assuming header is within first 5 lines, show data from line 6 onwards
+    const dataStartLine = Math.min(lines.length, 5)
+    lines.slice(dataStartLine, dataStartLine + 5).forEach((line, index) => {
       if (line.trim()) {
-        console.log(`Data row ${index + 1}: "${line}"`)
+        console.log(`Data ${index + 1}: "${line}"`)
+        // Try splitting with common delimiters to see structure
+        console.log(
+          `  Split by comma: [${line
+            .split(",")
+            .slice(0, 5)
+            .map((s) => `"${s.trim()}"`)
+            .join(", ")}...]`,
+        )
+        console.log(
+          `  Split by semicolon: [${line
+            .split(";")
+            .slice(0, 5)
+            .map((s) => `"${s.trim()}"`)
+            .join(", ")}...]`,
+        )
       }
     })
-
-    return csvText
   } catch (error) {
-    console.error("Error analyzing CSV:", error)
-    throw error
+    console.error("Error analyzing CSV structure:", error)
   }
 }
 
-// Run the analysis
-analyzeCsvStructure()
+// Example usage:
+// Replace with the actual URL of the CSV you want to analyze
+// analyzeCsvStructure("https://example.com/your-file.csv");
+// For the user's provided CSV:
+analyzeCsvStructure(
+  "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_30072025_09_52-2pA6mub91t5KX9pPZHD5lGMTwk5gD6.csv",
+)
