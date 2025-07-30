@@ -1,101 +1,99 @@
-import Papa from "papaparse"
+// Script to analyze the CSV structure from the provided URL
+async function analyzeCsvStructure() {
+  try {
+    console.log("Fetching CSV from URL...")
+    const response = await fetch(
+      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_30072025_09_52-2pA6mub91t5KX9pPZHD5lGMTwk5gD6.csv",
+    )
 
-interface CSVAnalysis {
-  totalRows: number
-  columns: string[]
-  sampleRows: string[][]
-  detectedDelimiter: string
-  encoding: string
-  possibleCategories: string[]
-  numberFormats: string[]
-}
-
-function detectDelimiter(csvText: string): string {
-  const delimiters = [",", ";", "\t", "|"]
-  const firstLine = csvText.split(/\r?\n/).find((line) => line.trim()) || ""
-
-  const counts = delimiters.map((d) => ({
-    delimiter: d,
-    count: (firstLine.match(new RegExp(`\\${d}`, "g")) || []).length,
-  }))
-
-  const best = counts.reduce((a, b) => (b.count > a.count ? b : a), { delimiter: ",", count: 0 })
-  return best.count === 0 ? "," : best.delimiter
-}
-
-function analyzeCSVStructure(csvText: string): CSVAnalysis {
-  const delimiter = detectDelimiter(csvText)
-  console.log("Detected delimiter:", delimiter)
-
-  const { data } = Papa.parse(csvText, {
-    delimiter,
-    skipEmptyLines: "greedy",
-    dynamicTyping: false,
-  })
-
-  const rows = data as string[][]
-  const header = rows[0] || []
-  const sampleRows = rows.slice(1, 6) // First 5 data rows
-
-  // Detect possible categories
-  const possibleCategories = new Set<string>()
-  rows.forEach((row) => {
-    const firstCell = (row[0] || "").toString().trim()
-    if (firstCell.match(/^(Actions|ETF|Obligations|Fonds|Equities|Bonds|Funds)/i)) {
-      possibleCategories.add(firstCell)
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
-  })
 
-  // Detect number formats
-  const numberFormats = new Set<string>()
-  rows.slice(1, 10).forEach((row) => {
-    row.forEach((cell) => {
-      const cellStr = (cell || "").toString().trim()
-      if (cellStr.match(/^\d+[',.]?\d*$/)) {
-        numberFormats.add(cellStr)
+    const csvText = await response.text()
+    console.log("CSV fetched successfully!")
+    console.log("File size:", csvText.length, "characters")
+    console.log("\n=== FIRST 2000 CHARACTERS ===")
+    console.log(csvText.substring(0, 2000))
+
+    // Split into lines for analysis
+    const lines = csvText.split(/\r?\n/)
+    console.log("\n=== CSV ANALYSIS ===")
+    console.log("Total lines:", lines.length)
+
+    // Analyze first 20 lines
+    console.log("\n=== FIRST 20 LINES ===")
+    lines.slice(0, 20).forEach((line, index) => {
+      console.log(`Line ${index}: "${line}"`)
+    })
+
+    // Detect delimiter
+    const delimiters = [",", ";", "\t", "|"]
+    console.log("\n=== DELIMITER ANALYSIS ===")
+
+    for (const delimiter of delimiters) {
+      const firstLineColumns = lines[0]?.split(delimiter).length || 0
+      const secondLineColumns = lines[1]?.split(delimiter).length || 0
+      const thirdLineColumns = lines[2]?.split(delimiter).length || 0
+
+      console.log(`Delimiter '${delimiter}':`)
+      console.log(`  Line 0: ${firstLineColumns} columns`)
+      console.log(`  Line 1: ${secondLineColumns} columns`)
+      console.log(`  Line 2: ${thirdLineColumns} columns`)
+    }
+
+    // Look for header patterns
+    console.log("\n=== HEADER DETECTION ===")
+    const headerKeywords = [
+      "symbol",
+      "symbole",
+      "ticker",
+      "isin",
+      "name",
+      "nom",
+      "description",
+      "libellé",
+      "quantity",
+      "quantité",
+      "qty",
+      "nombre",
+      "price",
+      "prix",
+      "cours",
+      "valeur",
+      "currency",
+      "devise",
+      "dev",
+      "ccy",
+      "total",
+      "montant",
+      "value",
+    ]
+
+    lines.slice(0, 10).forEach((line, index) => {
+      const lowerLine = line.toLowerCase()
+      const matchedKeywords = headerKeywords.filter((keyword) => lowerLine.includes(keyword))
+
+      if (matchedKeywords.length > 0) {
+        console.log(`Line ${index} matches keywords:`, matchedKeywords)
+        console.log(`Content: "${line}"`)
       }
     })
-  })
 
-  return {
-    totalRows: rows.length,
-    columns: header,
-    sampleRows,
-    detectedDelimiter: delimiter,
-    encoding: "UTF-8", // Assumption
-    possibleCategories: Array.from(possibleCategories),
-    numberFormats: Array.from(numberFormats).slice(0, 10),
+    // Sample data rows
+    console.log("\n=== SAMPLE DATA ROWS ===")
+    lines.slice(1, 10).forEach((line, index) => {
+      if (line.trim()) {
+        console.log(`Data row ${index + 1}: "${line}"`)
+      }
+    })
+
+    return csvText
+  } catch (error) {
+    console.error("Error analyzing CSV:", error)
+    throw error
   }
 }
 
-// Example usage with sample CSV data
-const sampleCSV = `Symbole,Quantité,Prix unitaire,Prix,Dev.,Valeur totale CHF,G&P CHF,G&P %,Positions %,Var. quot. %
-Actions
-AAPL,100,150.00,160.00,USD,16'000.00,1'000.00,6.67,16.00,1.50
-MSFT,50,200.00,210.00,USD,10'500.00,500.00,5.00,10.50,0.75
-ETF
-IWDA,200,75.00,78.00,USD,15'600.00,600.00,4.00,15.60,0.25
-VTI,100,180.00,185.00,USD,18'500.00,500.00,2.78,18.50,-0.50`
-
-export function runCSVAnalysis(csvText?: string): CSVAnalysis {
-  const textToAnalyze = csvText || sampleCSV
-  const analysis = analyzeCSVStructure(textToAnalyze)
-
-  console.log("=== CSV Structure Analysis ===")
-  console.log("Total rows:", analysis.totalRows)
-  console.log("Detected delimiter:", analysis.detectedDelimiter)
-  console.log("Columns:", analysis.columns)
-  console.log("Possible categories:", analysis.possibleCategories)
-  console.log("Sample number formats:", analysis.numberFormats)
-  console.log("Sample rows:")
-  analysis.sampleRows.forEach((row, index) => {
-    console.log(`Row ${index + 1}:`, row)
-  })
-
-  return analysis
-}
-
-// Run analysis if called directly
-if (require.main === module) {
-  runCSVAnalysis()
-}
+// Run the analysis
+analyzeCsvStructure()

@@ -41,7 +41,7 @@ describe("Swiss Portfolio Parser", () => {
       ],
       sector: [
         { sector: "Technology", weight: 25 },
-        { sector: "Financials", weight: 75 },
+        { sector: "Financial Services", weight: 75 },
       ],
       holdings: [],
       domicile: "IE",
@@ -153,6 +153,48 @@ describe("Swiss Portfolio Parser", () => {
 
       const applePosition = result.positions.find((p) => p.symbol === "AAPL")
       expect(applePosition?.quantity).toBe(300)
+    })
+  })
+
+  describe("CSV Parsing", () => {
+    test("should parse Swissquote CSV format", async () => {
+      const csvText = `Symbole,Nom,Quantité,Prix unitaire,Devise,Valeur totale CHF,G&P CHF
+AAPL,Apple Inc.,100,150.00,USD,15000.00,1000.00
+VWRL,Vanguard FTSE All-World,500,89.96,CHF,44980.00,2000.00
+NESN,Nestlé SA,50,120.00,CHF,6000.00,500.00`
+
+      const result = await parseSwissPortfolioPDF(csvText)
+
+      expect(result).toBeDefined()
+      expect(result.positions.length).toBe(3)
+
+      const applePosition = result.positions.find((p) => p.symbol === "AAPL")
+      expect(applePosition).toBeDefined()
+      expect(applePosition?.quantity).toBe(100)
+      expect(applePosition?.price).toBeCloseTo(150.0, 2)
+      expect(applePosition?.currency).toBe("USD")
+      expect(applePosition?.totalValueCHF).toBeCloseTo(15000.0, 2)
+    })
+
+    test("should parse CSV with semicolon delimiter", async () => {
+      const csvText = `Symbole;Nom;Quantité;Prix unitaire;Devise;Valeur totale CHF
+AAPL;Apple Inc.;100;150.00;USD;15000.00
+VWRL;Vanguard FTSE All-World;500;89.96;CHF;44980.00`
+
+      const result = await parseSwissPortfolioPDF(csvText)
+
+      expect(result).toBeDefined()
+      expect(result.positions.length).toBe(2)
+    })
+
+    test("should handle CSV without clear headers", async () => {
+      const csvText = `AAPL,Apple Inc.,100,150.00,USD,15000.00
+VWRL,Vanguard FTSE All-World,500,89.96,CHF,44980.00`
+
+      const result = await parseSwissPortfolioPDF(csvText)
+
+      expect(result).toBeDefined()
+      expect(result.positions.length).toBe(2)
     })
   })
 
@@ -298,7 +340,7 @@ describe("Swiss Portfolio Parser", () => {
       // Should have sector breakdown from ETF composition
       expect(result.sectorAllocation.length).toBeGreaterThan(1)
       expect(result.sectorAllocation.some((s) => s.sector === "Technology")).toBeTruthy()
-      expect(result.sectorAllocation.some((s) => s.sector === "Financials")).toBeTruthy()
+      expect(result.sectorAllocation.some((s) => s.sector === "Financial Services")).toBeTruthy()
     })
   })
 
@@ -326,6 +368,117 @@ describe("Swiss Portfolio Parser", () => {
       expect(position?.currentPrice).toBe(160.0)
       expect(position?.unrealizedGainLoss).toBeCloseTo(1000.0, 2) // (160-150) * 100
       expect(position?.unrealizedGainLossPercent).toBeCloseTo(6.67, 2)
+    })
+  })
+
+  describe("Tax Optimization for Swiss Investors", () => {
+    test("should correctly identify US domiciled funds as tax optimized", async () => {
+      // Mock US ETF
+      mockApiService.getETFComposition.mockResolvedValue({
+        symbol: "VTI",
+        currency: [{ currency: "USD", weight: 100 }],
+        country: [{ country: "United States", weight: 100 }],
+        sector: [{ sector: "Technology", weight: 30 }],
+        holdings: [],
+        domicile: "US",
+        withholdingTax: 15,
+        lastUpdated: new Date().toISOString(),
+      })
+
+      const text = `
+        Valeur totale 100'000.00
+        ETF
+        VTI Vanguard Total Stock Market 1000 200.00 USD 200'000.00
+      `
+
+      const result = await parseSwissPortfolioPDF(text)
+
+      const position = result.positions.find((p) => p.symbol === "VTI")
+      expect(position).toBeDefined()
+      expect(position?.domicile).toBe("US")
+      expect(position?.taxOptimized).toBe(true) // US domiciled is better for Swiss
+      expect(position?.withholdingTax).toBe(15)
+    })
+
+    test("should correctly identify European domiciled funds as less tax optimized", async () => {
+      // Mock European ETF
+      mockApiService.getETFComposition.mockResolvedValue({
+        symbol: "VWRL",
+        currency: [{ currency: "USD", weight: 65 }],
+        country: [{ country: "United States", weight: 65 }],
+        sector: [{ sector: "Technology", weight: 25 }],
+        holdings: [],
+        domicile: "IE",
+        withholdingTax: 15,
+        lastUpdated: new Date().toISOString(),
+      })
+
+      const text = `
+        Valeur totale 100'000.00
+        ETF
+        VWRL Vanguard FTSE All-World 1000 89.96 CHF 89'960.00
+      `
+
+      const result = await parseSwissPortfolioPDF(text)
+
+      const position = result.positions.find((p) => p.symbol === "VWRL")
+      expect(position).toBeDefined()
+      expect(position?.domicile).toBe("IE")
+      expect(position?.taxOptimized).toBe(false) // European domiciled is less optimal for Swiss
+      expect(position?.withholdingTax).toBe(15)
+    })
+  })
+
+  describe("Symbol Resolution and Caching", () => {
+    test("should handle symbol variations for European ETFs", async () => {
+      // Test that the system tries different symbol variations
+      const text = `
+        Valeur totale 100'000.00
+        ETF
+        VWRL Vanguard FTSE All-World 1000 89.96 CHF 89'960.00
+      `
+
+      const result = await parseSwissPortfolioPDF(text)
+
+      expect(result).toBeDefined()
+      expect(result.positions.length).toBeGreaterThan(0)
+
+      // Verify that the API service was called (symbol resolution should work)
+      expect(mockApiService.getStockPrice).toHaveBeenCalled()
+      expect(mockApiService.getAssetMetadata).toHaveBeenCalled()
+      expect(mockApiService.getETFComposition).toHaveBeenCalled()
+    })
+  })
+
+  describe("Enhanced CSV Parsing", () => {
+    test("should handle French column headers", async () => {
+      const csvText = `Symbole;Libellé;Quantité;Cours;Devise;Montant CHF
+AAPL;Apple Inc.;100;150.00;USD;15000.00
+VWRL;Vanguard FTSE All-World;500;89.96;CHF;44980.00`
+
+      const result = await parseSwissPortfolioPDF(csvText)
+
+      expect(result).toBeDefined()
+      expect(result.positions.length).toBe(2)
+
+      const applePosition = result.positions.find((p) => p.symbol === "AAPL")
+      expect(applePosition).toBeDefined()
+      expect(applePosition?.name).toBe("Apple Inc.")
+    })
+
+    test("should handle mixed case headers", async () => {
+      const csvText = `SYMBOLE;NOM;QUANTITE;PRIX;DEVISE;TOTAL_CHF
+aapl;Apple Inc.;100;150.00;USD;15000.00
+vwrl;Vanguard FTSE All-World;500;89.96;CHF;44980.00`
+
+      const result = await parseSwissPortfolioPDF(csvText)
+
+      expect(result).toBeDefined()
+      expect(result.positions.length).toBe(2)
+
+      // Symbols should be normalized to uppercase
+      expect(result.positions.some((p) => p.symbol === "AAPL")).toBeTruthy()
+      expect(result.positions.some((p) => p.symbol === "VWRL")).toBeTruthy()
     })
   })
 })

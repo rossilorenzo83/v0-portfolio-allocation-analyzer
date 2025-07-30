@@ -209,6 +209,7 @@ function looksLikeSwissquoteCSV(text: string): boolean {
     "Symbole",
     "Symbol",
     "Ticker",
+    "ISIN",
     "Quantité",
     "Quantity",
     "Qty",
@@ -228,6 +229,9 @@ function looksLikeSwissquoteCSV(text: string): boolean {
     "Positions %",
     "Weight",
     "Allocation",
+    "Cours",
+    "Montant",
+    "Valeur",
   ]
 
   return (
@@ -312,11 +316,12 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
 
     const rowText = row.join(" ").toLowerCase()
 
-    // Look for key header indicators
+    // Look for key header indicators - expanded list
     const headerIndicators = [
       "symbole",
       "symbol",
       "ticker",
+      "isin",
       "quantité",
       "quantity",
       "qty",
@@ -329,14 +334,24 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
       "currency",
       "dev",
       "ccy",
+      "montant",
+      "total",
+      "chf",
+      "usd",
+      "eur",
+      "libellé",
+      "libelle",
+      "description",
+      "nom",
+      "name",
     ]
 
     const matchCount = headerIndicators.filter((indicator) => rowText.includes(indicator)).length
 
     console.log(`Row ${i} header match count: ${matchCount}, content: ${rowText.substring(0, 100)}`)
 
-    if (matchCount >= 2) {
-      // Need at least 2 header indicators
+    if (matchCount >= 3) {
+      // Need at least 3 header indicators
       headerRowIndex = i
       headers = row.map((h) => h.toString().trim())
       console.log("Header found at row", i, ":", headers)
@@ -352,9 +367,29 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
 
   // Map column indices with more flexible matching
   const columnMap = {
-    symbol: findColumnIndex(headers, ["symbole", "symbol", "ticker", "isin", "code"]),
-    name: findColumnIndex(headers, ["nom", "name", "description", "libellé", "libelle", "designation"]),
-    quantity: findColumnIndex(headers, ["quantité", "quantity", "qty", "nombre", "qte"]),
+    symbol: findColumnIndex(headers, [
+      "symbole",
+      "symbol",
+      "ticker",
+      "isin",
+      "code",
+      "instrument",
+      "titre",
+      "security",
+    ]),
+    name: findColumnIndex(headers, [
+      "nom",
+      "name",
+      "description",
+      "libellé",
+      "libelle",
+      "designation",
+      "intitulé",
+      "intitule",
+      "security name",
+      "instrument name",
+    ]),
+    quantity: findColumnIndex(headers, ["quantité", "quantity", "qty", "nombre", "qte", "units", "shares", "parts"]),
     unitCost: findColumnIndex(headers, [
       "prix unitaire",
       "unit price",
@@ -362,17 +397,47 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
       "coût unitaire",
       "cout unitaire",
       "prix d'achat",
+      "purchase price",
+      "avg cost",
     ]),
-    price: findColumnIndex(headers, ["prix", "price", "cours", "valeur", "current price", "market price"]),
-    currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy", "curr"]),
+    price: findColumnIndex(headers, [
+      "prix",
+      "price",
+      "cours",
+      "valeur",
+      "current price",
+      "market price",
+      "last price",
+      "quote",
+      "cotation",
+    ]),
+    currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy", "curr", "monnaie"]),
     totalCHF: findColumnIndex(headers, [
       "valeur totale chf",
       "total value chf",
       "total chf",
       "montant chf",
       "valeur chf",
+      "market value chf",
+      "value chf",
+      "total",
+      "montant",
+      "valeur totale",
+      "market value",
     ]),
-    gainLoss: findColumnIndex(headers, ["g&p chf", "gain loss chf", "plus-value", "résultat", "resultat", "p&l"]),
+    gainLoss: findColumnIndex(headers, [
+      "g&p chf",
+      "gain loss chf",
+      "plus-value",
+      "résultat",
+      "resultat",
+      "p&l",
+      "pnl",
+      "gain",
+      "loss",
+      "profit",
+      "unrealized",
+    ]),
     gainLossPercent: findColumnIndex(headers, [
       "g&p %",
       "gain loss %",
@@ -380,9 +445,31 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
       "résultat %",
       "resultat %",
       "p&l %",
+      "pnl %",
+      "gain %",
+      "performance",
+      "rendement",
     ]),
-    positionPercent: findColumnIndex(headers, ["positions %", "position %", "poids", "weight", "allocation"]),
-    dailyChange: findColumnIndex(headers, ["quot. %", "daily %", "variation", "change", "var. quot."]),
+    positionPercent: findColumnIndex(headers, [
+      "positions %",
+      "position %",
+      "poids",
+      "weight",
+      "allocation",
+      "% portfolio",
+      "portfolio %",
+      "weight %",
+    ]),
+    dailyChange: findColumnIndex(headers, [
+      "quot. %",
+      "daily %",
+      "variation",
+      "change",
+      "var. quot.",
+      "daily change",
+      "1d %",
+      "jour %",
+    ]),
   }
 
   console.log("Column mapping:", columnMap)
@@ -423,7 +510,9 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
       fullRowText.includes("sous-total") ||
       fullRowText.includes("subtotal") ||
       fullRowText.includes("somme") ||
-      fullRowText.includes("sum")
+      fullRowText.includes("sum") ||
+      fullRowText.includes("portfolio") ||
+      fullRowText.includes("portefeuille")
     ) {
       // Try to extract total portfolio value
       const totalValue = extractLargestNumberFromRow(row)
