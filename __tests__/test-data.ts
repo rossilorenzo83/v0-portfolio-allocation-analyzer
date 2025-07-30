@@ -18,6 +18,11 @@ export const mockSwissPortfolioData: SwissPortfolioData = {
       domicile: "US",
       positionPercent: 1.2,
       dailyChangePercent: 0.5,
+      unitCost: 160,
+      gainLossCHF: 1000,
+      taxOptimized: true,
+      withholdingTax: 15,
+      isOTC: false,
     },
     {
       symbol: "NESN",
@@ -30,6 +35,11 @@ export const mockSwissPortfolioData: SwissPortfolioData = {
       domicile: "CH",
       positionPercent: 0.4,
       dailyChangePercent: -0.2,
+      unitCost: 100,
+      gainLossCHF: 0,
+      taxOptimized: false,
+      withholdingTax: 0,
+      isOTC: false,
     },
     {
       symbol: "VWRL",
@@ -42,6 +52,11 @@ export const mockSwissPortfolioData: SwissPortfolioData = {
       domicile: "IE", // Irish domiciled ETF
       positionPercent: 1.5,
       dailyChangePercent: 0.8,
+      unitCost: 85,
+      gainLossCHF: 1000,
+      taxOptimized: false,
+      withholdingTax: 15,
+      isOTC: false,
     },
     {
       symbol: "IWDA",
@@ -54,6 +69,11 @@ export const mockSwissPortfolioData: SwissPortfolioData = {
       domicile: "IE", // Irish domiciled ETF
       positionPercent: 0.9,
       dailyChangePercent: 0.3,
+      unitCost: 70,
+      gainLossCHF: 750,
+      taxOptimized: false,
+      withholdingTax: 15,
+      isOTC: false,
     },
     {
       symbol: "GOOGL",
@@ -66,6 +86,11 @@ export const mockSwissPortfolioData: SwissPortfolioData = {
       domicile: "US",
       positionPercent: 0.2,
       dailyChangePercent: 1.1,
+      unitCost: 130,
+      gainLossCHF: 200,
+      taxOptimized: true,
+      withholdingTax: 15,
+      isOTC: false,
     },
   ],
   assetAllocation: [
@@ -102,49 +127,14 @@ export const mockSwissPortfolioData: SwissPortfolioData = {
   ],
 }
 
-export const mockPdfTextContent = `
-Account Overview
-Total value CHF 1’234’567
-Securities value CHF 1’200’000
-Cash balance CHF 34’567
-
-Positions
-Symbol Name Quantity Price Currency Value Category Domicile % DailyChange
-AAPL Apple Inc. 100 170.50 USD 15’000.00 CHF Stock US 1.20% 0.50%
-NESN Nestle SA 50 100.00 CHF 5’000.00 CHF Stock CH 0.40% -0.20%
-VWRL Vanguard FTSE All-World UCITS ETF 200 90.00 USD 18’000.00 CHF ETF IE 1.50% 0.80%
-IWDA iShares Core MSCI World UCITS ETF 150 75.00 USD 11’250.00 CHF ETF IE 0.90% 0.30%
-GOOGL Alphabet Inc. Class A 20 140.00 USD 2’500.00 CHF Stock US 0.20% 1.10%
-`
-
 export const sampleSwissquoteCsv = `Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF,Catégorie,Domicile,Positions %,Var. quot. %
 AAPL,Apple Inc.,10,170.00,USD,1564.00,Actions,US,10.50,1.20
 NESN.SW,Nestle S.A.,5,100.00,CHF,500.00,Actions,CH,5.00,0.10
 VWRL,Vanguard FTSE All-World UCITS ETF,2,95.00,USD,174.80,ETF,IE,1.20,0.50
 BTC-USD,Bitcoin,0.01,30000.00,USD,276.00,Crypto-monnaies,Unknown,1.85,-2.50`
 
-export const sampleSwissquotePdfText = `
-Account Overview
-Total value CHF 10'000.00
-Securities value CHF 9'000.00
-Cash balance CHF 1'000.00
-
-Positions
-Symbole Libellé Quantité Cours Devise Valeur totale CHF Catégorie Domicile Positions % Var. quot. %
-AAPL Apple Inc. 10 170.00 USD 1564.00 Actions US 15.00% 1.20%
-NESN.SW Nestle S.A. 5 100.00 CHF 500.00 Actions CH 5.00% 0.10%
-VWRL Vanguard FTSE All-World UCITS ETF 2 95.00 USD 174.80 ETF IE 1.20% 0.50%
-BTC-USD Bitcoin 0.01 30000.00 USD 276.00 Crypto-monnaies Unknown 1.85% -2.50%
-`
-
 export const sampleInvalidCsv = `Header1,Header2
 value1,value2
 invalid_row`
 
 export const sampleEmptyCsv = ``
-
-export const sampleNoPositionsPdfText = `
-Account Overview
-Total value CHF 10'000.00
-Cash balance CHF 10'000.00
-`

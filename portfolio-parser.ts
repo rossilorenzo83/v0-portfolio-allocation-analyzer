@@ -1,13 +1,4 @@
-import { getPdfText } from "./lib/pdf-utils"
 import Papa from "papaparse"
-import { parse as parseCsv } from "csv-parse/sync"
-
-// Declare the safePDFExtraction function
-async function safePDFExtraction(input: File): Promise<string> {
-  // Mock implementation for PDF extraction
-  const text = await getPdfText(input)
-  return text
-}
 
 export interface SwissPortfolioData {
   accountOverview: {
@@ -95,22 +86,6 @@ const CATEGORY_ALIASES: Record<string, string> = {
   Anleihen: "Bonds",
 }
 
-export interface Position {
-  symbol: string
-  quantity: number
-  averagePrice: number
-  currency: string
-  exchange?: string
-  isin?: string
-  name?: string
-}
-
-export interface Portfolio {
-  positions: Position[]
-  totalValue: number
-  totalCost: number
-}
-
 interface ColumnMapping {
   [key: string]: string // Maps a detected header to a standard Position key
 }
@@ -160,360 +135,13 @@ const parseValue = (value: string, key: string): any => {
 }
 
 export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
-  const records = parseCsv(csvContent, {
-    columns: true, // Automatically detect columns from the first row
-    skip_empty_lines: true,
-    trim: true,
-  })
-
-  if (!records || records.length === 0) {
-    console.warn("CSV parsing resulted in no records.")
-    return {
-      positions: [],
-      totalValue: 0,
-      assetAllocation: [],
-      currencyAllocation: [],
-      trueCountryAllocation: [],
-      trueSectorAllocation: [],
-      domicileAllocation: [],
-    }
-  }
-
-  const headers = Object.keys(records[0])
-  const columnMapping = detectColumnMapping(headers)
-
-  console.log("Detected CSV Headers:", headers)
-  console.log("Inferred Column Mapping:", columnMapping)
-
-  const positions: PortfolioPosition[] = []
-  let totalValue = 0
-
-  for (const record of records) {
-    const position: Partial<PortfolioPosition> = {}
-    let isValidPosition = true
-
-    for (const standardKey in columnMapping) {
-      const originalHeader = columnMapping[standardKey]
-      const rawValue = record[originalHeader]
-      const parsedValue = parseValue(rawValue, standardKey)
-
-      if (parsedValue !== undefined) {
-        ;(position as any)[standardKey] = parsedValue
-      }
-    }
-
-    // Basic validation for required fields
-    if (!position.symbol || !position.quantity || !position.price || !position.currency) {
-      console.warn("Skipping row due to missing required fields:", record)
-      isValidPosition = false
-    } else if (position.quantity <= 0 || position.price <= 0) {
-      console.warn("Skipping row due to non-positive quantity or price:", record)
-      isValidPosition = false
-    }
-
-    if (isValidPosition) {
-      const currentPosition = position as PortfolioPosition
-      positions.push(currentPosition)
-      totalValue += currentPosition.quantity * currentPosition.price
-    }
-  }
-
-  if (positions.length === 0) {
-    console.error("No valid positions found after parsing and validation.")
-    throw new Error("No valid positions found in the CSV file.")
-  }
-
-  const data: SwissPortfolioData = {
-    accountOverview: {
-      totalValue: totalValue,
-      securitiesValue: totalValue,
-      cashBalance: 0,
-    },
-    positions: positions,
-    assetAllocation: [],
-    currencyAllocation: [],
-    trueCountryAllocation: [],
-    trueSectorAllocation: [],
-    domicileAllocation: [],
-  }
-
-  // --- Calculate Allocations ---
-  const calculateAllocation = (
-    key: keyof PortfolioPosition | "category" | "domicile",
-    useEtfLookThrough = false,
-  ): AllocationItem[] => {
-    const breakdown: Record<string, number> = {}
-    data.positions.forEach((p) => {
-      if (useEtfLookThrough && p.category === "ETF") {
-        // Mock ETF look-through for country/sector/currency
-        // In a real app, this would come from an API call
-        const mockEtfData = {
-          country: [
-            { country: "US", weight: 70 },
-            { country: "CH", weight: 10 },
-          ],
-          sector: [
-            { sector: "Technology", weight: 50 },
-            { sector: "Financials", weight: 20 },
-          ],
-          currency: [
-            { currency: "USD", weight: 80 },
-            { currency: "EUR", weight: 10 },
-          ],
-        }
-
-        if (key === "trueCountryAllocation" && mockEtfData.country) {
-          mockEtfData.country.forEach((holding) => {
-            const holdingValue = (p.totalValueCHF * holding.weight) / 100
-            breakdown[holding.country] = (breakdown[holding.country] || 0) + holdingValue
-          })
-        } else if (key === "trueSectorAllocation" && mockEtfData.sector) {
-          mockEtfData.sector.forEach((holding) => {
-            const holdingValue = (p.totalValueCHF * holding.weight) / 100
-            breakdown[holding.sector] = (breakdown[holding.sector] || 0) + holdingValue
-          })
-        } else if (key === "currencyAllocation" && mockEtfData.currency) {
-          mockEtfData.currency.forEach((holding) => {
-            const holdingValue = (p.totalValueCHF * holding.weight) / 100
-            breakdown[holding.currency] = (breakdown[holding.currency] || 0) + holdingValue
-          })
-        } else {
-          const allocationKey = p[key as keyof PortfolioPosition] as string
-          breakdown[allocationKey] = (breakdown[allocationKey] || 0) + p.totalValueCHF
-        }
-      } else {
-        const allocationKey = p[key as keyof PortfolioPosition] as string
-        breakdown[allocationKey] = (breakdown[allocationKey] || 0) + p.totalValueCHF
-      }
-    })
-
-    const total = Object.values(breakdown).reduce((sum, val) => sum + val, 0)
-    return Object.entries(breakdown)
-      .map(([name, value]) => ({
-        name,
-        value,
-        percentage: total > 0 ? (value / total) * 100 : 0,
-      }))
-      .sort((a, b) => b.value - a.value)
-  }
-
-  data.assetAllocation = calculateAllocation("category")
-  data.currencyAllocation = calculateAllocation("currency", true)
-  data.domicileAllocation = calculateAllocation("domicile")
-  data.trueCountryAllocation = calculateAllocation("geography", true)
-  data.trueSectorAllocation = calculateAllocation("sector", true)
-
-  console.log("Calculated Asset Allocation:", data.assetAllocation)
-  console.log("Calculated Currency Allocation:", data.currencyAllocation)
-  console.log("Calculated Domicile Allocation:", data.domicileAllocation)
-  console.log("Calculated True Country Allocation:", data.trueCountryAllocation)
-  console.log("Calculated True Sector Allocation:", data.trueSectorAllocation)
-
-  return data
-}
-
-/**
- * Parses a Swiss portfolio PDF or CSV file with enhanced real API integration.
- */
-export async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfolioData> {
-  let text: string
-
-  if (input instanceof File) {
-    console.log(`Processing file: ${input.name} (${input.type}, ${input.size} bytes)`)
-
-    try {
-      if (input.type === "text/csv" || input.name.endsWith(".csv")) {
-        text = await input.text()
-        console.log("CSV file detected, parsing...")
-        return await parseSwissquoteCSV(text)
-      }
-
-      if (input.type === "application/pdf") {
-        console.log("Attempting PDF extraction...")
-        text = await safePDFExtraction(input)
-        console.log("PDF extraction successful, text length:", text.length)
-      } else {
-        text = await input.text()
-        console.log("Text file processed, length:", text.length)
-      }
-    } catch (extractionError) {
-      console.error("File extraction failed:", extractionError)
-      throw new Error(
-        "File processing failed. Please try the copy-paste method or check your file format.\n\n" +
-          "Error details: " +
-          (extractionError instanceof Error ? extractionError.message : String(extractionError)),
-      )
-    }
-  } else {
-    text = input
-    console.log("Text input processed, length:", text.length)
-
-    // Check if the text input is CSV format
-    if (looksLikeSwissquoteCSV(text)) {
-      console.log("CSV format detected in text input")
-      return await parseSwissquoteCSV(text)
-    }
-  }
-
-  // Basic text validation
-  if (!text || text.trim().length < 10) {
-    throw new Error("Insufficient text content found. Please ensure your file contains portfolio data.")
-  }
-
-  console.log("Starting portfolio parsing...")
-  console.log("First 500 characters:", text.substring(0, 500))
-
-  // Parse account overview
-  const accountOverview = parseAccountOverview(text)
-  console.log("Account overview parsed:", accountOverview)
-
-  // Parse positions
-  const parsedPositions = parsePositions(text)
-  console.log("Parsed positions:", parsedPositions.length)
-
-  if (parsedPositions.length === 0) {
-    console.log("No positions found, trying alternative parsing methods...")
-    const alternativePositions = parseAlternativeFormat(text)
-    console.log("Alternative parsing found:", alternativePositions.length)
-
-    if (alternativePositions.length === 0) {
-      throw new Error(
-        "No portfolio positions found. Please check the file format. Make sure your text includes position data with symbols, quantities, and prices.",
-      )
-    }
-
-    parsedPositions.push(...alternativePositions)
-  }
-
-  // Enrich positions with real API data
-  console.log("Enriching positions with real API data...")
-  const enrichedPositions = await enrichPositionsWithAPIData(parsedPositions)
-  console.log("Positions enriched:", enrichedPositions.length)
-
-  // Calculate allocations
-  const totalValue = enrichedPositions.reduce((sum, p) => sum + p.totalValueCHF, 0)
-
-  const assetAllocation = calculateAssetAllocation(enrichedPositions, totalValue)
-  const currencyAllocation = await calculateTrueCurrencyAllocation(enrichedPositions, totalValue)
-  const trueCountryAllocation = await calculateTrueCountryAllocation(enrichedPositions, totalValue)
-  const trueSectorAllocation = await calculateTrueSectorAllocation(enrichedPositions, totalValue)
-  const domicileAllocation = calculateDomicileAllocation(enrichedPositions, totalValue)
-
-  const portfolioData: SwissPortfolioData = {
-    accountOverview: {
-      ...accountOverview,
-      totalValue: totalValue + accountOverview.cashBalance,
-      securitiesValue: totalValue,
-    },
-    positions: enrichedPositions,
-    assetAllocation,
-    currencyAllocation,
-    trueCountryAllocation,
-    trueSectorAllocation,
-    domicileAllocation,
-  }
-
-  console.log("Portfolio parsing complete:", {
-    totalValue: portfolioData.accountOverview.totalValue,
-    positionsCount: portfolioData.positions.length,
-    assetTypes: portfolioData.assetAllocation.length,
-    currencies: portfolioData.currencyAllocation.length,
-  })
-
-  return portfolioData
-}
-
-function looksLikeSwissquoteCSV(text: string): boolean {
-  const lines = text.split("\n").slice(0, 20) // Check first 20 lines
-
-  // Check for common CSV indicators
-  const csvIndicators = [
-    "Symbole",
-    "Symbol",
-    "Ticker",
-    "ISIN",
-    "Quantité",
-    "Quantity",
-    "Qty",
-    "Prix unitaire",
-    "Unit Price",
-    "Price",
-    "Valeur totale CHF",
-    "Total Value CHF",
-    "Total CHF",
-    "Devise",
-    "Currency",
-    "Dev",
-    "CCY",
-    "G&P",
-    "Gain",
-    "Loss",
-    "P&L",
-    "Positions %",
-    "Weight",
-    "Allocation",
-    "Cours",
-    "Montant",
-    "Valeur",
-  ]
-
-  return (
-    lines.some((line) => csvIndicators.some((indicator) => line.toLowerCase().includes(indicator.toLowerCase()))) ||
-    text.includes(",") ||
-    text.includes(";")
-  )
-}
-
-function detectCSVDelimiter(csvText: string): string {
-  const delimiters = [",", ";", "\t", "|"]
-  const lines = csvText.split(/\r?\n/).slice(0, 10) // Check first 10 lines
-
-  let bestDelimiter = ","
-  let maxScore = 0
-
-  for (const delimiter of delimiters) {
-    let score = 0
-    let consistentColumns = true
-    let columnCount = -1
-
-    for (const line of lines) {
-      if (!line.trim()) continue
-
-      const columns = line.split(delimiter).length
-
-      if (columnCount === -1) {
-        columnCount = columns
-      } else if (columnCount !== columns) {
-        consistentColumns = false
-      }
-
-      // Score based on number of columns and consistency
-      if (columns > 1) {
-        score += columns
-        if (consistentColumns) score += 5
-      }
-    }
-
-    console.log(`Delimiter '${delimiter}': score=${score}, consistent=${consistentColumns}`)
-
-    if (score > maxScore) {
-      maxScore = score
-      bestDelimiter = delimiter
-    }
-  }
-
-  console.log("Selected delimiter:", bestDelimiter)
-  return bestDelimiter
-}
-
-async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
   console.log("Starting enhanced CSV parsing...")
-  console.log("CSV preview (first 1000 chars):", csv.substring(0, 1000))
+  console.log("CSV preview (first 1000 chars):", csvContent.substring(0, 1000))
 
-  const delimiter = detectCSVDelimiter(csv)
+  const delimiter = detectCSVDelimiter(csvContent)
 
   // Parse with Papa Parse
-  const { data, errors } = Papa.parse(csv, {
+  const { data, errors } = Papa.parse(csvContent, {
     delimiter,
     skipEmptyLines: "greedy",
     dynamicTyping: false,
@@ -588,7 +216,7 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
   // If no clear header found, try to infer structure
   if (headerRowIndex === -1) {
     console.log("No clear header found, attempting structure inference...")
-    return await parseCSVWithoutHeaders(rows)
+    return parseCSVWithoutHeaders(rows)
   }
 
   // Map column indices with more flexible matching
@@ -851,7 +479,7 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
   )
 
   // Enrich with API data
-  const enrichedPositions = await enrichPositionsWithAPIData(
+  const enrichedPositions = enrichPositionsWithAPIData(
     positions.map((p) => ({
       symbol: p.symbol,
       name: p.name,
@@ -871,14 +499,14 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
     },
     positions: enrichedPositions,
     assetAllocation: calculateAssetAllocation(enrichedPositions, calculatedTotal),
-    currencyAllocation: await calculateTrueCurrencyAllocation(enrichedPositions, calculatedTotal),
-    trueCountryAllocation: await calculateTrueCountryAllocation(enrichedPositions, calculatedTotal),
-    trueSectorAllocation: await calculateTrueSectorAllocation(enrichedPositions, calculatedTotal),
+    currencyAllocation: calculateTrueCurrencyAllocation(enrichedPositions, calculatedTotal),
+    trueCountryAllocation: calculateTrueCountryAllocation(enrichedPositions, calculatedTotal),
+    trueSectorAllocation: calculateTrueSectorAllocation(enrichedPositions, calculatedTotal),
     domicileAllocation: calculateDomicileAllocation(enrichedPositions, calculatedTotal),
   }
 }
 
-async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioData> {
+function parseCSVWithoutHeaders(rows: string[][]): SwissPortfolioData {
   console.log("Attempting to parse CSV without clear headers...")
 
   const positions: PortfolioPosition[] = []
@@ -954,7 +582,7 @@ async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioD
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
 
   // Enrich with API data
-  const enrichedPositions = await enrichPositionsWithAPIData(
+  const enrichedPositions = enrichPositionsWithAPIData(
     positions.map((p) => ({
       symbol: p.symbol,
       name: p.name,
@@ -974,9 +602,9 @@ async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioD
     },
     positions: enrichedPositions,
     assetAllocation: calculateAssetAllocation(enrichedPositions, calculatedTotal),
-    currencyAllocation: await calculateTrueCurrencyAllocation(enrichedPositions, calculatedTotal),
-    trueCountryAllocation: await calculateTrueCountryAllocation(enrichedPositions, calculatedTotal),
-    trueSectorAllocation: await calculateTrueSectorAllocation(enrichedPositions, calculatedTotal),
+    currencyAllocation: calculateTrueCurrencyAllocation(enrichedPositions, calculatedTotal),
+    trueCountryAllocation: calculateTrueCountryAllocation(enrichedPositions, calculatedTotal),
+    trueSectorAllocation: calculateTrueSectorAllocation(enrichedPositions, calculatedTotal),
     domicileAllocation: calculateDomicileAllocation(enrichedPositions, calculatedTotal),
   }
 }
@@ -1038,204 +666,49 @@ function parseSwissNumber(str: string): number {
   return isNaN(parsed) ? 0 : parsed
 }
 
-function parseAccountOverview(text: string) {
-  const overview = {
-    totalValue: 0,
-    cashBalance: 0,
-    securitiesValue: 0,
+function detectCSVDelimiter(csvText: string): string {
+  const delimiters = [",", ";", "\t", "|"]
+  const lines = csvText.split(/\r?\n/).slice(0, 10) // Check first 10 lines
+
+  let bestDelimiter = ","
+  let maxScore = 0
+
+  for (const delimiter of delimiters) {
+    let score = 0
+    let consistentColumns = true
+    let columnCount = -1
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+
+      const columns = line.split(delimiter).length
+
+      if (columnCount === -1) {
+        columnCount = columns
+      } else if (columnCount !== columns) {
+        consistentColumns = false
+      }
+
+      // Score based on number of columns and consistency
+      if (columns > 1) {
+        score += columns
+        if (consistentColumns) score += 5
+      }
+    }
+
+    console.log(`Delimiter '${delimiter}': score=${score}, consistent=${consistentColumns}`)
+
+    if (score > maxScore) {
+      maxScore = score
+      bestDelimiter = delimiter
+    }
   }
 
-  // Try different patterns for different banks
-  const patterns = [
-    // Swissquote
-    /Valeur totale.*?(\d+(?:'?\d{3})*\.?\d*)/i,
-    /Solde espèces.*?(\d+(?:'?\d{3})*\.?\d*)/i,
-    /Valeur des titres.*?(\d+(?:'?\d{3})*\.?\d*)/i,
-
-    // UBS
-    /Total Assets.*?CHF\s*(\d+(?:'?\d{3})*\.?\d*)/i,
-    /Cash Position.*?CHF\s*(\d+(?:'?\d{3})*\.?\d*)/i,
-    /Securities.*?CHF\s*(\d+(?:'?\d{3})*\.?\d*)/i,
-
-    // Credit Suisse
-    /Portfolio Value.*?CHF\s*(\d+(?:'?\d{3})*\.?\d*)/i,
-    /Cash Balance.*?CHF\s*(\d+(?:'?\d{3})*\.?\d*)/i,
-    /Investment Value.*?CHF\s*(\d+(?:'?\d{3})*\.?\d*)/i,
-  ]
-
-  // Extract total value
-  const totalMatch = text.match(patterns[0]) || text.match(patterns[3]) || text.match(patterns[6])
-  if (totalMatch) {
-    overview.totalValue = parseSwissNumber(totalMatch[1])
-  }
-
-  // Extract cash balance
-  const cashMatch = text.match(patterns[1]) || text.match(patterns[4]) || text.match(patterns[7])
-  if (cashMatch) {
-    overview.cashBalance = parseSwissNumber(cashMatch[1])
-  }
-
-  // Extract securities value
-  const securitiesMatch = text.match(patterns[2]) || text.match(patterns[5]) || text.match(patterns[8])
-  if (securitiesMatch) {
-    overview.securitiesValue = parseSwissNumber(securitiesMatch[1])
-  }
-
-  return overview
+  console.log("Selected delimiter:", bestDelimiter)
+  return bestDelimiter
 }
 
-function parsePositions(text: string): ParsedPosition[] {
-  const positions: ParsedPosition[] = []
-
-  // Split text into lines and process
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-
-  let currentCategory = "Unknown"
-
-  console.log("Parsing positions from", lines.length, "lines")
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-
-    // Detect category headers
-    if (line.match(/^(Actions|Equities|Stock|Aktien)/i)) {
-      currentCategory = "Actions"
-      console.log("Found Actions category")
-      continue
-    } else if (line.match(/^(ETF|Funds|Fonds)/i)) {
-      currentCategory = "ETF"
-      console.log("Found ETF category")
-      continue
-    } else if (line.match(/^(Obligations|Bonds|Anleihen)/i)) {
-      currentCategory = "Bonds"
-      console.log("Found Bonds category")
-      continue
-    } else if (line.match(/^(Crypto|Bitcoin|BTC)/i)) {
-      currentCategory = "Cryptocurrencies"
-      console.log("Found Crypto category")
-      continue
-    }
-
-    // Try to parse position line
-    const position = parsePositionLine(line, currentCategory)
-    if (position) {
-      console.log("Parsed position:", position.symbol, position.name)
-      positions.push(position)
-    }
-  }
-
-  return positions
-}
-
-function parsePositionLine(line: string, category: string): ParsedPosition | null {
-  // Multiple patterns for different bank formats
-  const patterns = [
-    // Standard format: AAPL Apple Inc. 100 150.00 USD 15'000.00
-    /^([A-Z0-9]{2,6})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{3})\s+(\d+(?:'?\d{3})*\.?\d*)$/,
-
-    // Swissquote: AAPL Apple Inc. 100 150.00 USD
-    /^([A-Z0-9]{2,6})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{3})$/,
-
-    // UBS: AAPL Apple Inc. Qty: 200 Price: USD 175.50 Value: CHF 35'100.00
-    /^([A-Z0-9]{2,6})\s+(.+?)\s+Qty:\s*(\d+(?:\.\d+)?)\s+Price:\s*([A-Z]{3})\s*(\d+(?:\.\d+)?)/,
-
-    // Credit Suisse: AAPL | Apple Inc. | 300 shares | $145.00 | CHF 43'500.00
-    /^([A-Z0-9]{2,6})\s*\|\s*(.+?)\s*\|\s*(\d+(?:\.\d+)?)\s*shares?\s*\|\s*\$?(\d+(?:\.\d+)?)\s*\|/,
-
-    // Simple format: AAPL 100 150.00 USD
-    /^([A-Z0-9]{2,6})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{3})$/,
-  ]
-
-  for (const pattern of patterns) {
-    const match = line.match(pattern)
-    if (match) {
-      let symbol, name, quantity, price, currency, totalValue
-
-      if (pattern === patterns[4]) {
-        // Simple format: AAPL 100 150.00 USD
-        ;[, symbol, quantity, price, currency] = match
-        name = symbol // Use symbol as name for simple format
-      } else {
-        ;[, symbol, name, quantity, price, currency, totalValue] = match
-      }
-
-      const parsedPosition: ParsedPosition = {
-        symbol: symbol.trim(),
-        name: (name || symbol).trim(),
-        quantity: Number.parseFloat(quantity),
-        price: Number.parseFloat(price),
-        currency: currency || "CHF",
-        category,
-      }
-
-      if (totalValue) {
-        parsedPosition.totalValue = parseSwissNumber(totalValue)
-      }
-
-      return parsedPosition
-    }
-  }
-
-  return null
-}
-
-// Alternative parsing method for simple text formats
-function parseAlternativeFormat(text: string): ParsedPosition[] {
-  const positions: ParsedPosition[] = []
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-
-  let currentCategory = "Unknown"
-
-  for (const line of lines) {
-    // Check for category headers
-    if (line.match(/^(Actions|Equities|Stock)/i)) {
-      currentCategory = "Actions"
-      continue
-    } else if (line.match(/^(ETF|Funds)/i)) {
-      currentCategory = "ETF"
-      continue
-    } else if (line.match(/^(Obligations|Bonds)/i)) {
-      currentCategory = "Bonds"
-      continue
-    }
-
-    // Try to parse any line that looks like a position
-    // Pattern: Symbol Name/Description Numbers Currency
-    const match = line.match(
-      /([A-Z0-9]{2,6})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{3})(?:\s+(\d+(?:'?\d{3})*\.?\d*))?/,
-    )
-
-    if (match) {
-      const [, symbol, name, quantity, price, currency, totalValue] = match
-
-      const position: ParsedPosition = {
-        symbol: symbol.trim(),
-        name: name.trim(),
-        quantity: Number.parseFloat(quantity),
-        price: Number.parseFloat(price),
-        currency: currency,
-        category: currentCategory,
-      }
-
-      if (totalValue) {
-        position.totalValue = parseSwissNumber(totalValue)
-      }
-
-      positions.push(position)
-      console.log("Alternative parsing found position:", position.symbol)
-    }
-  }
-
-  return positions
-}
-
-async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Promise<PortfolioPosition[]> {
+function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): PortfolioPosition[] {
   const enrichedPositions: PortfolioPosition[] = []
 
   for (const parsed of parsedPositions) {
@@ -1344,10 +817,7 @@ function calculateAssetAllocation(positions: PortfolioPosition[], totalValue: nu
   }))
 }
 
-async function calculateTrueCurrencyAllocation(
-  positions: PortfolioPosition[],
-  totalValue: number,
-): Promise<AllocationItem[]> {
+function calculateTrueCurrencyAllocation(positions: PortfolioPosition[], totalValue: number): AllocationItem[] {
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
@@ -1393,10 +863,7 @@ async function calculateTrueCurrencyAllocation(
   }))
 }
 
-async function calculateTrueCountryAllocation(
-  positions: PortfolioPosition[],
-  totalValue: number,
-): Promise<AllocationItem[]> {
+function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalValue: number): AllocationItem[] {
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
@@ -1442,10 +909,7 @@ async function calculateTrueCountryAllocation(
   }))
 }
 
-async function calculateTrueSectorAllocation(
-  positions: PortfolioPosition[],
-  totalValue: number,
-): Promise<AllocationItem[]> {
+function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValue: number): AllocationItem[] {
   const allocation = new Map<string, number>()
 
   for (const position of positions) {

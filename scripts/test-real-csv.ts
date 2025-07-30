@@ -3,7 +3,7 @@
 // using the portfolio-parser.ts logic.
 // Run with: ts-node scripts/test-real-csv.ts <CSV_URL>
 
-import { parseSwissPortfolioPDF } from "../portfolio-parser"
+import { parsePortfolioCsv } from "../portfolio-parser" // Use parsePortfolioCsv directly
 
 async function testRealCsv(csvUrl: string) {
   console.log(`--- Testing Real CSV from URL: ${csvUrl} ---`)
@@ -21,7 +21,7 @@ async function testRealCsv(csvUrl: string) {
     console.log("First 500 characters of CSV:\n", csvContent.substring(0, 500))
 
     console.log("\nStarting portfolio parsing...")
-    const portfolioData = await parseSwissPortfolioPDF(csvContent)
+    const portfolioData = await parsePortfolioCsv(csvContent) // Call parsePortfolioCsv
 
     console.log("\n--- Analysis Results ---")
     console.log("Account Overview:", portfolioData.accountOverview)

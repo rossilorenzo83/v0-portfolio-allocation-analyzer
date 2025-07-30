@@ -5,7 +5,7 @@
 
 import * as fs from "fs"
 import Papa from "papaparse"
-import { parseSwissPortfolioPDF } from "../portfolio-parser" // Import the main parser
+import { parsePortfolioCsv } from "../portfolio-parser" // Import the main CSV parser
 
 interface ColumnInfo {
   name: string
@@ -176,7 +176,7 @@ async function analyzeCsvStructure(filePath: string) {
 
   console.log("\n--- Attempting Full Portfolio Parse ---")
   try {
-    const parsedPortfolio = await parseSwissPortfolioPDF(csvContent)
+    const parsedPortfolio = await parsePortfolioCsv(csvContent) // Use parsePortfolioCsv directly
     console.log("\n✅ Full parse successful!")
     console.log("Parsed Positions Count:", parsedPortfolio.positions.length)
     console.log("Total Portfolio Value:", parsedPortfolio.accountOverview.totalValue)

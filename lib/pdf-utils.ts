@@ -199,3 +199,9 @@ export async function getPdfText(pdf: pdfjs.PDFDocumentProxy): Promise<string> {
   }
   return fullText
 }
+
+// Function to delete a file
+export function deleteFile(file: File): void {
+  // Placeholder for file deletion logic
+  console.log("File deleted:", file.name)
+}

@@ -1,27 +1,5 @@
-import { parseSwissPortfolioPDF, parsePortfolioCsv } from "../portfolio-parser"
+import { parsePortfolioCsv } from "../portfolio-parser"
 import { jest } from "@jest/globals"
-
-// Mock pdf-utils to avoid actual PDF parsing in tests
-jest.mock("../lib/pdf-utils", () => ({
-  safePDFExtraction: jest.fn((file: File) => {
-    if (file.name.endsWith(".pdf")) {
-      // Return a simplified text representation for PDF tests
-      return Promise.resolve(`
-        Account Overview
-        Total value CHF 10'000.00
-        Securities value CHF 9'000.00
-        Cash balance CHF 1'000.00
-
-        Positions
-        AAPL Apple Inc. 10 150.00 USD 1500.00 Actions US 15.00% 1.20%
-        VWRL Vanguard FTSE All-World UCITS ETF 5 100.00 USD 500.00 ETF IE 5.00% 0.50%
-      `)
-    }
-    return Promise.resolve("")
-  }),
-  loadPdf: jest.fn(() => Promise.resolve({})), // Mock loadPdf
-  getPdfText: jest.fn(() => Promise.resolve("")), // Mock getPdfText
-}))
 
 // Mock api-service to avoid actual API calls in tests
 jest.mock("../lib/api-service", () => ({
@@ -31,6 +9,7 @@ jest.mock("../lib/api-service", () => ({
         AAPL: { price: 150.0, changePercent: 1.2 },
         VWRL: { price: 100.0, changePercent: 0.5 },
         "NESN.SW": { price: 100.0, changePercent: 0.1 },
+        "BTC-USD": { price: 30000.0, changePercent: -2.5 },
       }
       return Promise.resolve(prices[symbol] || { price: 0, changePercent: 0 })
     }),
@@ -39,6 +18,7 @@ jest.mock("../lib/api-service", () => ({
         AAPL: { name: "Apple Inc.", sector: "Technology", country: "United States" },
         VWRL: { name: "Vanguard FTSE All-World UCITS ETF", sector: "Diversified", country: "Ireland" },
         "NESN.SW": { name: "Nestle S.A.", sector: "Consumer Staples", country: "Switzerland" },
+        "BTC-USD": { name: "Bitcoin", sector: "Cryptocurrency", country: "Global" },
       }
       return Promise.resolve(metadata[symbol] || { name: symbol, sector: "Unknown", country: "Unknown" })
     }),
@@ -67,25 +47,13 @@ jest.mock("../lib/api-service", () => ({
   },
 }))
 
-// Dummy File class for Node.js environment
-class DummyFile extends Blob {
-  name: string
-  lastModified: number
-
-  constructor(chunks: BlobPart[], name: string, options?: BlobPropertyBag) {
-    super(chunks, options)
-    this.name = name
-    this.lastModified = Date.now()
-  }
-}
-
 describe("parsePortfolioCsv", () => {
-  it("should parse a valid CSV string and return portfolio data", () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
+  it("should parse a valid CSV string and return portfolio data", async () => {
+    const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF,Catégorie,Domicile,Positions %,Var. quot. %
 AAPL,Apple Inc.,10,150.00,USD,1350.00,Actions,US,15.00,1.20
 NESN.SW,Nestle S.A.,5,100.00,CHF,500.00,Actions,CH,5.00,0.10`
 
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
 
     expect(result).toBeDefined()
     expect(result.positions.length).toBe(2)
@@ -111,89 +79,45 @@ NESN.SW,Nestle S.A.,5,100.00,CHF,500.00,Actions,CH,5.00,0.10`
     expect(result.positions[1].dailyChangePercent).toBe(0.1)
   })
 
-  it("should handle CSV with different delimiters (semicolon)", () => {
-    const csvContent = `Symbol;Name;Quantity;Price;Currency;Total Value CHF;Category;Domicile;Position %;Daily Change %
+  it("should handle CSV with different delimiters (semicolon)", async () => {
+    const csvContent = `Symbole;Libellé;Quantité;Cours;Devise;Valeur totale CHF;Catégorie;Domicile;Positions %;Var. quot. %
 AAPL;Apple Inc.;10;150.00;USD;1350.00;Actions;US;15.00;1.20`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
     expect(result.positions.length).toBe(1)
     expect(result.positions[0].symbol).toBe("AAPL")
   })
 
-  it("should throw error for CSV with no valid positions", () => {
+  it("should throw error for CSV with no valid positions", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency
 INVALID,Invalid Stock,0,0,USD` // Invalid quantity/price
-    expect(() => parsePortfolioCsv(csvContent)).toThrow("No valid positions found in the CSV file.")
+    await expect(parsePortfolioCsv(csvContent)).rejects.toThrow("No valid positions found in the CSV file.")
   })
 
-  it("should handle missing optional columns gracefully", () => {
+  it("should handle missing optional columns gracefully", async () => {
     const csvContent = `Symbol,Quantity,Price,Currency
 AAPL,10,150.00,USD`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
     expect(result.positions.length).toBe(1)
     expect(result.positions[0].name).toBe("AAPL") // Name defaults to symbol
     expect(result.positions[0].totalValueCHF).toBeCloseTo(10 * 150 * 0.92) // Calculated total value
   })
 
-  it("should correctly parse Swiss number formats", () => {
+  it("should correctly parse Swiss number formats", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF
 TEST,Test Stock,1'234.56,7.89,EUR,9'739.00`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
     expect(result.positions.length).toBe(1)
     expect(result.positions[0].quantity).toBe(1234.56)
     expect(result.positions[0].price).toBe(7.89)
     expect(result.positions[0].totalValueCHF).toBe(9739.0)
   })
-})
-
-describe("parseSwissPortfolioPDF", () => {
-  it("should parse a PDF file (mocked) and return portfolio data", async () => {
-    const mockPdfFile = new DummyFile(["dummy pdf content"], "portfolio.pdf", { type: "application/pdf" })
-    const result = await parseSwissPortfolioPDF(mockPdfFile)
-
-    expect(result).toBeDefined()
-    expect(result.accountOverview.totalValue).toBe(10000)
-    expect(result.accountOverview.securitiesValue).toBe(9000)
-    expect(result.accountOverview.cashBalance).toBe(1000)
-    expect(result.positions.length).toBe(2)
-    expect(result.positions[0].symbol).toBe("AAPL")
-    expect(result.positions[1].symbol).toBe("VWRL")
-  })
-
-  it("should parse a CSV file (mocked) via PDF entry point", async () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
-AAPL,Apple Inc.,10,150.00,USD,1350.00,Actions,US,15.00,1.20`
-    const mockCsvFile = new DummyFile([csvContent], "portfolio.csv", { type: "text/csv" })
-    const result = await parseSwissPortfolioPDF(mockCsvFile)
-
-    expect(result).toBeDefined()
-    expect(result.positions.length).toBe(1)
-    expect(result.positions[0].symbol).toBe("AAPL")
-  })
-
-  it("should throw error if no positions found in PDF", async () => {
-    // Mock safePDFExtraction to return empty content
-    require("../lib/pdf-utils").safePDFExtraction.mockResolvedValueOnce("Some header but no positions")
-    const mockPdfFile = new DummyFile(["empty content"], "empty.pdf", { type: "application/pdf" })
-
-    await expect(parseSwissPortfolioPDF(mockPdfFile)).rejects.toThrow("No portfolio positions found.")
-  })
-
-  it("should handle text input that looks like CSV", async () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
-AAPL,Apple Inc.,10,150.00,USD,1350.00,Actions,US,15.00,1.20`
-    const result = await parseSwissPortfolioPDF(csvContent)
-
-    expect(result).toBeDefined()
-    expect(result.positions.length).toBe(1)
-    expect(result.positions[0].symbol).toBe("AAPL")
-  })
 
   it("should calculate asset allocation correctly", async () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
+    const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF,Catégorie,Domicile,Positions %,Var. quot. %
 AAPL,Apple Inc.,10,100.00,USD,1000.00,Actions,US,10.00,1.00
 VWRL,Vanguard ETF,5,200.00,USD,1000.00,ETF,IE,10.00,0.50
 GLD,Gold Trust,1,500.00,USD,500.00,Commodities,US,5.00,0.20`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
 
     expect(result.assetAllocation).toEqual(
       expect.arrayContaining([
@@ -205,10 +129,10 @@ GLD,Gold Trust,1,500.00,USD,500.00,Commodities,US,5.00,0.20`
   })
 
   it("should calculate currency allocation correctly", async () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
+    const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF,Catégorie,Domicile,Positions %,Var. quot. %
 AAPL,Apple Inc.,10,100.00,USD,1000.00,Actions,US,10.00,1.00
 NESN.SW,Nestle S.A.,5,200.00,CHF,1000.00,Actions,CH,10.00,0.50`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
 
     expect(result.currencyAllocation).toEqual(
       expect.arrayContaining([
@@ -219,39 +143,39 @@ NESN.SW,Nestle S.A.,5,200.00,CHF,1000.00,Actions,CH,10.00,0.50`
   })
 
   it("should calculate true country allocation with ETF look-through", async () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
+    const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF,Catégorie,Domicile,Positions %,Var. quot. %
 VWRL,Vanguard FTSE All-World UCITS ETF,10,100.00,USD,1000.00,ETF,IE,10.00,1.00`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
 
     // Based on mock ETF composition for VWRL: 60% US, 5% CH
     expect(result.trueCountryAllocation).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "US", value: 700, percentage: 70 }), // 70% of 1000
-        expect.objectContaining({ name: "CH", value: 100, percentage: 10 }), // 10% of 1000
+        expect.objectContaining({ name: "United States", value: 600, percentage: 60 }), // 60% of 1000
+        expect.objectContaining({ name: "Switzerland", value: 50, percentage: 5 }), // 5% of 1000
       ]),
     )
   })
 
   it("should calculate true sector allocation with ETF look-through", async () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
+    const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF,Catégorie,Domicile,Positions %,Var. quot. %
 VWRL,Vanguard FTSE All-World UCITS ETF,10,100.00,USD,1000.00,ETF,IE,10.00,1.00`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
 
-    // Based on mock ETF composition for VWRL: 50% Technology, 20% Financials
+    // Based on mock ETF composition for VWRL: 20% Technology, 10% Consumer Staples
     expect(result.trueSectorAllocation).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "Technology", value: 500, percentage: 50 }), // 50% of 1000
-        expect.objectContaining({ name: "Financials", value: 200, percentage: 20 }), // 20% of 1000
+        expect.objectContaining({ name: "Technology", value: 200, percentage: 20 }), // 20% of 1000
+        expect.objectContaining({ name: "Consumer Staples", value: 100, percentage: 10 }), // 10% of 1000
       ]),
     )
   })
 
   it("should calculate domicile allocation correctly", async () => {
-    const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF,Category,Domicile,Position %,Daily Change %
+    const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF,Catégorie,Domicile,Positions %,Var. quot. %
 AAPL,Apple Inc.,10,100.00,USD,1000.00,Actions,US,10.00,1.00
 NESN.SW,Nestle S.A.,5,200.00,CHF,1000.00,Actions,CH,10.00,0.50
 VWRL,Vanguard ETF,5,200.00,USD,1000.00,ETF,IE,10.00,0.50`
-    const result = parsePortfolioCsv(csvContent)
+    const result = await parsePortfolioCsv(csvContent)
 
     expect(result.domicileAllocation).toEqual(
       expect.arrayContaining([

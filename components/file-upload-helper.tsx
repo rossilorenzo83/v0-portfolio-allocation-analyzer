@@ -1,12 +1,11 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
-
 import { useCallback, useState } from "react"
 import { useDropzone } from "react-dropzone"
 import { Input } from "@/components/ui/input"
 import { FileTextIcon, UploadIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 interface FileUploadHelperProps {
   onFileChange: (file: File | null) => void
@@ -33,9 +32,7 @@ export function FileUploadHelper({ onFileChange }: FileUploadHelperProps) {
     onDrop,
     multiple: false,
     accept: {
-      "application/pdf": [".pdf"],
-      "text/csv": [".csv"],
-      "text/plain": [".txt"],
+      "text/csv": [".csv"], // Only accept CSV files
     },
   })
 
@@ -59,9 +56,9 @@ export function FileUploadHelper({ onFileChange }: FileUploadHelperProps) {
         <Input {...getInputProps()} id="file-upload" className="sr-only" />
         <UploadIcon className="h-10 w-10 text-gray-400 dark:text-gray-600" />
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          {isDragActive ? "Drop the files here ..." : "Drag and drop your file here, or click to select"}
+          {isDragActive ? "Drop your CSV file here ..." : "Drag and drop your CSV file here, or click to select"}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-500">PDF, CSV, or TXT up to 10MB</p>
+        <p className="text-xs text-gray-500 dark:text-gray-500">Only CSV files up to 10MB</p>
       </div>
       {fileName && (
         <div className="flex items-center justify-between rounded-md bg-gray-100 p-3 dark:bg-gray-800">
