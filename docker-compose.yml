@@ -1,19 +1,21 @@
 version: '3.8'
 
 services:
-  portfolio-analyzer:
-    build: .
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
+      # Add your environment variables here, e.g.:
+      # - YAHOO_FINANCE_API_KEY=${YAHOO_FINANCE_API_KEY}
+      # - NEXT_PUBLIC_ANALYTICS_ID=${NEXT_PUBLIC_ANALYTICS_ID}
+      NODE_ENV: development
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/.next
     command: npm run dev
-    stdin_open: true
-    tty: true
 
   # Development service with hot reload
   portfolio-analyzer-dev:

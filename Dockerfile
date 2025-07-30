@@ -1,23 +1,23 @@
-# Use the official Node.js 18 image as base
-FROM node:18-alpine
+# Use the official Node.js 20 image as the base image
+FROM node:20-alpine
 
-# Set working directory
+# Set the working directory in the container
 WORKDIR /app
 
-# Copy package files
+# Copy package.json and package-lock.json (or yarn.lock) to the working directory
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm install
 
-# Copy source code
+# Copy the rest of the application code to the working directory
 COPY . .
 
-# Build the application
+# Build the Next.js application
 RUN npm run build
 
-# Expose port 3000
+# Expose the port the app runs on
 EXPOSE 3000
 
-# Start the application
+# Command to run the application
 CMD ["npm", "start"]
