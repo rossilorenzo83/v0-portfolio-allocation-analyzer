@@ -1,10 +1,52 @@
 import { parseSwissPortfolioPDF, parsePortfolioCsv } from "../portfolio-parser"
 import { apiService } from "../lib/api-service"
 import { jest } from "@jest/globals"
+import { mockSwissPortfolioData, mockPdfTextContent } from "./test-data"
 
 // Mock the API service
 jest.mock("../lib/api-service")
 const mockApiService = apiService as jest.Mocked<typeof apiService>
+
+// Mock pdfjs-dist and its functions
+jest.mock("pdfjs-dist", () => ({
+  getDocument: jest.fn(() => ({
+    promise: Promise.resolve({
+      numPages: 1,
+      getPage: jest.fn(() =>
+        Promise.resolve({
+          getTextContent: jest.fn(() =>
+            Promise.resolve({
+              items: mockPdfTextContent.split(" ").map((s) => ({ str: s })),
+            }),
+          ),
+        }),
+      ),
+    }),
+  })),
+  GlobalWorkerOptions: {
+    workerSrc: "",
+  },
+}))
+
+// Mock lib/pdf-utils to control PDF text content
+jest.mock("../lib/pdf-utils", () => ({
+  loadPdf: jest.fn((input) => {
+    // Simulate loading a PDF, return a mock PDFDocumentProxy
+    return Promise.resolve({
+      numPages: 1,
+      getPage: jest.fn(() =>
+        Promise.resolve({
+          getTextContent: jest.fn(() =>
+            Promise.resolve({
+              items: mockPdfTextContent.split(" ").map((s) => ({ str: s })),
+            }),
+          ),
+        }),
+      ),
+    })
+  }),
+  getPdfText: jest.fn(() => Promise.resolve(mockPdfTextContent)),
+}))
 
 describe("Swiss Portfolio Parser", () => {
   beforeEach(() => {
@@ -652,6 +694,87 @@ vwrl;Vanguard FTSE All-World;500;89.96;CHF;44980.00`
       // Symbols should be normalized to uppercase
       expect(result.positions.some((p) => p.symbol === "AAPL")).toBeTruthy()
       expect(result.positions.some((p) => p.symbol === "VWRL")).toBeTruthy()
+    })
+  })
+
+  describe("PDF Parsing", () => {
+    it("should parse account overview correctly", async () => {
+      const data = await parseSwissPortfolioPDF(new File([], "test.pdf", { type: "application/pdf" }))
+      expect(data.accountOverview.totalValue).toBe(mockSwissPortfolioData.accountOverview.totalValue)
+      expect(data.accountOverview.securitiesValue).toBe(mockSwissPortfolioData.accountOverview.securitiesValue)
+      expect(data.accountOverview.cashBalance).toBe(mockSwissPortfolioData.accountOverview.cashBalance)
+    })
+
+    it("should parse positions correctly", async () => {
+      const data = await parseSwissPortfolioPDF(new File([], "test.pdf", { type: "application/pdf" }))
+      expect(data.positions.length).toBe(mockSwissPortfolioData.positions.length)
+
+      // Check a specific position
+      const parsedAAPL = data.positions.find((p) => p.symbol === "AAPL")
+      const expectedAAPL = mockSwissPortfolioData.positions.find((p) => p.symbol === "AAPL")
+      expect(parsedAAPL).toBeDefined()
+      expect(parsedAAPL?.name).toBe(expectedAAPL?.name)
+      expect(parsedAAPL?.quantity).toBe(expectedAAPL?.quantity)
+      expect(parsedAAPL?.price).toBe(expectedAAPL?.price)
+      expect(parsedAAPL?.currency).toBe(expectedAAPL?.currency)
+      expect(parsedAAPL?.totalValueCHF).toBe(expectedAAPL?.totalValueCHF)
+      expect(parsedAAPL?.category).toBe(expectedAAPL?.category)
+      expect(parsedAAPL?.domicile).toBe(expectedAAPL?.domicile)
+      expect(parsedAAPL?.positionPercent).toBe(expectedAAPL?.positionPercent)
+      expect(parsedAAPL?.dailyChangePercent).toBe(expectedAAPL?.dailyChangePercent)
+    })
+
+    it("should calculate asset allocation correctly", async () => {
+      const data = await parseSwissPortfolioPDF(new File([], "test.pdf", { type: "application/pdf" }))
+      expect(data.assetAllocation.length).toBeGreaterThan(0)
+      const stocksAllocation = data.assetAllocation.find((a) => a.name === "Stock")
+      expect(stocksAllocation?.percentage).toBeCloseTo(
+        mockSwissPortfolioData.assetAllocation.find((a) => a.name === "Stock")?.percentage || 0,
+      )
+    })
+
+    it("should calculate currency allocation correctly", async () => {
+      const data = await parseSwissPortfolioPDF(new File([], "test.pdf", { type: "application/pdf" }))
+      expect(data.currencyAllocation.length).toBeGreaterThan(0)
+      const chfAllocation = data.currencyAllocation.find((a) => a.name === "CHF")
+      expect(chfAllocation?.percentage).toBeCloseTo(
+        mockSwissPortfolioData.currencyAllocation.find((a) => a.name === "CHF")?.percentage || 0,
+      )
+    })
+
+    it("should calculate domicile allocation correctly", async () => {
+      const data = await parseSwissPortfolioPDF(new File([], "test.pdf", { type: "application/pdf" }))
+      expect(data.domicileAllocation.length).toBeGreaterThan(0)
+      const usDomicile = data.domicileAllocation.find((a) => a.name === "US")
+      expect(usDomicile?.percentage).toBeCloseTo(
+        mockSwissPortfolioData.domicileAllocation.find((a) => a.name === "US")?.percentage || 0,
+      )
+    })
+
+    it("should calculate true country allocation with ETF look-through", async () => {
+      const data = await parseSwissPortfolioPDF(new File([], "test.pdf", { type: "application/pdf" }))
+      expect(data.trueCountryAllocation.length).toBeGreaterThan(0)
+      const usCountryAllocation = data.trueCountryAllocation.find((a) => a.name === "US")
+      expect(usCountryAllocation?.percentage).toBeCloseTo(
+        mockSwissPortfolioData.trueCountryAllocation.find((a) => a.name === "US")?.percentage || 0,
+      )
+    })
+
+    it("should calculate true sector allocation with ETF look-through", async () => {
+      const data = await parseSwissPortfolioPDF(new File([], "test.pdf", { type: "application/pdf" }))
+      expect(data.trueSectorAllocation.length).toBeGreaterThan(0)
+      const techSectorAllocation = data.trueSectorAllocation.find((a) => a.name === "Technology")
+      expect(techSectorAllocation?.percentage).toBeCloseTo(
+        mockSwissPortfolioData.trueSectorAllocation.find((a) => a.name === "Technology")?.percentage || 0,
+      )
+    })
+
+    it("should throw error if no positions are found", async () => {
+      // Temporarily mock getPdfText to return content with no positions
+      require("../lib/pdf-utils").getPdfText.mockResolvedValueOnce("Some text without position patterns.")
+      await expect(parseSwissPortfolioPDF(new File([], "empty.pdf", { type: "application/pdf" }))).rejects.toThrow(
+        "No valid positions found in the PDF. Please check the file format.",
+      )
     })
   })
 })

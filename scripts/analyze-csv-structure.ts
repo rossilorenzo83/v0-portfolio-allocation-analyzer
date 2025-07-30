@@ -3,6 +3,8 @@ import { jest } from "@jest/globals" // Import jest to declare the variable
 import { parse } from "csv-parse/sync"
 import fs from "fs"
 import path from "path"
+import { readFileSync } from "fs"
+import { join } from "path"
 
 interface ColumnInfo {
   name: string
@@ -460,5 +462,45 @@ if (require.main === module) {
     process.exit(1)
   }
 }
+
+// Function to analyze CSV structure from a file path
+function analyzeCsvStructureFromFile(filePath: string) {
+  console.log(`--- Analyzing CSV Structure for: ${filePath} ---`)
+
+  try {
+    const csvContent = readFileSync(filePath, "utf8")
+    const lines = csvContent.split("\n").filter((line) => line.trim())
+
+    if (lines.length === 0) {
+      console.log("CSV file is empty.")
+      return
+    }
+
+    // Extract and log headers
+    const headers = lines[0].split(",").map((h) => h.trim())
+    console.log("\n--- Detected Headers ---")
+    console.log(headers.join(" | "))
+
+    // Log a few sample data rows
+    console.log("\n--- Sample Data Rows (first 5) ---")
+    for (let i = 1; i < Math.min(6, lines.length); i++) {
+      const values = lines[i].split(",").map((v) => v.trim())
+      console.log(`Row ${i}: ${values.join(" | ")}`)
+    }
+
+    console.log(`\nTotal lines in CSV: ${lines.length}`)
+    console.log(`Total columns detected (based on first row): ${headers.length}`)
+  } catch (error) {
+    console.error(`Error reading or analyzing CSV file: ${error}`)
+  }
+
+  console.log("\n--- CSV Structure Analysis Complete ---")
+}
+
+// Example usage:
+// To run this script, make sure you have a sample-portfolio.csv in your __tests__/test-data directory.
+// You can execute it using: `npx ts-node scripts/analyze-csv-structure.ts`
+const sampleCsvPath = join(process.cwd(), "__tests__", "test-data", "sample-portfolio.csv")
+analyzeCsvStructureFromFile(sampleCsvPath)
 
 runAnalysisOnRealCsv()

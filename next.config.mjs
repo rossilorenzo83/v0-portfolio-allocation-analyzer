@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  reactStrictMode: true,
+  swcMinify: true,
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -7,19 +9,38 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'via.placeholder.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'avatars.githubusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'source.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'flagcdn.com',
+      },
+    ],
     unoptimized: true,
   },
-  webpack: (config, { isServer }) => {
-    // Add polyfills for Node.js modules in the browser environment
-    if (!isServer) {
-      config.resolve.fallback = {
-        fs: false, // fs is a Node.js module, not available in browser
-        path: false, // path is a Node.js module, not available in browser
-        // Add other Node.js modules if needed, e.g., crypto: false
-      };
-    }
-    return config;
+  async rewrites() {
+    return [
+      {
+        source: '/api/yahoo/:path*',
+        destination: 'https://yfapi.net/:path*', // Proxy to Yahoo Finance API
+      },
+    ];
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;

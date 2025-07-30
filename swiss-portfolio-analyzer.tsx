@@ -44,12 +44,13 @@ const COLORS = [
 
 interface SwissPortfolioAnalyzerProps {
   defaultData?: SwissPortfolioData
+  error?: string | null
 }
 
-export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAnalyzerProps) {
+export default function SwissPortfolioAnalyzer({ defaultData, error: propError }: SwissPortfolioAnalyzerProps) {
   const [portfolioData, setPortfolioData] = useState<SwissPortfolioData | null>(defaultData || null)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(propError || null)
 
   const handleFileUpload = useCallback(async (input: File | string) => {
     setIsLoading(true)

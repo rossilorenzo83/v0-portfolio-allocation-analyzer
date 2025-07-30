@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { guessCurrency } from "./utils" // Assuming guessCurrency is moved to a utils file
 
 export async function GET(request: NextRequest, { params }: { params: { symbol: string } }) {
   try {
@@ -10,49 +11,37 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
 
     console.log(`Fetching quote for symbol: ${symbol}`)
 
-    // Try Yahoo Finance quote API
-    const quoteUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
+    const apiKey = process.env.YAHOO_FINANCE_API_KEY
+    const baseUrl = "https://yfapi.net/v6/finance/quote"
 
-    const response = await fetch(quoteUrl, {
+    if (!apiKey) {
+      return NextResponse.json({ error: "Yahoo Finance API key not configured." }, { status: 500 })
+    }
+
+    const url = `${baseUrl}?symbols=${symbol}`
+    const response = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Accept: "application/json",
+        "X-API-KEY": apiKey,
       },
     })
 
     if (!response.ok) {
-      console.error(`Yahoo Finance quote API error: ${response.status} ${response.statusText}`)
-      throw new Error(`Yahoo Finance quote API error: ${response.status}`)
+      const errorText = await response.text()
+      console.error(`Yahoo Finance API error for ${symbol}: ${response.status} - ${errorText}`)
+      return NextResponse.json({ error: `Failed to fetch quote for ${symbol}` }, { status: response.status })
     }
 
     const data = await response.json()
     console.log(`Raw quote data for ${symbol}:`, JSON.stringify(data, null, 2))
 
-    const result = data.chart?.result?.[0]
+    const result = data.quoteResponse?.result?.[0]
     if (!result) {
       throw new Error("No quote data found")
     }
 
-    const meta = result.meta
-    const quote = result.indicators?.quote?.[0]
-    const adjclose = result.indicators?.adjclose?.[0]
-
-    if (!meta) {
-      throw new Error("No meta data found")
-    }
-
-    // Get the latest price data
-    const timestamps = result.timestamp || []
-    const closes = quote?.close || adjclose?.adjclose || []
-    const opens = quote?.open || []
-    const highs = quote?.high || []
-    const lows = quote?.low || []
-    const volumes = quote?.volume || []
-
-    const latestIndex = timestamps.length - 1
-    const currentPrice = closes[latestIndex] || meta.regularMarketPrice || meta.previousClose
-    const previousClose = meta.previousClose || closes[latestIndex - 1] || currentPrice
+    const meta = result
+    const currentPrice = meta.regularMarketPrice || meta.previousClose
+    const previousClose = meta.previousClose || currentPrice
 
     const change = currentPrice - previousClose
     const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
@@ -62,13 +51,13 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
       price: Number(currentPrice.toFixed(2)),
       change: Number(change.toFixed(2)),
       changePercent: Number(changePercent.toFixed(2)),
-      currency: meta.currency || "USD",
+      currency: meta.currency || guessCurrency(symbol),
       marketState: meta.marketState || "REGULAR",
       timestamp: meta.regularMarketTime || Math.floor(Date.now() / 1000),
-      volume: volumes[latestIndex] || 0,
-      dayHigh: highs[latestIndex] || currentPrice,
-      dayLow: lows[latestIndex] || currentPrice,
-      open: opens[latestIndex] || currentPrice,
+      volume: meta.regularMarketVolume || 0,
+      dayHigh: meta.regularMarketDayHigh || currentPrice,
+      dayLow: meta.regularMarketDayLow || currentPrice,
+      open: meta.regularMarketOpen || currentPrice,
     }
 
     console.log(`Processed quote for ${symbol}:`, stockPrice)
@@ -104,31 +93,4 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
       },
     })
   }
-}
-
-function guessCurrency(symbol: string): string {
-  // Swiss symbols
-  if (
-    symbol.match(/^(NESN|NOVN|ROG|UHR|ABBN|LONN|GIVN|CFR|SREN|GEBN|SLHN|AMS|SCMN|UBSG|CSGN|BAER|ZURN|ADEN|HOLN|PGHN)$/i)
-  ) {
-    return "CHF"
-  }
-
-  // European ETFs traded in CHF
-  if (symbol.match(/^(VWRL|IS3N)$/i)) {
-    return "CHF"
-  }
-
-  // European ETFs traded in EUR
-  if (symbol.match(/^(VWCE|IWDA|EUNL)$/i)) {
-    return "EUR"
-  }
-
-  // European stocks
-  if (symbol.match(/^(ASML|SAP|SAN|INGA)$/i)) {
-    return "EUR"
-  }
-
-  // Default to USD
-  return "USD"
 }

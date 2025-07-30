@@ -16,6 +16,9 @@ export const API_CONFIG = {
 // API base URL from environment variable
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
 
+// Yahoo Finance API base URL from environment variable
+export const YAHOO_FINANCE_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/api/yahoo"
+
 // Yahoo Finance API key from environment variable
 export const YAHOO_FINANCE_API_KEY = process.env.YAHOO_FINANCE_API_KEY || "YOUR_YAHOO_FINANCE_API_KEY"
 

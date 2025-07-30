@@ -1,54 +1,54 @@
-// Optional: configure or set up a testing framework before each test.
-// If you add a file here, remember to add it to the 'setupFilesAfterEnv' property in jest.config.js
-
-// Used for __tests__/testing-library.js
-// Learn more: https://github.com/testing-library/jest-dom
-import "@testing-library/jest-dom/extend-expect"
+import "@testing-library/jest-dom"
+import { TextEncoder, TextDecoder } from "util"
 import jest from "jest"
 
-// Mock fetch API for tests
+// Polyfill for TextEncoder and TextDecoder for JSDOM environment
+global.TextEncoder = TextEncoder
+global.TextDecoder = TextDecoder
+
+// Mock window.matchMedia for components that use it (e.g., shadcn/ui's theme-provider)
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: jest.fn().mockImplementation((query) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(), // Deprecated
+    removeListener: jest.fn(), // Deprecated
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+})
+
+// Mock ResizeObserver
+global.ResizeObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}))
+
+// Mock IntersectionObserver
+global.IntersectionObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}))
+
+// Mock crypto for uuid or other crypto-related functions
+Object.defineProperty(global.self, "crypto", {
+  value: {
+    getRandomValues: (arr) => crypto.webcrypto.getRandomValues(arr),
+  },
+})
+
+// Mock fetch for tests that might use it
 global.fetch = jest.fn((url) => {
-  if (url.includes("/api/yahoo/etf/")) {
-    const symbol = url.split("/").pop()
-    const mockEtfData = require("./__tests__/test-data").mockEtfData
-    if (mockEtfData[symbol]) {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(mockEtfData[symbol]),
-      })
-    }
-  } else if (url.includes("/api/yahoo/quote/")) {
-    const symbol = url.split("/").pop()
-    const mockQuoteData = require("./__tests__/test-data").mockQuoteData
-    if (mockQuoteData[symbol]) {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(mockQuoteData[symbol]),
-      })
-    }
-  } else if (url.includes("/api/yahoo/search/")) {
-    const query = url.split("/").pop()
-    const mockSearchData = require("./__tests__/test-data").mockSearchData
-    if (mockSearchData[query.toUpperCase()]) {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(mockSearchData[query.toUpperCase()]),
-      })
-    }
-  } else if (url.includes("sample-portfolio.csv")) {
-    const sampleCsvContent = `Symbol,Quantity,Average Price,Currency,Exchange,Name
-AAPL,10,150.00,USD,NASDAQ,Apple Inc.
-MSFT,5,200.50,USD,NASDAQ,Microsoft Corp.
-VUSA.L,10,70.00,USD,LSE,Vanguard S&P 500 UCITS ETF`
+  if (url.includes("example.com/api/data")) {
     return Promise.resolve({
       ok: true,
-      text: () => Promise.resolve(sampleCsvContent),
+      json: () => Promise.resolve({ message: "Mock data" }),
     })
   }
-  return Promise.resolve({
-    ok: false,
-    status: 404,
-    statusText: "Not Found",
-    json: () => Promise.resolve({ message: "Not Found" }),
-  })
+  return Promise.reject(new Error(`Unhandled fetch request for ${url}`))
 })

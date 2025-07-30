@@ -11,6 +11,8 @@ export const PDF_OPTIONS = {
   },
 }
 
+export const PDF_WORKER_URL = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`
+
 export function configurePDFJS() {
   // Only configure if we're in the browser
   if (typeof window === "undefined") return

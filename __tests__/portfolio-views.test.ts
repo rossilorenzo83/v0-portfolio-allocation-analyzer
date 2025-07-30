@@ -1,6 +1,8 @@
+import type React from "react"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { jest } from "@jest/globals"
 import SwissPortfolioAnalyzer from "../swiss-portfolio-analyzer"
+import PortfolioAnalyzer from "../portfolio-analyzer" // Adjust path as necessary
 import { parseSwissPortfolioPDF, type SwissPortfolioData } from "../portfolio-parser"
 
 // Mock the portfolio parser
@@ -11,16 +13,35 @@ jest.mock("../portfolio-parser", () => ({
 // Mock recharts components
 jest.mock("recharts", () => ({
   PieChart: ({ children }: any) => <div data-testid="pie-chart">{children}</div>,
-  Pie: ({ children }: any) => <div data-testid="pie">{children}</div>,
-  Cell: () => <div data-testid="cell" />,
-  ResponsiveContainer: ({ children }: any) => <div data-testid="responsive-container">{children}</div>,
-  Tooltip: () => <div data-testid="tooltip" />,
-  Legend: () => <div data-testid="legend" />,
+  Pie: () => <div data-testid="pie-segment" />,
+  Cell: () => <div data-testid="pie-cell" />,
+  ResponsiveContainer: ({ children }: any) => (
+    <div className="recharts-responsive-container" style={{ width: "100%", height: "100%" }}>
+      {children}
+    </div>
+  ),
   BarChart: ({ children }: any) => <div data-testid="bar-chart">{children}</div>,
-  Bar: ({ children }: any) => <div data-testid="bar">{children}</div>,
-  XAxis: () => <div data-testid="x-axis" />,
-  YAxis: () => <div data-testid="y-axis" />,
+  Bar: () => <div data-testid="bar-segment" />,
+  XAxis: () => <div data-testid="xaxis" />,
+  YAxis: () => <div data-testid="yaxis" />,
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
+  Tooltip: ({ children }: { children: React.ReactNode }) => <div data-testid="tooltip">{children}</div>,
+  Legend: () => <div data-testid="legend" />,
+}))
+
+// Mock the ChartContainer and ChartTooltipContent from shadcn/ui/chart
+jest.mock("@/components/ui/chart", () => ({
+  ChartContainer: ({ children }: { children: React.ReactNode }) => <div data-testid="chart-container">{children}</div>,
+  ChartTooltip: ({ children }: { children: React.ReactNode }) => <div data-testid="chart-tooltip">{children}</div>,
+  ChartTooltipContent: ({ content }: { content: any }) => (
+    <div data-testid="chart-tooltip-content">
+      {content
+        ? content({ active: true, payload: [{ payload: { name: "Test", value: 100, percentage: 10 } }] })
+        : "Tooltip Content"}
+    </div>
+  ),
+  ChartLegend: ({ children }: { children: React.ReactNode }) => <div data-testid="chart-legend">{children}</div>,
+  ChartLegendContent: () => <div data-testid="chart-legend-content" />,
 }))
 
 const mockPortfolioData: SwissPortfolioData = {
@@ -73,6 +94,17 @@ const mockPortfolioData: SwissPortfolioData = {
     { name: "Ireland (IE)", value: 40000, percentage: 40, domicile: "IE" },
   ],
 }
+
+describe("PortfolioAnalyzer", () => {
+  it("renders the upload section initially", () => {
+    render(<PortfolioAnalyzer />)
+    expect(screen.getByText(/Upload Portfolio Data/i)).toBeInTheDocument()
+    expect(screen.getByText(/Click to upload CSV file/i)).toBeInTheDocument()
+  })
+
+  // Add more tests here to simulate file upload and check rendered charts/data
+  // This would require mocking the file input and the parsing logic.
+})
 
 describe("SwissPortfolioAnalyzer", () => {
   beforeEach(() => {
@@ -418,6 +450,20 @@ describe("SwissPortfolioAnalyzer", () => {
       render(<SwissPortfolioAnalyzer defaultData={incompleteData} />)
 
       expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
+    })
+  })
+
+  describe("SwissPortfolioAnalyzer with Error Prop", () => {
+    it("displays error message when error prop is set", () => {
+      render(<SwissPortfolioAnalyzer defaultData={null} />) // Render without data first
+      const fileUploadHelper = screen.getByText(/Upload your Swiss bank portfolio statement/i).closest("div")
+
+      // Simulate an error being set (this would typically happen via state update)
+      // For testing purposes, we can re-render with an error.
+      const { rerender } = render(<SwissPortfolioAnalyzer defaultData={null} />)
+      rerender(<SwissPortfolioAnalyzer defaultData={null} error="Test error message" />)
+
+      expect(screen.getByText("Test error message")).toBeInTheDocument()
     })
   })
 })

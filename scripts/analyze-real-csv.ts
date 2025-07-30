@@ -1,113 +1,166 @@
-// Script to analyze the real CSV file structure
-async function analyzeRealCSV() {
-  try {
-    console.log("🔍 Analyzing real CSV file structure...")
+import { readFileSync } from "fs"
+import { join } from "path"
 
-    const csvUrl =
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_09072025_09_30-8BYtc8aZsR9VuFmgEixezIFg2JyFVD.csv"
-
-    console.log("📥 Fetching CSV file...")
-    const response = await fetch(csvUrl)
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch CSV: ${response.status} ${response.statusText}`)
-    }
-
-    const csvText = await response.text()
-    console.log(`📊 CSV file size: ${csvText.length} characters`)
-
-    // Split into lines
-    const lines = csvText.split(/\r?\n/)
-    console.log(`📋 Total lines: ${lines.length}`)
-
-    // Analyze first 20 lines
-    console.log("\n🔍 First 20 lines analysis:")
-    lines.slice(0, 20).forEach((line, index) => {
-      console.log(`Line ${index + 1}: ${line.substring(0, 100)}${line.length > 100 ? "..." : ""}`)
-    })
-
-    // Detect delimiter
-    const delimiters = [",", ";", "\t", "|"]
-    const firstDataLine =
-      lines.find((line) => (line.trim() && line.includes("Symbole")) || line.includes("Symbol")) || lines[0]
-
-    console.log("\n🔧 Delimiter analysis:")
-    delimiters.forEach((delimiter) => {
-      const count = (firstDataLine.match(new RegExp(`\\${delimiter}`, "g")) || []).length
-      console.log(`${delimiter}: ${count} occurrences`)
-    })
-
-    // Find header row
-    let headerRowIndex = -1
-    let headers: string[] = []
-
-    for (let i = 0; i < Math.min(lines.length, 50); i++) {
-      const line = lines[i]
-      if (
-        line.toLowerCase().includes("symbole") ||
-        line.toLowerCase().includes("symbol") ||
-        line.toLowerCase().includes("quantité") ||
-        line.toLowerCase().includes("quantity")
-      ) {
-        headerRowIndex = i
-        // Try different delimiters
-        const semicolonSplit = line.split(";")
-        const commaSplit = line.split(",")
-        headers = semicolonSplit.length > commaSplit.length ? semicolonSplit : commaSplit
-        break
-      }
-    }
-
-    if (headerRowIndex >= 0) {
-      console.log(`\n📋 Header found at line ${headerRowIndex + 1}:`)
-      headers.forEach((header, index) => {
-        console.log(`Column ${index + 1}: "${header.trim()}"`)
-      })
-    }
-
-    // Analyze data rows
-    console.log("\n📊 Sample data rows:")
-    const dataStartIndex = headerRowIndex + 1
-    for (let i = dataStartIndex; i < Math.min(dataStartIndex + 10, lines.length); i++) {
-      if (lines[i] && lines[i].trim()) {
-        const delimiter = headers.length > 0 && lines[i].split(";").length === headers.length ? ";" : ","
-        const cells = lines[i].split(delimiter)
-        console.log(`\nData row ${i - dataStartIndex + 1}:`)
-        cells.forEach((cell, index) => {
-          if (index < headers.length) {
-            console.log(`  ${headers[index]}: "${cell.trim()}"`)
-          }
-        })
-      }
-    }
-
-    // Look for total values
-    console.log("\n💰 Looking for total values:")
-    lines.forEach((line, index) => {
-      if (line.toLowerCase().includes("total") && (line.includes("CHF") || line.match(/\d{3,}/))) {
-        console.log(`Line ${index + 1}: ${line}`)
-      }
-    })
-
-    // Analyze number formats
-    console.log("\n🔢 Number format analysis:")
-    const numberSamples = []
-    lines.slice(headerRowIndex + 1, headerRowIndex + 20).forEach((line) => {
-      if (line.trim()) {
-        const matches = line.match(/\d+['\s,.]?\d*['\s,.]?\d*/g)
-        if (matches) {
-          numberSamples.push(...matches.slice(0, 3))
-        }
-      }
-    })
-
-    console.log("Sample numbers found:", numberSamples.slice(0, 10))
-
-    console.log("\n✅ CSV analysis complete!")
-  } catch (error) {
-    console.error("❌ Error analyzing CSV:", error)
-  }
+// Define the structure for a portfolio item
+interface PortfolioItem {
+  symbol: string
+  name: string
+  quantity: number
+  price: number
+  value: number
+  currency: string
+  type: "Stock" | "ETF" | "Bond" | "Crypto" | "Other"
+  sector?: string
+  geography?: string
 }
 
-// Run the analysis
-analyzeRealCSV()
+/**
+ * Parses a CSV string into an array of PortfolioItem objects.
+ * Enhanced to be more robust to header variations and missing columns.
+ * @param csvText The CSV content as a string.
+ * @returns An array of parsed PortfolioItem objects.
+ */
+function parseCsvToPortfolio(csvText: string): PortfolioItem[] {
+  const lines = csvText.split("\n").filter((line) => line.trim())
+  if (lines.length === 0) {
+    console.warn("CSV is empty or contains only blank lines.")
+    return []
+  }
+
+  // Normalize headers: trim whitespace, convert to lowercase, remove special characters
+  const rawHeaders = lines[0].split(",").map((h) =>
+    h
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, ""),
+  )
+  console.log(
+    "Detected raw headers:",
+    lines[0].split(",").map((h) => h.trim()),
+  )
+  console.log("Normalized headers:", rawHeaders)
+
+  // Define expected header mappings with common variations
+  const headerMap: Record<string, string> = {
+    symbol: "symbol",
+    ticker: "symbol",
+    stock: "symbol",
+    name: "name",
+    description: "name",
+    company: "name",
+    quantity: "quantity",
+    qty: "quantity",
+    shares: "quantity",
+    price: "price",
+    unitprice: "price",
+    cost: "price", // Assuming cost per share
+    currency: "currency",
+    ccy: "currency",
+    type: "type",
+    assettype: "type",
+    category: "type",
+    sector: "sector",
+    industry: "sector",
+    geography: "geography",
+    country: "geography",
+    region: "geography",
+    value: "value", // If 'value' is provided, use it, otherwise calculate
+    marketvalue: "value",
+  }
+
+  // Create an index map for the actual CSV headers
+  const headerIndexMap: Record<string, number> = {}
+  rawHeaders.forEach((header, index) => {
+    const mappedHeader = headerMap[header]
+    if (mappedHeader && headerIndexMap[mappedHeader] === undefined) {
+      // Prioritize first occurrence
+      headerIndexMap[mappedHeader] = index
+    }
+  })
+
+  console.log("Header index map:", headerIndexMap)
+
+  const portfolioData: PortfolioItem[] = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(",").map((v) => v.trim())
+    if (values.length === 0 || values.every((v) => v === "")) {
+      console.warn(`Skipping empty line at row ${i + 1}.`)
+      continue
+    }
+
+    const item: Partial<PortfolioItem> = {}
+
+    const getVal = (key: string) => {
+      const index = headerIndexMap[key]
+      return index !== undefined && index < values.length ? values[index] : undefined
+    }
+
+    item.symbol = getVal("symbol") || ""
+    item.name = getVal("name") || ""
+    item.currency = getVal("currency") || "USD" // Default to USD if not found
+    item.type = (getVal("type") as PortfolioItem["type"]) || "Stock" // Default to Stock
+    item.sector = getVal("sector") || "Unknown"
+    item.geography = getVal("geography") || "Unknown"
+
+    // Parse numerical values, handling potential errors
+    item.quantity = Number.parseFloat(getVal("quantity") || "0")
+    item.price = Number.parseFloat(getVal("price") || "0")
+    item.value = Number.parseFloat(getVal("value") || "0") // Use provided value if available
+
+    // If value is not provided or is zero, calculate it from quantity and price
+    if (isNaN(item.value) || item.value === 0) {
+      item.value = (isNaN(item.quantity) ? 0 : item.quantity) * (isNaN(item.price) ? 0 : item.price)
+    }
+
+    // Basic validation for essential fields
+    if (!item.symbol && !item.name) {
+      console.warn(`Skipping row ${i + 1} due to missing symbol and name: ${lines[i]}`)
+      continue
+    }
+    if (isNaN(item.quantity) || isNaN(item.price) || isNaN(item.value)) {
+      console.warn(`Skipping row ${i + 1} due to invalid numerical data: ${lines[i]}`)
+      continue
+    }
+
+    portfolioData.push(item as PortfolioItem)
+    console.log(`Parsed row ${i + 1}:`, item)
+  }
+
+  return portfolioData
+}
+
+async function analyzeRealCsv() {
+  console.log("--- Analyzing Real CSV Structure ---")
+
+  // Path to the sample CSV file
+  const sampleCsvPath = join(process.cwd(), "__tests__", "test-data", "sample-portfolio.csv")
+
+  try {
+    const csvContent = readFileSync(sampleCsvPath, "utf8")
+    console.log("\n--- Raw CSV Content (first 200 chars) ---")
+    console.log(csvContent.substring(0, 200) + "...")
+
+    console.log("\n--- Parsing CSV ---")
+    const portfolio = parseCsvToPortfolio(csvContent)
+
+    console.log("\n--- Parsed Portfolio Data ---")
+    if (portfolio.length > 0) {
+      portfolio.forEach((item, index) => {
+        console.log(`Item ${index + 1}:`, item)
+      })
+      const totalValue = portfolio.reduce((sum, item) => sum + item.value, 0)
+      console.log(
+        `\nTotal Portfolio Value: ${totalValue.toLocaleString("en-US", { style: "currency", currency: "USD" })}`,
+      )
+    } else {
+      console.log("No valid positions found after parsing.")
+    }
+  } catch (error) {
+    console.error("Error analyzing CSV structure:", error)
+  }
+
+  console.log("\n--- CSV Structure Analysis Complete ---")
+}
+
+analyzeRealCsv()

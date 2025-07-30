@@ -1,151 +1,119 @@
 "use client"
 
 import type React from "react"
-import { useState, useCallback } from "react"
-import { useDropzone } from "react-dropzone"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+
+import { useCallback, useState } from "react"
+import { FileText, Upload } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, UploadCloud, FileText } from "lucide-react"
-import { toast } from "@/components/ui/use-toast"
+import { Progress } from "@/components/ui/progress"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
 
 interface FileUploadHelperProps {
-  onFileUpload: (file: File) => Promise<void>
+  onFileUpload: (file: File | string) => Promise<void>
   isLoading: boolean
-  acceptedFileTypes?: string[]
-  maxFileSizeMb?: number
-  sampleCsvUrl?: string
+  error: string | null
+  acceptedFileTypes?: string // e.g., ".csv,.pdf"
+  sampleDataUrl?: string // URL to a sample file for quick testing
+  sampleDataName?: string
 }
 
 export function FileUploadHelper({
   onFileUpload,
   isLoading,
-  acceptedFileTypes = [".csv"],
-  maxFileSizeMb = 5,
-  sampleCsvUrl,
+  error,
+  acceptedFileTypes = ".csv,.pdf",
+  sampleDataUrl,
+  sampleDataName = "sample file",
 }: FileUploadHelperProps) {
-  const [isDragging, setIsDragging] = useState(false)
+  const [progress, setProgress] = useState(0)
 
-  const onDrop = useCallback(
-    async (acceptedFiles: File[]) => {
-      setIsDragging(false)
-      if (acceptedFiles.length > 0) {
-        const file = acceptedFiles[0]
-        if (file.size > maxFileSizeMb * 1024 * 1024) {
-          toast({
-            title: "File too large",
-            description: `Please upload a file smaller than ${maxFileSizeMb}MB.`,
-            variant: "destructive",
-          })
-          return
+  const handleFileChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      if (file) {
+        // Simulate progress for large files, or just set to 100 if processing is fast
+        setProgress(0)
+        const reader = new FileReader()
+        reader.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setProgress(Math.round((e.loaded * 100) / e.total))
+          }
         }
-        if (!acceptedFileTypes.some((type) => file.name.endsWith(type))) {
-          toast({
-            title: "Invalid file type",
-            description: `Please upload a file of type: ${acceptedFileTypes.join(", ")}.`,
-            variant: "destructive",
-          })
-          return
+        reader.onloadend = async () => {
+          await onFileUpload(file)
+          setProgress(100)
         }
-        await onFileUpload(file)
+        reader.readAsArrayBuffer(file) // Or readAsText if it's a text file
       }
     },
-    [onFileUpload, maxFileSizeMb, acceptedFileTypes],
+    [onFileUpload],
   )
 
-  const { getRootProps, getInputProps } = useDropzone({
-    onDrop,
-    accept: acceptedFileTypes.reduce((acc, type) => ({ ...acc, [type]: [] }), {}),
-    maxFiles: 1,
-    onDragEnter: () => setIsDragging(true),
-    onDragLeave: () => setIsDragging(false),
-  })
-
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files.length > 0) {
-      const file = event.target.files[0]
-      if (file.size > maxFileSizeMb * 1024 * 1024) {
-        toast({
-          title: "File too large",
-          description: `Please upload a file smaller than ${maxFileSizeMb}MB.`,
-          variant: "destructive",
-        })
-        return
+  const handleSampleDataLoad = useCallback(async () => {
+    if (sampleDataUrl) {
+      setProgress(0)
+      try {
+        const response = await fetch(sampleDataUrl)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch sample data: ${response.statusText}`)
+        }
+        const blob = await response.blob()
+        const file = new File([blob], sampleDataName, { type: blob.type })
+        await onFileUpload(file)
+        setProgress(100)
+      } catch (err) {
+        console.error("Error loading sample data:", err)
+        // setError is handled by the parent component's onFileUpload
       }
-      if (!acceptedFileTypes.some((type) => file.name.endsWith(type))) {
-        toast({
-          title: "Invalid file type",
-          description: `Please upload a file of type: ${acceptedFileTypes.join(", ")}.`,
-          variant: "destructive",
-        })
-        return
-      }
-      await onFileUpload(file)
     }
-  }
-
-  const handleSampleData = async () => {
-    if (!sampleCsvUrl) return
-    try {
-      const response = await fetch(sampleCsvUrl)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch sample data: ${response.statusText}`)
-      }
-      const blob = await response.blob()
-      const file = new File([blob], "sample-portfolio.csv", { type: "text/csv" })
-      await onFileUpload(file)
-    } catch (error: any) {
-      toast({
-        title: "Error loading sample data",
-        description: error.message,
-        variant: "destructive",
-      })
-    }
-  }
+  }, [onFileUpload, sampleDataUrl, sampleDataName])
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="text-center">
-        <CardTitle>Upload Your Portfolio</CardTitle>
-        <CardDescription>Upload a CSV file to analyze your investment portfolio.</CardDescription>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Upload className="h-5 w-5" />
+          Upload Portfolio Data
+        </CardTitle>
+        <CardDescription>
+          Upload a {acceptedFileTypes.split(",").join(" or ")} file containing your portfolio information.
+        </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-4">
-        <div
-          {...getRootProps()}
-          className={`flex flex-col items-center justify-center rounded-md border-2 border-dashed p-6 text-center transition-colors ${
-            isDragging
-              ? "border-primary bg-muted"
-              : "border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600"
-          } cursor-pointer`}
-        >
-          <Input {...getInputProps()} id="file-upload" type="file" className="sr-only" onChange={handleFileSelect} />
-          {isLoading ? (
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          ) : (
-            <UploadCloud className="h-8 w-8 text-gray-500 dark:text-gray-400" />
-          )}
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            {isLoading ? "Processing..." : "Drag & drop your CSV here, or click to select"}
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-500">
-            Max file size: {maxFileSizeMb}MB. Accepted: {acceptedFileTypes.join(", ")}
-          </p>
+      <CardContent>
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+          <input
+            type="file"
+            accept={acceptedFileTypes}
+            onChange={handleFileChange}
+            className="hidden"
+            id="file-upload"
+            disabled={isLoading}
+          />
+          <label htmlFor="file-upload" className="cursor-pointer">
+            <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <p className="text-lg font-medium">Click to upload file</p>
+            <p className="text-sm text-muted-foreground">Supports {acceptedFileTypes} files</p>
+          </label>
         </div>
-        <div className="relative flex items-center justify-center text-xs uppercase text-gray-600 dark:text-gray-400">
-          <span className="bg-background px-2">Or</span>
-        </div>
-        <Label htmlFor="file-upload" className="sr-only">
-          Upload file
-        </Label>
-        <Button onClick={() => document.getElementById("file-upload")?.click()} disabled={isLoading} className="w-full">
-          <FileText className="mr-2 h-4 w-4" />
-          Choose File
-        </Button>
-        {sampleCsvUrl && (
-          <Button onClick={handleSampleData} disabled={isLoading} variant="outline" className="w-full bg-transparent">
-            Load Sample Data
-          </Button>
+        {isLoading && (
+          <div className="mt-4">
+            <Progress value={progress} className="w-full" />
+            <p className="text-sm text-muted-foreground mt-2">Processing file...</p>
+          </div>
+        )}
+        {error && (
+          <Alert variant="destructive" className="mt-4">
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {sampleDataUrl && !isLoading && (
+          <div className="mt-4 text-center">
+            <Button variant="outline" onClick={handleSampleDataLoad} disabled={isLoading}>
+              Load Sample {sampleDataName}
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>

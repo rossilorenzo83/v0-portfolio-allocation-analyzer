@@ -1,371 +1,118 @@
-import type { Position } from "../portfolio-parser"
+import type { SwissPortfolioData } from "../portfolio-parser"
 
-export const samplePositions: Position[] = [
-  {
-    symbol: "VUSA.L",
-    quantity: 10,
-    averagePrice: 70.0,
-    currency: "USD",
-    exchange: "LSE",
-    name: "Vanguard S&P 500 UCITS ETF",
+export const mockSwissPortfolioData: SwissPortfolioData = {
+  accountOverview: {
+    totalValue: 1234567,
+    securitiesValue: 1200000,
+    cashBalance: 34567,
   },
-  {
-    symbol: "VWRL.L",
-    quantity: 5,
-    averagePrice: 100.0,
-    currency: "USD",
-    exchange: "LSE",
-    name: "Vanguard FTSE All-World UCITS ETF",
-  },
-  {
-    symbol: "SMH",
-    quantity: 20,
-    averagePrice: 250.0,
-    currency: "USD",
-    exchange: "NASDAQ",
-    name: "VanEck Semiconductor ETF",
-  },
-  { symbol: "CERN.SW", quantity: 15, averagePrice: 50.0, currency: "CHF", exchange: "SIX", name: "CERN Holdings" },
-  { symbol: "NESN.SW", quantity: 8, averagePrice: 100.0, currency: "CHF", exchange: "SIX", name: "Nestle S.A." },
-  { symbol: "AAPL", quantity: 50, averagePrice: 170.0, currency: "USD", exchange: "NASDAQ", name: "Apple Inc." },
-  { symbol: "MSFT", quantity: 30, averagePrice: 350.0, currency: "USD", exchange: "NASDAQ", name: "Microsoft Corp." },
-  {
-    symbol: "GOOG",
-    quantity: 10,
-    averagePrice: 140.0,
-    currency: "USD",
-    exchange: "NASDAQ",
-    name: "Alphabet Inc. Class C",
-  },
-  { symbol: "AMZN", quantity: 25, averagePrice: 130.0, currency: "USD", exchange: "NASDAQ", name: "Amazon.com Inc." },
-  { symbol: "TSLA", quantity: 5, averagePrice: 250.0, currency: "USD", exchange: "NASDAQ", name: "Tesla Inc." },
-  { symbol: "NVDA", quantity: 12, averagePrice: 450.0, currency: "USD", exchange: "NASDAQ", name: "NVIDIA Corp." },
-  { symbol: "JPM", quantity: 40, averagePrice: 150.0, currency: "USD", exchange: "NYSE", name: "JPMorgan Chase & Co." },
-  {
-    symbol: "VWO",
-    quantity: 60,
-    averagePrice: 45.0,
-    currency: "USD",
-    exchange: "NYSEARCA",
-    name: "Vanguard FTSE Emerging Markets ETF",
-  },
-  { symbol: "GLD", quantity: 3, averagePrice: 180.0, currency: "USD", exchange: "NYSEARCA", name: "SPDR Gold Shares" },
-  {
-    symbol: "BND",
-    quantity: 80,
-    averagePrice: 75.0,
-    currency: "USD",
-    exchange: "NYSEARCA",
-    name: "Vanguard Total Bond Market ETF",
-  },
-]
-
-export const mockEtfData = {
-  "VUSA.L": {
-    symbol: "VUSA.L",
-    name: "Vanguard S&P 500 UCITS ETF",
-    currency: "USD",
-    exchange: "LSE",
-    domicile: "IE", // Ireland
-    composition: {
-      sectors: {
-        "Information Technology": 0.28,
-        Financials: 0.13,
-        "Health Care": 0.12,
-        "Consumer Discretionary": 0.1,
-        "Communication Services": 0.09,
-        Industrials: 0.08,
-        "Consumer Staples": 0.07,
-        Energy: 0.04,
-        Utilities: 0.03,
-        "Real Estate": 0.03,
-        Materials: 0.03,
-      },
-      countries: {
-        "United States": 1.0,
-      },
-      currencies: {
-        USD: 1.0,
-      },
+  positions: [
+    {
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      quantity: 100,
+      price: 170.5,
+      currency: "USD",
+      totalValueCHF: 15000, // Assuming conversion
+      category: "Stock",
+      domicile: "US",
+      positionPercent: 1.2,
+      dailyChangePercent: 0.5,
     },
-  },
-  "VWRL.L": {
-    symbol: "VWRL.L",
-    name: "Vanguard FTSE All-World UCITS ETF",
-    currency: "USD",
-    exchange: "LSE",
-    domicile: "IE", // Ireland
-    composition: {
-      sectors: {
-        "Information Technology": 0.22,
-        Financials: 0.15,
-        "Consumer Discretionary": 0.12,
-        Industrials: 0.1,
-        "Health Care": 0.09,
-        "Communication Services": 0.08,
-        "Consumer Staples": 0.07,
-        Materials: 0.05,
-        Energy: 0.04,
-        Utilities: 0.03,
-        "Real Estate": 0.03,
-      },
-      countries: {
-        "United States": 0.6,
-        Japan: 0.07,
-        "United Kingdom": 0.04,
-        China: 0.04,
-        Canada: 0.03,
-        France: 0.03,
-        Switzerland: 0.02,
-        Germany: 0.02,
-        Australia: 0.02,
-        Taiwan: 0.02,
-        Other: 0.11,
-      },
-      currencies: {
-        USD: 0.65,
-        EUR: 0.15,
-        JPY: 0.07,
-        GBP: 0.04,
-        CHF: 0.02,
-        Other: 0.07,
-      },
+    {
+      symbol: "NESN",
+      name: "Nestle SA",
+      quantity: 50,
+      price: 100.0,
+      currency: "CHF",
+      totalValueCHF: 5000,
+      category: "Stock",
+      domicile: "CH",
+      positionPercent: 0.4,
+      dailyChangePercent: -0.2,
     },
-  },
-  SMH: {
-    symbol: "SMH",
-    name: "VanEck Semiconductor ETF",
-    currency: "USD",
-    exchange: "NASDAQ",
-    domicile: "US", // United States
-    composition: {
-      sectors: {
-        "Information Technology": 1.0,
-      },
-      countries: {
-        "United States": 0.8,
-        Taiwan: 0.15,
-        Netherlands: 0.05,
-      },
-      currencies: {
-        USD: 0.8,
-        TWD: 0.15,
-        EUR: 0.05,
-      },
+    {
+      symbol: "VWRL",
+      name: "Vanguard FTSE All-World UCITS ETF",
+      quantity: 200,
+      price: 90.0,
+      currency: "USD",
+      totalValueCHF: 18000,
+      category: "ETF",
+      domicile: "IE", // Irish domiciled ETF
+      positionPercent: 1.5,
+      dailyChangePercent: 0.8,
     },
-  },
-  // Individual stocks (simplified composition for testing)
-  "CERN.SW": {
-    symbol: "CERN.SW",
-    name: "CERN Holdings",
-    currency: "CHF",
-    exchange: "SIX",
-    domicile: "CH", // Switzerland
-    composition: {
-      sectors: { Research: 1.0 },
-      countries: { Switzerland: 1.0 },
-      currencies: { CHF: 1.0 },
+    {
+      symbol: "IWDA",
+      name: "iShares Core MSCI World UCITS ETF",
+      quantity: 150,
+      price: 75.0,
+      currency: "USD",
+      totalValueCHF: 11250,
+      category: "ETF",
+      domicile: "IE", // Irish domiciled ETF
+      positionPercent: 0.9,
+      dailyChangePercent: 0.3,
     },
-  },
-  "NESN.SW": {
-    symbol: "NESN.SW",
-    name: "Nestle S.A.",
-    currency: "CHF",
-    exchange: "SIX",
-    domicile: "CH", // Switzerland
-    composition: {
-      sectors: { "Consumer Staples": 1.0 },
-      countries: { Switzerland: 1.0 },
-      currencies: { CHF: 1.0 },
+    {
+      symbol: "GOOGL",
+      name: "Alphabet Inc. Class A",
+      quantity: 20,
+      price: 140.0,
+      currency: "USD",
+      totalValueCHF: 2500,
+      category: "Stock",
+      domicile: "US",
+      positionPercent: 0.2,
+      dailyChangePercent: 1.1,
     },
-  },
-  AAPL: {
-    symbol: "AAPL",
-    name: "Apple Inc.",
-    currency: "USD",
-    exchange: "NASDAQ",
-    domicile: "US",
-    composition: {
-      sectors: { "Information Technology": 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  MSFT: {
-    symbol: "MSFT",
-    name: "Microsoft Corp.",
-    currency: "USD",
-    exchange: "NASDAQ",
-    domicile: "US",
-    composition: {
-      sectors: { "Information Technology": 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  GOOG: {
-    symbol: "GOOG",
-    name: "Alphabet Inc. Class C",
-    currency: "USD",
-    exchange: "NASDAQ",
-    domicile: "US",
-    composition: {
-      sectors: { "Communication Services": 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  AMZN: {
-    symbol: "AMZN",
-    name: "Amazon.com Inc.",
-    currency: "USD",
-    exchange: "NASDAQ",
-    domicile: "US",
-    composition: {
-      sectors: { "Consumer Discretionary": 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  TSLA: {
-    symbol: "TSLA",
-    name: "Tesla Inc.",
-    currency: "USD",
-    exchange: "NASDAQ",
-    domicile: "US",
-    composition: {
-      sectors: { "Consumer Discretionary": 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  NVDA: {
-    symbol: "NVDA",
-    name: "NVIDIA Corp.",
-    currency: "USD",
-    exchange: "NASDAQ",
-    domicile: "US",
-    composition: {
-      sectors: { "Information Technology": 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  JPM: {
-    symbol: "JPM",
-    name: "JPMorgan Chase & Co.",
-    currency: "USD",
-    exchange: "NYSE",
-    domicile: "US",
-    composition: {
-      sectors: { Financials: 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  VWO: {
-    symbol: "VWO",
-    name: "Vanguard FTSE Emerging Markets ETF",
-    currency: "USD",
-    exchange: "NYSEARCA",
-    domicile: "US",
-    composition: {
-      sectors: {
-        "Information Technology": 0.25,
-        Financials: 0.2,
-        "Consumer Discretionary": 0.15,
-        "Communication Services": 0.1,
-        Materials: 0.08,
-        Industrials: 0.07,
-        "Consumer Staples": 0.06,
-        "Health Care": 0.05,
-        Energy: 0.04,
-      },
-      countries: {
-        China: 0.3,
-        India: 0.15,
-        Taiwan: 0.12,
-        Brazil: 0.08,
-        "South Africa": 0.05,
-        "Saudi Arabia": 0.04,
-        Other: 0.26,
-      },
-      currencies: {
-        USD: 0.3,
-        CNY: 0.25,
-        INR: 0.15,
-        TWD: 0.12,
-        BRL: 0.08,
-        ZAR: 0.05,
-        SAR: 0.04,
-        Other: 0.01,
-      },
-    },
-  },
-  GLD: {
-    symbol: "GLD",
-    name: "SPDR Gold Shares",
-    currency: "USD",
-    exchange: "NYSEARCA",
-    domicile: "US",
-    composition: {
-      sectors: { Commodities: 1.0 },
-      countries: { Global: 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-  BND: {
-    symbol: "BND",
-    name: "Vanguard Total Bond Market ETF",
-    currency: "USD",
-    exchange: "NYSEARCA",
-    domicile: "US",
-    composition: {
-      sectors: { "Fixed Income": 1.0 },
-      countries: { "United States": 1.0 },
-      currencies: { USD: 1.0 },
-    },
-  },
-}
-
-export const mockQuoteData = {
-  "VUSA.L": { price: 72.5, currency: "USD" },
-  "VWRL.L": { price: 105.2, currency: "USD" },
-  SMH: { price: 260.15, currency: "USD" },
-  "CERN.SW": { price: 52.0, currency: "CHF" },
-  "NESN.SW": { price: 102.5, currency: "CHF" },
-  AAPL: { price: 175.0, currency: "USD" },
-  MSFT: { price: 360.0, currency: "USD" },
-  GOOG: { price: 142.0, currency: "USD" },
-  AMZN: { price: 135.0, currency: "USD" },
-  TSLA: { price: 255.0, currency: "USD" },
-  NVDA: { price: 460.0, currency: "USD" },
-  JPM: { price: 152.0, currency: "USD" },
-  VWO: { price: 46.0, currency: "USD" },
-  GLD: { price: 182.0, currency: "USD" },
-  BND: { price: 76.0, currency: "USD" },
-}
-
-export const mockSearchData = {
-  VUSA: [
-    { symbol: "VUSA.L", name: "Vanguard S&P 500 UCITS ETF", exchange: "LSE", currency: "USD" },
-    { symbol: "VUSA.DE", name: "Vanguard S&P 500 UCITS ETF", exchange: "XETRA", currency: "EUR" },
   ],
-  VWRL: [
-    { symbol: "VWRL.L", name: "Vanguard FTSE All-World UCITS ETF", exchange: "LSE", currency: "USD" },
-    { symbol: "VWRL.AS", name: "Vanguard FTSE All-World UCITS ETF", exchange: "Euronext Amsterdam", currency: "EUR" },
+  assetAllocation: [
+    { name: "Stock", value: 22500, percentage: 50 },
+    { name: "ETF", value: 29250, percentage: 50 },
   ],
-  SMH: [{ symbol: "SMH", name: "VanEck Semiconductor ETF", exchange: "NASDAQ", currency: "USD" }],
-  CERN: [{ symbol: "CERN.SW", name: "CERN Holdings", exchange: "SIX", currency: "CHF" }],
-  NESN: [{ symbol: "NESN.SW", name: "Nestle S.A.", exchange: "SIX", currency: "CHF" }],
-  AAPL: [{ symbol: "AAPL", name: "Apple Inc.", exchange: "NASDAQ", currency: "USD" }],
-  MSFT: [{ symbol: "MSFT", name: "Microsoft Corp.", exchange: "NASDAQ", currency: "USD" }],
-  GOOG: [{ symbol: "GOOG", name: "Alphabet Inc. Class C", exchange: "NASDAQ", currency: "USD" }],
-  AMZN: [{ symbol: "AMZN", name: "Amazon.com Inc.", exchange: "NASDAQ", currency: "USD" }],
-  TSLA: [{ symbol: "TSLA", name: "Tesla Inc.", exchange: "NASDAQ", currency: "USD" }],
-  NVDA: [{ symbol: "NVDA", name: "NVIDIA Corp.", exchange: "NASDAQ", currency: "USD" }],
-  JPM: [{ symbol: "JPM", name: "JPMorgan Chase & Co.", exchange: "NYSE", currency: "USD" }],
-  VWO: [{ symbol: "VWO", name: "Vanguard FTSE Emerging Markets ETF", exchange: "NYSEARCA", currency: "USD" }],
-  GLD: [{ symbol: "GLD", name: "SPDR Gold Shares", exchange: "NYSEARCA", currency: "USD" }],
-  BND: [{ symbol: "BND", name: "Vanguard Total Bond Market ETF", exchange: "NYSEARCA", currency: "USD" }],
+  currencyAllocation: [
+    { name: "CHF", value: 5000, percentage: 9.5 },
+    { name: "USD", value: 46750, percentage: 90.5 },
+  ],
+  trueCountryAllocation: [
+    { name: "US", value: 30000, percentage: 57.8 }, // Includes ETF look-through
+    { name: "Switzerland", value: 5000, percentage: 9.6 },
+    { name: "Japan", value: 2000, percentage: 3.8 }, // From ETF look-through
+    { name: "UK", value: 1500, percentage: 2.9 }, // From ETF look-through
+    { name: "Germany", value: 1000, percentage: 1.9 }, // From ETF look-through
+    { name: "China", value: 500, percentage: 1.0 }, // From ETF look-through
+    { name: "Other", value: 12000, percentage: 23.0 }, // Remaining from ETFs
+  ],
+  trueSectorAllocation: [
+    { name: "Technology", value: 20000, percentage: 38.5 }, // Includes ETF look-through
+    { name: "Financials", value: 7000, percentage: 13.5 }, // Includes ETF look-through
+    { name: "Healthcare", value: 6000, percentage: 11.5 }, // Includes ETF look-through
+    { name: "Consumer Staples", value: 5000, percentage: 9.6 },
+    { name: "Industrials", value: 2500, percentage: 4.8 }, // From ETF look-through
+    { name: "Consumer Discretionary", value: 2000, percentage: 3.8 }, // From ETF look-through
+    { name: "Communication Services", value: 1000, percentage: 1.9 }, // From ETF look-through
+    { name: "Diversified", value: 8500, percentage: 16.4 }, // Remaining from ETFs
+  ],
+  domicileAllocation: [
+    { name: "US", value: 17500, percentage: 33.7 },
+    { name: "IE", value: 29250, percentage: 56.4 },
+    { name: "CH", value: 5000, percentage: 9.6 },
+  ],
 }
+
+export const mockPdfTextContent = `
+Account Overview
+Total value CHF 1’234’567
+Securities value CHF 1’200’000
+Cash balance CHF 34’567
+
+Positions
+Symbol Name Quantity Price Currency Value Category Domicile % DailyChange
+AAPL Apple Inc. 100 170.50 USD 15’000.00 CHF Stock US 1.20% 0.50%
+NESN Nestle SA 50 100.00 CHF 5’000.00 CHF Stock CH 0.40% -0.20%
+VWRL Vanguard FTSE All-World UCITS ETF 200 90.00 USD 18’000.00 CHF ETF IE 1.50% 0.80%
+IWDA iShares Core MSCI World UCITS ETF 150 75.00 USD 11’250.00 CHF ETF IE 0.90% 0.30%
+GOOGL Alphabet Inc. Class A 20 140.00 USD 2’500.00 CHF Stock US 0.20% 1.10%
+`

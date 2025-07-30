@@ -1,5 +1,10 @@
 // PDF parsing utilities with local worker and better error handling
 
+import * as pdfjs from "pdfjs-dist"
+import { PDF_WORKER_URL } from "./pdf-config"
+
+pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
+
 export async function safePDFExtraction(file: File): Promise<string> {
   // Try multiple approaches for PDF text extraction in order of reliability
 
@@ -66,53 +71,13 @@ export async function safePDFExtraction(file: File): Promise<string> {
 
 async function extractWithLocalPDFJS(file: File): Promise<string> {
   try {
-    // Dynamic import to avoid build-time issues
-    const pdfjsLib = await import("pdfjs-dist")
-
-    // Configure PDF.js to use local worker
-    //const pdfjsWorker = require("pdfjs-dist/build/pdf.worker.min.mjs");
-
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString()
-
     const arrayBuffer = await file.arrayBuffer()
     console.log("Starting PDF.js extraction with local worker...")
 
-    const pdf = await pdfjsLib.getDocument({
-      data: arrayBuffer,
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      useSystemFonts: true,
-      disableFontFace: true,
-      maxImageSize: 1024 * 1024,
-      verbosity: 0,
-      disableWorker: false, // Enable worker for better performance
-    }).promise
-
+    const pdf = await loadPdf(arrayBuffer)
     console.log(`PDF loaded successfully. Pages: ${pdf.numPages}`)
-    let fullText = ""
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      try {
-        console.log(`Processing page ${i}/${pdf.numPages}`)
-        const page = await pdf.getPage(i)
-        const textContent = await page.getTextContent()
-
-        // Extract text items and join them
-        const pageText = textContent.items
-          .map((item: any) => ("str" in item ? item.str : ""))
-          .join(" ")
-          .replace(/\s+/g, " ") // Normalize whitespace
-          .trim()
-
-        fullText += pageText + "\n"
-        console.log(`Page ${i} extracted: ${pageText.length} characters`)
-      } catch (pageError) {
-        console.warn(`Error extracting page ${i}:`, pageError)
-        // Continue with other pages
-      }
-    }
-
-    return fullText // Return extracted text
+    return await getPdfText(pdf)
   } catch (error) {
     console.error("PDF extraction failed:", error)
     throw new Error("Text extraction failed: " + error.message)
@@ -217,4 +182,19 @@ export async function generatePdfFromHtml(htmlContent: string): Promise<Buffer> 
 
   // Return a dummy buffer for demonstration purposes
   return Buffer.from("This is a dummy PDF content generated from HTML.")
+}
+
+async function loadPdf(file: File | string): Promise<pdfjs.PDFDocumentProxy> {
+  const loadingTask = pdfjs.getDocument(typeof file === "string" ? file : await file.arrayBuffer())
+  return loadingTask.promise
+}
+
+async function getPdfText(pdf: pdfjs.PDFDocumentProxy): Promise<string> {
+  let fullText = ""
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const textContent = await page.getTextContent()
+    fullText += textContent.items.map((item: any) => item.str).join(" ") + "\n"
+  }
+  return fullText
 }
