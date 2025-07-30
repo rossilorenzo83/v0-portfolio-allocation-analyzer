@@ -5,7 +5,7 @@ import { useDropzone } from "react-dropzone"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, UploadCloud, FileText, XCircle } from "lucide-react"
-import { parsePortfolioCsv, type SwissPortfolioData } from "@/portfolio-parser" // Import parsePortfolioCsv
+import { parsePortfolioCsv, type SwissPortfolioData } from "@/portfolio-parser" // Corrected import
 
 interface FileUploadHelperProps {
   onFileUpload: (data: SwissPortfolioData) => void

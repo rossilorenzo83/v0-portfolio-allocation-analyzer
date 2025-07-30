@@ -1,20 +1,15 @@
-"use client" // This component needs to be a client component to use useEffect
+"use client"
 
 import type React from "react"
+
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-// Removed import for configurePDFJS as PDF functionality is removed.
+import { TooltipProvider } from "@/components/ui/tooltip"
 
-export default function ClientLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
-  // Removed useEffect hook that called configurePDFJS.
-
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-      {children}
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <TooltipProvider>{children}</TooltipProvider>
       <Toaster />
     </ThemeProvider>
   )
