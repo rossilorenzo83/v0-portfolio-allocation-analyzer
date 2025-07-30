@@ -63,6 +63,7 @@ interface ParsedPosition {
   totalValue?: number
 }
 
+// Enhanced category mapping for Swiss banks
 const CATEGORY_ALIASES: Record<string, string> = {
   // French → canonical
   Actions: "Actions",
@@ -71,16 +72,26 @@ const CATEGORY_ALIASES: Record<string, string> = {
   ETF: "ETF",
   Obligations: "Bonds",
   "Crypto-monnaies": "Cryptocurrencies",
+  Liquidités: "Cash",
+  Espèces: "Cash",
+
   // English → canonical
   Equities: "Actions",
+  Stocks: "Actions",
   "Structured products": "Structured Products",
   Funds: "Funds",
   Bonds: "Bonds",
   Cryptocurrencies: "Cryptocurrencies",
+  Cash: "Cash",
+
+  // German → canonical
+  Aktien: "Actions",
+  Fonds: "Funds",
+  Anleihen: "Bonds",
 }
 
 /**
- * Parses a Swiss portfolio PDF or text file with real API integration.
+ * Parses a Swiss portfolio PDF or CSV file with enhanced real API integration.
  */
 async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfolioData> {
   let text: string
@@ -92,7 +103,7 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
       if (input.type === "text/csv" || input.name.endsWith(".csv")) {
         text = await input.text()
         console.log("CSV file detected, parsing...")
-        return parseSQCSV(text)
+        return await parseSwissquoteCSV(text)
       }
 
       if (input.type === "application/pdf") {
@@ -106,12 +117,7 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
     } catch (extractionError) {
       console.error("File extraction failed:", extractionError)
       throw new Error(
-        "File processing failed. Please try the copy-paste method:\n\n" +
-          "1. Open your PDF file\n" +
-          "2. Select all text (Ctrl+A or Cmd+A)\n" +
-          "3. Copy the text (Ctrl+C or Cmd+C)\n" +
-          "4. Use the 'Paste Text' tab\n" +
-          "5. Paste and analyze\n\n" +
+        "File processing failed. Please try the copy-paste method or check your file format.\n\n" +
           "Error details: " +
           (extractionError instanceof Error ? extractionError.message : String(extractionError)),
       )
@@ -121,9 +127,9 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
     console.log("Text input processed, length:", text.length)
 
     // Check if the text input is CSV format
-    if (looksLikeSQPortfolioCSV(text)) {
+    if (looksLikeSwissquoteCSV(text)) {
       console.log("CSV format detected in text input")
-      return parseSQCSV(text)
+      return await parseSwissquoteCSV(text)
     }
   }
 
@@ -145,8 +151,6 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
 
   if (parsedPositions.length === 0) {
     console.log("No positions found, trying alternative parsing methods...")
-
-    // Try parsing as simple text format
     const alternativePositions = parseAlternativeFormat(text)
     console.log("Alternative parsing found:", alternativePositions.length)
 
@@ -197,110 +201,159 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
   return portfolioData
 }
 
-function looksLikeSQPortfolioCSV(text: string): boolean {
-  const lines = text.split("\n").slice(0, 10) // Check first 10 lines
+function looksLikeSwissquoteCSV(text: string): boolean {
+  const lines = text.split("\n").slice(0, 20) // Check first 20 lines
   return lines.some(
     (line) =>
-      line.includes("Symbole,Quantité") || // French
-      line.includes("Symbol,Quantity") || // English
-      line.includes("Symbole;Quantité") || // French with semicolon
-      line.includes("Symbol;Quantity") || // English with semicolon
-      line.includes("Symbole,Quantit") || // Handle encoding issues
-      (line.includes("Symbole") && line.includes("Quantit")), // Flexible matching
+      line.includes("Symbole") ||
+      line.includes("Symbol") ||
+      line.includes("Quantité") ||
+      line.includes("Quantity") ||
+      line.includes("Prix unitaire") ||
+      line.includes("Unit Price") ||
+      line.includes("Valeur totale CHF") ||
+      line.includes("Total Value CHF"),
   )
 }
 
 function detectCSVDelimiter(csvText: string): string {
   const delimiters = [",", ";", "\t", "|"]
-  const firstLine = csvText.split(/\r?\n/).find((line) => line.trim()) || ""
-  const counts = delimiters.map((d) => ({ d, c: (firstLine.match(new RegExp(`\\${d}`, "g")) || []).length }))
+  const firstDataLine =
+    csvText
+      .split(/\r?\n/)
+      .find(
+        (line) => line.trim() && (line.includes("Symbole") || line.includes("Symbol") || line.includes("Quantité")),
+      ) || ""
+
+  const counts = delimiters.map((d) => ({
+    d,
+    c: (firstDataLine.match(new RegExp(`\\${d}`, "g")) || []).length,
+  }))
+
   const best = counts.reduce((a, b) => (b.c > a.c ? b : a), { d: ",", c: 0 })
   console.log("Delimiter detection:", counts, "chosen:", best.d)
   return best.c === 0 ? "," : best.d
 }
 
-async function parseSQCSV(csv: string): Promise<SwissPortfolioData> {
+async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
+  console.log("Starting Swissquote CSV parsing...")
+
   const delimiter = detectCSVDelimiter(csv)
   const { data } = Papa.parse(csv, {
     delimiter,
     skipEmptyLines: "greedy",
-    dynamicTyping: false, // Keep as strings for better parsing control
+    dynamicTyping: false,
   })
 
-  console.log("CSV parsing started with", data.length, "rows")
-  console.log("Header row:", data[0])
+  console.log("CSV parsing completed with", data.length, "rows")
+  console.log("Sample rows:", data.slice(0, 5))
 
-  const header = data[0] as string[]
+  // Find header row
+  let headerRowIndex = -1
+  let headers: string[] = []
+
+  for (let i = 0; i < Math.min(data.length, 50); i++) {
+    const row = data[i] as string[]
+    const rowText = row.join(" ").toLowerCase()
+
+    if (
+      rowText.includes("symbole") ||
+      rowText.includes("symbol") ||
+      rowText.includes("quantité") ||
+      rowText.includes("quantity")
+    ) {
+      headerRowIndex = i
+      headers = row.map((h) => h.toString().trim())
+      break
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    throw new Error("Could not find header row in CSV file")
+  }
+
+  console.log("Header found at row", headerRowIndex, ":", headers)
+
+  // Map column indices
+  const columnMap = {
+    symbol: findColumnIndex(headers, ["symbole", "symbol", "ticker"]),
+    name: findColumnIndex(headers, ["nom", "name", "description", "libellé"]),
+    quantity: findColumnIndex(headers, ["quantité", "quantity", "qty", "nombre"]),
+    unitCost: findColumnIndex(headers, ["prix unitaire", "unit price", "cost", "coût unitaire"]),
+    price: findColumnIndex(headers, ["prix", "price", "cours", "valeur"]),
+    currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy"]),
+    totalCHF: findColumnIndex(headers, ["valeur totale chf", "total value chf", "total chf", "montant chf"]),
+    gainLoss: findColumnIndex(headers, ["g&p chf", "gain loss chf", "plus-value", "résultat"]),
+    gainLossPercent: findColumnIndex(headers, ["g&p %", "gain loss %", "plus-value %", "résultat %"]),
+    positionPercent: findColumnIndex(headers, ["positions %", "position %", "poids", "weight"]),
+    dailyChange: findColumnIndex(headers, ["quot. %", "daily %", "variation", "change"]),
+  }
+
+  console.log("Column mapping:", columnMap)
+
   const positions: PortfolioPosition[] = []
-  let currentCategory = ""
+  let currentCategory = "Unknown"
+  let totalPortfolioValue = 0
 
-  // Map column indices based on the actual CSV structure
-  const symbolIndex = header.findIndex((h) => h.includes("Symbole") || h.includes("Symbol"))
-  const quantityIndex = header.findIndex((h) => h.includes("Quantit") || h.includes("Quantity"))
-  const unitCostIndex = header.findIndex((h) => h.includes("unitaire") || h.includes("Cost"))
-  const priceIndex = header.findIndex((h) => h.includes("Prix") || h.includes("Price"))
-  const currencyIndex = header.findIndex((h) => h.includes("Dev") || h.includes("Currency"))
-  const totalCHFIndex = header.findIndex((h) => h.includes("totale CHF") || h.includes("Total CHF"))
-  const gainLossIndex = header.findIndex((h) => h.includes("G&P CHF") || h.includes("Gain"))
-  const gainLossPercentIndex = header.findIndex((h) => h.includes("G&P %") || h.includes("Gain %"))
-  const positionPercentIndex = header.findIndex((h) => h.includes("Positions %") || h.includes("Position %"))
-  const dailyChangeIndex = header.findIndex((h) => h.includes("quot. %") || h.includes("Daily %"))
-
-  console.log("Column mapping:", {
-    symbol: symbolIndex,
-    quantity: quantityIndex,
-    unitCost: unitCostIndex,
-    price: priceIndex,
-    currency: currencyIndex,
-    totalCHF: totalCHFIndex,
-    gainLoss: gainLossIndex,
-    positionPercent: positionPercentIndex,
-  })
-
-  for (let i = 1; i < data.length; i++) {
+  // Parse data rows
+  for (let i = headerRowIndex + 1; i < data.length; i++) {
     const row = data[i] as string[]
 
-    if (!row || row.length < header.length) continue
+    if (!row || row.length < headers.length) continue
 
-    const first = (row[0] || "").toString().trim()
-    const symbol = symbolIndex >= 0 ? (row[symbolIndex] || "").toString().trim() : ""
+    const firstCell = (row[0] || "").toString().trim()
 
-    // 1. Category detection
-    if (CATEGORY_ALIASES[first] || first.match(/^(Actions|ETF|Obligations|Fonds)/i)) {
-      currentCategory = CATEGORY_ALIASES[first] || first
+    // Skip empty rows
+    if (!firstCell) continue
+
+    // Check for category headers
+    const categoryMatch = Object.keys(CATEGORY_ALIASES).find((cat) =>
+      firstCell.toLowerCase().includes(cat.toLowerCase()),
+    )
+
+    if (categoryMatch) {
+      currentCategory = CATEGORY_ALIASES[categoryMatch]
       console.log(`Found category: ${currentCategory}`)
       continue
     }
 
-    // 2. Skip summary/total rows
+    // Skip total/summary rows
     if (
-      symbol === "Total" ||
-      symbol.startsWith("Sous-total") ||
-      symbol.startsWith("Subtotal") ||
-      symbol.toLowerCase().includes("total") ||
-      !symbol ||
-      symbol.length < 2
+      firstCell.toLowerCase().includes("total") ||
+      firstCell.toLowerCase().includes("sous-total") ||
+      firstCell.toLowerCase().includes("subtotal")
     ) {
-      console.log(`Skipping summary/empty row: ${symbol}`)
+      // Try to extract total portfolio value
+      const totalValue = extractNumberFromRow(row)
+      if (totalValue > totalPortfolioValue) {
+        totalPortfolioValue = totalValue
+      }
       continue
     }
 
-    // 3. Extract position data
-    const quantityStr = quantityIndex >= 0 ? row[quantityIndex] : ""
-    const unitCostStr = unitCostIndex >= 0 ? row[unitCostIndex] : ""
-    const priceStr = priceIndex >= 0 ? row[priceIndex] : ""
-    const currencyStr = currencyIndex >= 0 ? row[currencyIndex] : "CHF"
-    const totalCHFStr = totalCHFIndex >= 0 ? row[totalCHFIndex] : ""
-    const gainLossStr = gainLossIndex >= 0 ? row[gainLossIndex] : ""
-    const gainLossPercentStr = gainLossPercentIndex >= 0 ? row[gainLossPercentIndex] : ""
-    const positionPercentStr = positionPercentIndex >= 0 ? row[positionPercentIndex] : ""
-    const dailyChangeStr = dailyChangeIndex >= 0 ? row[dailyChangeIndex] : ""
+    // Parse position data
+    const symbol = columnMap.symbol >= 0 ? row[columnMap.symbol]?.toString().trim() : ""
+
+    if (!symbol || symbol.length < 2) continue
+
+    const name = columnMap.name >= 0 ? row[columnMap.name]?.toString().trim() : symbol
+    const quantityStr = columnMap.quantity >= 0 ? row[columnMap.quantity]?.toString() : ""
+    const unitCostStr = columnMap.unitCost >= 0 ? row[columnMap.unitCost]?.toString() : ""
+    const priceStr = columnMap.price >= 0 ? row[columnMap.price]?.toString() : ""
+    const currencyStr = columnMap.currency >= 0 ? row[columnMap.currency]?.toString().trim() : "CHF"
+    const totalCHFStr = columnMap.totalCHF >= 0 ? row[columnMap.totalCHF]?.toString() : ""
+    const gainLossStr = columnMap.gainLoss >= 0 ? row[columnMap.gainLoss]?.toString() : ""
+    const positionPercentStr = columnMap.positionPercent >= 0 ? row[columnMap.positionPercent]?.toString() : ""
+    const dailyChangeStr = columnMap.dailyChange >= 0 ? row[columnMap.dailyChange]?.toString() : ""
 
     // Parse numbers with Swiss formatting
     const quantity = parseSwissNumber(quantityStr)
     const unitCost = parseSwissNumber(unitCostStr)
     const price = parseSwissNumber(priceStr) || unitCost
     const totalCHF = parseSwissNumber(totalCHFStr)
+    const gainLoss = parseSwissNumber(gainLossStr)
+    const positionPercent = parseSwissNumber(positionPercentStr.replace("%", ""))
+    const dailyChange = parseSwissNumber(dailyChangeStr.replace("%", ""))
 
     // Skip if missing essential data
     if (isNaN(quantity) || quantity <= 0 || isNaN(price) || price <= 0) {
@@ -308,21 +361,27 @@ async function parseSQCSV(csv: string): Promise<SwissPortfolioData> {
       continue
     }
 
-    console.log(`Processing position: ${symbol} - ${quantity} @ ${price} ${currencyStr}`)
+    console.log(`Processing position: ${symbol} - ${quantity} @ ${price} ${currencyStr} = ${totalCHF} CHF`)
 
     positions.push({
       symbol: symbol,
-      name: symbol, // Will be enriched with API data
+      name: name || symbol,
       quantity: quantity,
       unitCost: unitCost || price,
       price: price,
-      totalValueCHF: totalCHF || quantity * price * (currencyStr === "CHF" ? 1 : 0.92),
-      currency: currencyStr.trim(),
+      totalValueCHF: totalCHF || quantity * price * getCurrencyRate(currencyStr),
+      currency: currencyStr || "CHF",
       category: currentCategory || "Unknown",
-      gainLossCHF: parseSwissNumber(gainLossStr),
-      positionPercent: parseSwissNumber(positionPercentStr.replace("%", "")),
-      dailyChangePercent: parseSwissNumber(dailyChangeStr.replace("%", "")),
+      sector: "Unknown",
+      geography: "Unknown",
+      domicile: "Unknown",
+      withholdingTax: 15,
       taxOptimized: false,
+      gainLossCHF: gainLoss || 0,
+      unrealizedGainLoss: 0,
+      unrealizedGainLossPercent: 0,
+      positionPercent: positionPercent || 0,
+      dailyChangePercent: dailyChange || 0,
       isOTC: false,
     })
   }
@@ -333,7 +392,11 @@ async function parseSQCSV(csv: string): Promise<SwissPortfolioData> {
     throw new Error("No valid positions found in CSV file. Please check the file format.")
   }
 
-  const total = positions.reduce((s, p) => s + p.totalValueCHF, 0)
+  // Calculate total value if not found
+  const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
+  const finalTotal = totalPortfolioValue > 0 ? totalPortfolioValue : calculatedTotal
+
+  console.log(`Total portfolio value: ${finalTotal} CHF (calculated: ${calculatedTotal})`)
 
   // Enrich with API data
   const enrichedPositions = await enrichPositionsWithAPIData(
@@ -350,28 +413,62 @@ async function parseSQCSV(csv: string): Promise<SwissPortfolioData> {
 
   return {
     accountOverview: {
-      totalValue: total,
-      cashBalance: 0,
-      securitiesValue: total,
+      totalValue: finalTotal,
+      cashBalance: 0, // Not available in CSV
+      securitiesValue: calculatedTotal,
       cryptoValue: 0,
       purchasingPower: 0,
     },
     positions: enrichedPositions,
-    assetAllocation: calculateAssetAllocation(enrichedPositions, total),
-    currencyAllocation: await calculateTrueCurrencyAllocation(enrichedPositions, total),
-    trueCountryAllocation: await calculateTrueCountryAllocation(enrichedPositions, total),
-    trueSectorAllocation: await calculateTrueSectorAllocation(enrichedPositions, total),
-    domicileAllocation: calculateDomicileAllocation(enrichedPositions, total),
+    assetAllocation: calculateAssetAllocation(enrichedPositions, calculatedTotal),
+    currencyAllocation: await calculateTrueCurrencyAllocation(enrichedPositions, calculatedTotal),
+    trueCountryAllocation: await calculateTrueCountryAllocation(enrichedPositions, calculatedTotal),
+    trueSectorAllocation: await calculateTrueSectorAllocation(enrichedPositions, calculatedTotal),
+    domicileAllocation: calculateDomicileAllocation(enrichedPositions, calculatedTotal),
   }
+}
+
+function findColumnIndex(headers: string[], searchTerms: string[]): number {
+  for (const term of searchTerms) {
+    const index = headers.findIndex((h) => h.toLowerCase().includes(term.toLowerCase()))
+    if (index >= 0) return index
+  }
+  return -1
+}
+
+function extractNumberFromRow(row: string[]): number {
+  for (const cell of row) {
+    const num = parseSwissNumber(cell?.toString() || "")
+    if (!isNaN(num) && num > 1000) {
+      // Likely a total value
+      return num
+    }
+  }
+  return 0
+}
+
+function getCurrencyRate(currency: string): number {
+  // Rough conversion rates to CHF (should be real-time in production)
+  const rates: Record<string, number> = {
+    CHF: 1.0,
+    USD: 0.92,
+    EUR: 0.98,
+    GBP: 1.15,
+    JPY: 0.0065,
+    CAD: 0.68,
+  }
+  return rates[currency.toUpperCase()] || 0.92 // Default to USD rate
 }
 
 function parseSwissNumber(str: string): number {
   if (!str) return 0
-  // Handle Swiss number format: 1'234'567.89 and encoding issues
+
+  // Handle Swiss number format: 1'234'567.89 and various encodings
   const cleaned = str
     .toString()
     .replace(/'/g, "") // Remove apostrophes
-    .replace(/,/g, ".") // Replace comma with dot
+    .replace(/\s/g, "") // Remove spaces
+    .replace(/,/g, ".") // Replace comma with dot for decimal
     .replace(/[^\d.-]/g, "") // Remove non-numeric characters except dots and minus
 
   const parsed = Number.parseFloat(cleaned)
@@ -592,12 +689,12 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
 
       // Get ETF composition if applicable
       let etfComposition = null
-      if (parsed.category === "ETF") {
+      if (parsed.category === "ETF" || parsed.category === "Funds") {
         etfComposition = await apiService.getETFComposition(parsed.symbol)
       }
 
       const currentPrice = priceData?.price || parsed.price
-      const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * (parsed.currency === "CHF" ? 1 : 0.92) // Rough CHF conversion
+      const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
 
       const enrichedPosition: PortfolioPosition = {
         symbol: parsed.symbol,
@@ -614,7 +711,7 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         domicile: etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown"),
         withholdingTax: etfComposition?.withholdingTax || (metadata?.country === "United States" ? 30 : 15),
         taxOptimized: etfComposition?.domicile === "IE" || etfComposition?.domicile === "LU",
-        gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * 0.92,
+        gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
         unrealizedGainLoss: (currentPrice - parsed.price) * parsed.quantity,
         unrealizedGainLossPercent: ((currentPrice - parsed.price) / parsed.price) * 100,
         positionPercent: 0, // Will be calculated later
@@ -634,7 +731,7 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         unitCost: parsed.price,
         price: parsed.price,
         currentPrice: parsed.price,
-        totalValueCHF: parsed.totalValue || parsed.quantity * parsed.price * 0.92,
+        totalValueCHF: parsed.totalValue || parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
         currency: parsed.currency,
         category: parsed.category,
         sector: "Unknown",
@@ -686,7 +783,7 @@ async function calculateTrueCurrencyAllocation(
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF") {
+    if (position.category === "ETF" || position.category === "Funds") {
       // Get ETF composition for true currency exposure
       try {
         const composition = await apiService.getETFComposition(position.symbol)
@@ -728,7 +825,7 @@ async function calculateTrueCountryAllocation(
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF") {
+    if (position.category === "ETF" || position.category === "Funds") {
       // Get ETF composition for true country exposure
       try {
         const composition = await apiService.getETFComposition(position.symbol)
@@ -770,7 +867,7 @@ async function calculateTrueSectorAllocation(
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF") {
+    if (position.category === "ETF" || position.category === "Funds") {
       // Get ETF composition for true sector exposure
       try {
         const composition = await apiService.getETFComposition(position.symbol)

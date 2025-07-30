@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ symbol: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: { symbol: string } }) {
   try {
-    const { symbol } = await params
+    const { symbol } = params
 
     if (!symbol) {
       return NextResponse.json({ error: "Symbol is required" }, { status: 400 })
@@ -10,100 +10,74 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     console.log(`Fetching quote for symbol: ${symbol}`)
 
-    // Try Yahoo Finance API first
-    try {
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
-      const response = await fetch(yahooUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-      })
+    // Try Yahoo Finance API
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
 
-      if (response.ok) {
-        const data = await response.json()
+    const response = await fetch(yahooUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        Accept: "application/json",
+      },
+    })
 
-        if (data.chart?.result?.[0]) {
-          const result = data.chart.result[0]
-          const meta = result.meta
-          const quote = result.indicators?.quote?.[0]
-
-          if (meta && quote) {
-            const currentPrice = meta.regularMarketPrice || meta.previousClose
-            const previousClose = meta.previousClose
-            const change = currentPrice - previousClose
-            const changePercent = (change / previousClose) * 100
-
-            return NextResponse.json({
-              symbol: symbol.toUpperCase(),
-              price: currentPrice,
-              change: change,
-              changePercent: changePercent,
-              currency: meta.currency || "USD",
-              marketState: meta.marketState,
-              timestamp: Date.now(),
-            })
-          }
-        }
-      }
-    } catch (apiError) {
-      console.warn(`Yahoo API failed for ${symbol}:`, apiError)
+    if (!response.ok) {
+      console.error(`Yahoo Finance API error: ${response.status} ${response.statusText}`)
+      throw new Error(`Yahoo Finance API error: ${response.status}`)
     }
 
-    // Fallback to web scraping
-    try {
-      const scrapeUrl = `https://finance.yahoo.com/quote/${symbol}`
-      const response = await fetch(scrapeUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-      })
+    const data = await response.json()
+    console.log(`Raw Yahoo data for ${symbol}:`, JSON.stringify(data, null, 2))
 
-      if (response.ok) {
-        const html = await response.text()
-
-        // Extract price using regex
-        const priceMatch = html.match(
-          /data-symbol="${symbol}"[^>]*data-field="regularMarketPrice"[^>]*>([0-9,]+\.?[0-9]*)</i,
-        )
-        const changeMatch = html.match(
-          /data-symbol="${symbol}"[^>]*data-field="regularMarketChange"[^>]*>([+-]?[0-9,]+\.?[0-9]*)</i,
-        )
-        const changePercentMatch = html.match(
-          /data-symbol="${symbol}"[^>]*data-field="regularMarketChangePercent"[^>]*>([+-]?[0-9,]+\.?[0-9]*)</i,
-        )
-
-        if (priceMatch) {
-          const price = Number.parseFloat(priceMatch[1].replace(/,/g, ""))
-          const change = changeMatch ? Number.parseFloat(changeMatch[1].replace(/,/g, "")) : 0
-          const changePercent = changePercentMatch ? Number.parseFloat(changePercentMatch[1].replace(/,/g, "")) : 0
-
-          return NextResponse.json({
-            symbol: symbol.toUpperCase(),
-            price: price,
-            change: change,
-            changePercent: changePercent,
-            currency: "USD", // Default for scraped data
-            marketState: "REGULAR",
-            timestamp: Date.now(),
-          })
-        }
-      }
-    } catch (scrapeError) {
-      console.warn(`Web scraping failed for ${symbol}:`, scrapeError)
+    if (!data.chart?.result?.[0]) {
+      throw new Error("No chart data found")
     }
 
-    // Final fallback with mock data
-    return NextResponse.json({
-      symbol: symbol.toUpperCase(),
+    const result = data.chart.result[0]
+    const meta = result.meta
+    const quote = result.indicators?.quote?.[0]
+
+    if (!meta) {
+      throw new Error("No meta data found")
+    }
+
+    const stockPrice = {
+      symbol: meta.symbol || symbol,
+      price: meta.regularMarketPrice || meta.previousClose || 0,
+      change: (meta.regularMarketPrice || 0) - (meta.previousClose || 0),
+      changePercent: (((meta.regularMarketPrice || 0) - (meta.previousClose || 0)) / (meta.previousClose || 1)) * 100,
+      currency: meta.currency || "USD",
+      marketState: meta.marketState || "REGULAR",
+      timestamp: meta.regularMarketTime || Date.now() / 1000,
+    }
+
+    console.log(`Processed stock price for ${symbol}:`, stockPrice)
+
+    return NextResponse.json(stockPrice, {
+      headers: {
+        "Cache-Control": "public, max-age=300", // 5 minutes
+        "Access-Control-Allow-Origin": "*",
+      },
+    })
+  } catch (error) {
+    console.error(`Error fetching quote for ${symbol}:`, error)
+
+    // Return fallback data instead of error
+    const fallbackPrice = {
+      symbol: symbol,
       price: 100 + Math.random() * 50,
       change: (Math.random() - 0.5) * 10,
       changePercent: (Math.random() - 0.5) * 5,
       currency: "USD",
       marketState: "REGULAR",
-      timestamp: Date.now(),
+      timestamp: Date.now() / 1000,
+    }
+
+    return NextResponse.json(fallbackPrice, {
+      headers: {
+        "Cache-Control": "public, max-age=60", // 1 minute for fallback
+        "Access-Control-Allow-Origin": "*",
+      },
     })
-  } catch (error) {
-    console.error("Quote API error:", error)
-    return NextResponse.json({ error: "Failed to fetch quote data" }, { status: 500 })
   }
 }

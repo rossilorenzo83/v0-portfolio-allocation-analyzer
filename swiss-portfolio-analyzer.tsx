@@ -1,6 +1,4 @@
 "use client"
-
-import type React from "react"
 import { useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,19 +7,8 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-} from "recharts"
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
 import { FileUploadHelper } from "@/components/file-upload-helper"
 import { parseSwissPortfolioPDF, type SwissPortfolioData, type AllocationItem } from "./portfolio-parser"
 import {
@@ -88,20 +75,20 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
       return new Intl.NumberFormat("de-CH", {
         style: "currency",
         currency: validCurrency,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
       }).format(amount)
     } catch (error) {
       // Fallback formatting if currency is still invalid
-      return `${validCurrency} ${amount.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      return `${validCurrency} ${amount.toLocaleString("de-CH", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
     }
   }
 
   const formatPercentage = (value: number) => {
-    return `${value.toFixed(2)}%`
+    return `${value.toFixed(1)}%`
   }
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload
       return (
@@ -124,7 +111,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
+        <ChartContainer config={{}} className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -133,7 +120,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                 cy="50%"
                 labelLine={false}
                 label={({ name, percentage }) => `${name}: ${formatPercentage(percentage)}`}
-                outerRadius={80}
+                outerRadius={120}
                 fill="#8884d8"
                 dataKey="value"
               >
@@ -141,11 +128,11 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip content={<CustomTooltip />} />
+              <ChartTooltip content={<CustomTooltip />} />
               <Legend />
             </PieChart>
           </ResponsiveContainer>
-        </div>
+        </ChartContainer>
       </CardContent>
     </Card>
   )
@@ -159,13 +146,13 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
+        <ChartContainer config={{}} className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+            <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} interval={0} />
+              <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} interval={0} fontSize={12} />
               <YAxis />
-              <Tooltip content={<CustomTooltip />} />
+              <ChartTooltip content={<CustomTooltip />} />
               <Bar dataKey="value" fill="#8884d8">
                 {data.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -173,7 +160,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </ChartContainer>
       </CardContent>
     </Card>
   )
@@ -312,7 +299,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                       .map((position) => (
                         <TableRow key={position.symbol}>
                           <TableCell className="font-medium">{position.symbol}</TableCell>
-                          <TableCell>{position.name}</TableCell>
+                          <TableCell className="max-w-[200px] truncate">{position.name}</TableCell>
                           <TableCell>{position.quantity.toLocaleString()}</TableCell>
                           <TableCell>{formatCurrency(position.price, position.currency)}</TableCell>
                           <TableCell>{formatCurrency(position.totalValueCHF)}</TableCell>
@@ -435,15 +422,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                         <span className="text-sm text-gray-500 ml-2">({formatPercentage(item.percentage)})</span>
                       </div>
                     </div>
-                    <Progress
-                      value={item.percentage}
-                      className="h-2"
-                      style={
-                        {
-                          "--progress-background": COLORS[index % COLORS.length],
-                        } as React.CSSProperties
-                      }
-                    />
+                    <Progress value={item.percentage} className="h-2" />
                   </div>
                 ))}
               </div>
@@ -475,7 +454,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
 
                   <div className="space-y-2">
                     <h4 className="font-semibold">Withholding Tax Breakdown</h4>
-                    {domicileAllocation.map((item, index) => (
+                    {domicileAllocation.map((item) => (
                       <div key={item.name} className="flex justify-between items-center">
                         <span className="text-sm">{item.name}</span>
                         <span className="text-sm font-medium">
@@ -523,7 +502,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                     <h4 className="font-semibold text-red-600 mb-2">Consider Optimizing</h4>
                     <ul className="text-sm space-y-1">
                       {positions
-                        .filter((p) => !p.taxOptimized && p.category === "ETF")
+                        .filter((p) => !p.taxOptimized && (p.category === "ETF" || p.category === "Funds"))
                         .slice(0, 5)
                         .map((p) => (
                           <li key={p.symbol} className="flex justify-between">
