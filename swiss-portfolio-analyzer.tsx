@@ -20,6 +20,7 @@ import {
   BarChart3,
   Globe,
   Building2,
+  Info,
 } from "lucide-react"
 
 // Color palette for charts
@@ -165,6 +166,24 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
     </Card>
   )
 
+  // Calculate tax efficiency for Swiss investors
+  const calculateTaxEfficiency = () => {
+    if (!portfolioData) return { optimized: 0, nonOptimized: 0, usDomiciled: 0, europeanDomiciled: 0 }
+
+    const usDomiciled = portfolioData.positions.filter((p) => p.domicile === "US")
+    const europeanDomiciled = portfolioData.positions.filter((p) => p.domicile === "IE" || p.domicile === "LU")
+    const other = portfolioData.positions.filter(
+      (p) => p.domicile !== "US" && p.domicile !== "IE" && p.domicile !== "LU",
+    )
+
+    return {
+      optimized: usDomiciled.length, // US domiciled are more tax efficient for Swiss
+      nonOptimized: europeanDomiciled.length + other.length,
+      usDomiciled: usDomiciled.length,
+      europeanDomiciled: europeanDomiciled.length,
+    }
+  }
+
   if (!portfolioData) {
     return (
       <div className="container mx-auto p-6 max-w-4xl">
@@ -189,6 +208,8 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
     trueSectorAllocation,
     domicileAllocation,
   } = portfolioData
+
+  const taxEfficiency = calculateTaxEfficiency()
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
@@ -289,6 +310,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                       <TableHead>Value (CHF)</TableHead>
                       <TableHead>Currency</TableHead>
                       <TableHead>Category</TableHead>
+                      <TableHead>Domicile</TableHead>
                       <TableHead>% of Portfolio</TableHead>
                       <TableHead>Daily Change</TableHead>
                     </TableRow>
@@ -308,6 +330,14 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">{position.category}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={position.domicile === "US" ? "default" : "outline"}
+                              className={position.domicile === "US" ? "bg-green-100 text-green-800" : ""}
+                            >
+                              {position.domicile || "Unknown"}
+                            </Badge>
                           </TableCell>
                           <TableCell>{formatPercentage(position.positionPercent)}</TableCell>
                           <TableCell>
@@ -436,29 +466,35 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
 
             <Card>
               <CardHeader>
-                <CardTitle>Tax Optimization Summary</CardTitle>
+                <CardTitle>Tax Efficiency for Swiss Investors</CardTitle>
+                <CardDescription>Based on US-Switzerland tax treaty benefits</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
-                    <span className="font-medium text-green-800">Tax Optimized Positions</span>
-                    <span className="font-bold text-green-600">{positions.filter((p) => p.taxOptimized).length}</span>
+                    <span className="font-medium text-green-800">US Domiciled (Tax Efficient)</span>
+                    <span className="font-bold text-green-600">{taxEfficiency.usDomiciled}</span>
                   </div>
 
-                  <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
-                    <span className="font-medium text-red-800">Non-Optimized Positions</span>
-                    <span className="font-bold text-red-600">{positions.filter((p) => !p.taxOptimized).length}</span>
+                  <div className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
+                    <span className="font-medium text-orange-800">European Domiciled</span>
+                    <span className="font-bold text-orange-600">{taxEfficiency.europeanDomiciled}</span>
                   </div>
 
                   <Separator />
 
                   <div className="space-y-2">
-                    <h4 className="font-semibold">Withholding Tax Breakdown</h4>
+                    <h4 className="font-semibold">Withholding Tax Rates</h4>
                     {domicileAllocation.map((item) => (
                       <div key={item.name} className="flex justify-between items-center">
                         <span className="text-sm">{item.name}</span>
                         <span className="text-sm font-medium">
-                          {item.name.includes("IE") || item.name.includes("LU") ? "15%" : "30%"} WHT
+                          {item.name.includes("US")
+                            ? "15%"
+                            : item.name.includes("IE") || item.name.includes("LU")
+                              ? "15%"
+                              : "30%"}{" "}
+                          WHT
                         </span>
                       </div>
                     ))}
@@ -468,49 +504,73 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
             </Card>
           </div>
 
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              <strong>For Swiss Investors:</strong> US-domiciled ETFs are generally more tax-efficient than European
+              ones. The US-Switzerland tax treaty allows only 15% withholding tax on US dividends, and this can be fully
+              reclaimed on your Swiss tax return. European ETFs face an additional layer of withholding tax that cannot
+              be fully recovered.
+            </AlertDescription>
+          </Alert>
+
           <Card>
             <CardHeader>
               <CardTitle>Tax Optimization Recommendations</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <Alert>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    <strong>Irish/Luxembourg ETFs:</strong> Consider switching US-domiciled ETFs to Irish/Luxembourg
-                    equivalents to reduce withholding tax from 30% to 15%.
-                  </AlertDescription>
-                </Alert>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-4 border rounded-lg">
-                    <h4 className="font-semibold text-green-600 mb-2">Tax Efficient</h4>
+                    <h4 className="font-semibold text-green-600 mb-2">Tax Efficient (US Domiciled)</h4>
                     <ul className="text-sm space-y-1">
                       {positions
-                        .filter((p) => p.taxOptimized)
+                        .filter((p) => p.domicile === "US")
                         .slice(0, 5)
                         .map((p) => (
                           <li key={p.symbol} className="flex justify-between">
                             <span>{p.symbol}</span>
-                            <span className="text-green-600">15% WHT</span>
+                            <span className="text-green-600">15% WHT (reclaimable)</span>
                           </li>
                         ))}
                     </ul>
                   </div>
 
                   <div className="p-4 border rounded-lg">
-                    <h4 className="font-semibold text-red-600 mb-2">Consider Optimizing</h4>
+                    <h4 className="font-semibold text-orange-600 mb-2">Consider US Alternatives</h4>
                     <ul className="text-sm space-y-1">
                       {positions
-                        .filter((p) => !p.taxOptimized && (p.category === "ETF" || p.category === "Funds"))
+                        .filter(
+                          (p) =>
+                            (p.domicile === "IE" || p.domicile === "LU") &&
+                            (p.category === "ETF" || p.category === "Funds"),
+                        )
                         .slice(0, 5)
                         .map((p) => (
                           <li key={p.symbol} className="flex justify-between">
                             <span>{p.symbol}</span>
-                            <span className="text-red-600">30% WHT</span>
+                            <span className="text-orange-600">15% WHT (partial loss)</span>
                           </li>
                         ))}
                     </ul>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-semibold text-blue-800 mb-2">US ETF Alternatives</h4>
+                  <div className="text-sm text-blue-700 space-y-1">
+                    <p>
+                      <strong>VWRL/VWCE → VTI + VXUS:</strong> Total US market + International markets
+                    </p>
+                    <p>
+                      <strong>IWDA → VTI:</strong> US total market exposure
+                    </p>
+                    <p>
+                      <strong>European ETFs → VEA:</strong> Developed markets excluding US
+                    </p>
+                    <p>
+                      <strong>Emerging Markets → VWO:</strong> Emerging markets exposure
+                    </p>
                   </div>
                 </div>
               </div>

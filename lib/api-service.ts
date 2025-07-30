@@ -30,377 +30,327 @@ interface ETFComposition {
 // European ETF symbol mapping for Yahoo Finance
 const EUROPEAN_ETF_MAPPING: Record<string, string[]> = {
   // Vanguard ETFs
-  VWRL: ["VWRL.L", "VWRL.AS", "VWRL.DE", "VWRL.MI"], // FTSE All-World
-  VWCE: ["VWCE.DE", "VWCE.L", "VWCE.AS", "VWCE.MI"], // FTSE All-World Accumulating
-  VUSA: ["VUSA.L", "VUSA.AS", "VUSA.DE", "VUSA.MI"], // S&P 500
-  VUSD: ["VUSD.L", "VUSD.AS", "VUSD.DE", "VUSD.MI"], // S&P 500 Accumulating
-  VEUR: ["VEUR.L", "VEUR.AS", "VEUR.DE", "VEUR.MI"], // FTSE Developed Europe
-  VJPN: ["VJPN.L", "VJPN.AS", "VJPN.DE", "VJPN.MI"], // FTSE Japan
-  VFEM: ["VFEM.L", "VFEM.AS", "VFEM.DE", "VFEM.MI"], // FTSE Emerging Markets
+  VWRL: ["VWRL.L", "VWRL.AS", "VWRL.DE", "VWRL.MI"],
+  VWCE: ["VWCE.DE", "VWCE.L", "VWCE.AS", "VWCE.MI"],
+  VUSA: ["VUSA.L", "VUSA.AS", "VUSA.DE", "VUSA.MI"],
+  VUSD: ["VUSD.L", "VUSD.AS", "VUSD.DE", "VUSD.MI"],
+  VEUR: ["VEUR.L", "VEUR.AS", "VEUR.DE", "VEUR.MI"],
+  VJPN: ["VJPN.L", "VJPN.AS", "VJPN.DE", "VJPN.MI"],
+  VFEM: ["VFEM.L", "VFEM.AS", "VFEM.DE", "VFEM.MI"],
 
   // iShares ETFs
-  IS3N: ["IS3N.SW", "IS3N.DE", "IS3N.L", "IS3N.AS"], // Core MSCI World
-  IWDA: ["IWDA.L", "IWDA.AS", "IWDA.DE", "IWDA.MI"], // Core MSCI World
-  IUSA: ["IUSA.L", "IUSA.AS", "IUSA.DE", "IUSA.MI"], // Core S&P 500
-  IEUR: ["IEUR.L", "IEUR.AS", "IEUR.DE", "IEUR.MI"], // Core MSCI Europe
-  IJPN: ["IJPN.L", "IJPN.AS", "IJPN.DE", "IJPN.MI"], // Core MSCI Japan
-  IEMM: ["IEMM.L", "IEMM.AS", "IEMM.DE", "IEMM.MI"], // Core MSCI Emerging Markets
-  EUNL: ["EUNL.DE", "EUNL.L", "EUNL.AS", "EUNL.MI"], // Core MSCI Europe
+  IS3N: ["IS3N.SW", "IS3N.DE", "IS3N.L", "IS3N.AS"],
+  IWDA: ["IWDA.L", "IWDA.AS", "IWDA.DE", "IWDA.MI"],
+  IUSA: ["IUSA.L", "IUSA.AS", "IUSA.DE", "IUSA.MI"],
+  IEUR: ["IEUR.L", "IEUR.AS", "IEUR.DE", "IEUR.MI"],
+  IJPN: ["IJPN.L", "IJPN.AS", "IJPN.DE", "IJPN.MI"],
+  IEMM: ["IEMM.L", "IEMM.AS", "IEMM.DE", "IEMM.MI"],
+  EUNL: ["EUNL.DE", "EUNL.L", "EUNL.AS", "EUNL.MI"],
 
   // SPDR ETFs
-  SPYY: ["SPYY.L", "SPYY.AS", "SPYY.DE", "SPYY.MI"], // S&P 500
-  SPXP: ["SPXP.L", "SPXP.AS", "SPXP.DE", "SPXP.MI"], // S&P 500 Accumulating
+  SPYY: ["SPYY.L", "SPYY.AS", "SPYY.DE", "SPYY.MI"],
+  SPXP: ["SPXP.L", "SPXP.AS", "SPXP.DE", "SPXP.MI"],
 
   // Xtrackers ETFs
-  XMWO: ["XMWO.DE", "XMWO.L", "XMWO.AS", "XMWO.MI"], // MSCI World
-  XMEU: ["XMEU.DE", "XMEU.L", "XMEU.AS", "XMEU.MI"], // MSCI Europe
-  XMUS: ["XMUS.DE", "XMUS.L", "XMUS.AS", "XMUS.MI"], // MSCI USA
+  XMWO: ["XMWO.DE", "XMWO.L", "XMWO.AS", "XMWO.MI"],
+  XMEU: ["XMEU.DE", "XMEU.L", "XMEU.AS", "XMEU.MI"],
+  XMUS: ["XMUS.DE", "XMUS.L", "XMUS.AS", "XMUS.MI"],
 }
 
 // Swiss stock symbol mapping
 const SWISS_STOCK_MAPPING: Record<string, string> = {
-  NESN: "NESN.SW", // Nestlé
-  NOVN: "NOVN.SW", // Novartis
-  ROG: "ROG.SW", // Roche
-  UHR: "UHR.SW", // Swatch Group
-  ABBN: "ABBN.SW", // ABB
-  UBSG: "UBSG.SW", // UBS
-  CS: "CSGN.SW", // Credit Suisse (historical)
-  CSGN: "CSGN.SW", // Credit Suisse
-  ZURN: "ZURN.SW", // Zurich Insurance
-  SLHN: "SLHN.SW", // Swiss Life
-  LONN: "LONN.SW", // Lonza
-  GIVN: "GIVN.SW", // Givaudan
-  SCMN: "SCMN.SW", // Swisscom
-  BAER: "BAER.SW", // Julius Baer
-  CFR: "CFR.SW", // Compagnie Financière Richemont
-}
-
-// Fallback ETF composition data for when APIs fail
-const FALLBACK_ETF_DATA: Record<string, Partial<ETFComposition>> = {
-  VWRL: {
-    currency: [
-      { currency: "USD", weight: 65 },
-      { currency: "EUR", weight: 15 },
-      { currency: "JPY", weight: 8 },
-      { currency: "GBP", weight: 4 },
-      { currency: "Other", weight: 8 },
-    ],
-    country: [
-      { country: "United States", weight: 65 },
-      { country: "Japan", weight: 8 },
-      { country: "United Kingdom", weight: 4 },
-      { country: "China", weight: 3 },
-      { country: "Canada", weight: 3 },
-      { country: "France", weight: 3 },
-      { country: "Germany", weight: 3 },
-      { country: "Other", weight: 11 },
-    ],
-    sector: [
-      { sector: "Technology", weight: 25 },
-      { sector: "Financials", weight: 15 },
-      { sector: "Healthcare", weight: 12 },
-      { sector: "Consumer Discretionary", weight: 10 },
-      { sector: "Industrials", weight: 10 },
-      { sector: "Communication Services", weight: 8 },
-      { sector: "Consumer Staples", weight: 7 },
-      { sector: "Energy", weight: 5 },
-      { sector: "Materials", weight: 4 },
-      { sector: "Utilities", weight: 2 },
-      { sector: "Real Estate", weight: 2 },
-    ],
-    domicile: "IE",
-    withholdingTax: 15,
-  },
-  VWCE: {
-    currency: [
-      { currency: "USD", weight: 65 },
-      { currency: "EUR", weight: 15 },
-      { currency: "JPY", weight: 8 },
-      { currency: "GBP", weight: 4 },
-      { currency: "Other", weight: 8 },
-    ],
-    country: [
-      { country: "United States", weight: 65 },
-      { country: "Japan", weight: 8 },
-      { country: "United Kingdom", weight: 4 },
-      { country: "China", weight: 3 },
-      { country: "Canada", weight: 3 },
-      { country: "France", weight: 3 },
-      { country: "Germany", weight: 3 },
-      { country: "Other", weight: 11 },
-    ],
-    sector: [
-      { sector: "Technology", weight: 25 },
-      { sector: "Financials", weight: 15 },
-      { sector: "Healthcare", weight: 12 },
-      { sector: "Consumer Discretionary", weight: 10 },
-      { sector: "Industrials", weight: 10 },
-      { sector: "Communication Services", weight: 8 },
-      { sector: "Consumer Staples", weight: 7 },
-      { sector: "Energy", weight: 5 },
-      { sector: "Materials", weight: 4 },
-      { sector: "Utilities", weight: 2 },
-      { sector: "Real Estate", weight: 2 },
-    ],
-    domicile: "IE",
-    withholdingTax: 15,
-  },
-  IS3N: {
-    currency: [
-      { currency: "USD", weight: 70 },
-      { currency: "EUR", weight: 12 },
-      { currency: "JPY", weight: 8 },
-      { currency: "GBP", weight: 4 },
-      { currency: "Other", weight: 6 },
-    ],
-    country: [
-      { country: "United States", weight: 70 },
-      { country: "Japan", weight: 8 },
-      { country: "United Kingdom", weight: 4 },
-      { country: "Canada", weight: 3 },
-      { country: "France", weight: 3 },
-      { country: "Germany", weight: 3 },
-      { country: "Other", weight: 9 },
-    ],
-    sector: [
-      { sector: "Technology", weight: 28 },
-      { sector: "Financials", weight: 13 },
-      { sector: "Healthcare", weight: 12 },
-      { sector: "Consumer Discretionary", weight: 11 },
-      { sector: "Industrials", weight: 9 },
-      { sector: "Communication Services", weight: 8 },
-      { sector: "Consumer Staples", weight: 6 },
-      { sector: "Energy", weight: 4 },
-      { sector: "Materials", weight: 4 },
-      { sector: "Utilities", weight: 3 },
-      { sector: "Real Estate", weight: 2 },
-    ],
-    domicile: "IE",
-    withholdingTax: 15,
-  },
-  IWDA: {
-    currency: [
-      { currency: "USD", weight: 70 },
-      { currency: "EUR", weight: 12 },
-      { currency: "JPY", weight: 8 },
-      { currency: "GBP", weight: 4 },
-      { currency: "Other", weight: 6 },
-    ],
-    country: [
-      { country: "United States", weight: 70 },
-      { country: "Japan", weight: 8 },
-      { country: "United Kingdom", weight: 4 },
-      { country: "Canada", weight: 3 },
-      { country: "France", weight: 3 },
-      { country: "Germany", weight: 3 },
-      { country: "Other", weight: 9 },
-    ],
-    sector: [
-      { sector: "Technology", weight: 28 },
-      { sector: "Financials", weight: 13 },
-      { sector: "Healthcare", weight: 12 },
-      { sector: "Consumer Discretionary", weight: 11 },
-      { sector: "Industrials", weight: 9 },
-      { sector: "Communication Services", weight: 8 },
-      { sector: "Consumer Staples", weight: 6 },
-      { sector: "Energy", weight: 4 },
-      { sector: "Materials", weight: 4 },
-      { sector: "Utilities", weight: 3 },
-      { sector: "Real Estate", weight: 2 },
-    ],
-    domicile: "IE",
-    withholdingTax: 15,
-  },
+  NESN: "NESN.SW",
+  NOVN: "NOVN.SW",
+  ROG: "ROG.SW",
+  UHR: "UHR.SW",
+  ABBN: "ABBN.SW",
+  UBSG: "UBSG.SW",
+  CS: "CSGN.SW",
+  CSGN: "CSGN.SW",
+  ZURN: "ZURN.SW",
+  SLHN: "SLHN.SW",
+  LONN: "LONN.SW",
+  GIVN: "GIVN.SW",
+  SCMN: "SCMN.SW",
+  BAER: "BAER.SW",
+  CFR: "CFR.SW",
 }
 
 class APIService {
   private cache = new Map<string, { data: any; timestamp: number; ttl: number }>()
+  private symbolCache = new Map<string, string>() // Cache resolved symbols
   private rateLimitMap = new Map<string, number>()
-  private readonly RATE_LIMIT_DELAY = 200 // 200ms between requests
+  private readonly RATE_LIMIT_DELAY = 200
   private baseUrl = "/api/yahoo"
 
-  private baseURL = "/api/yahoo"
+  private getCached<T>(key: string): T | null {
+    const cached = this.cache.get(key)
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      return cached.data as T
+    }
+    this.cache.delete(key)
+    return null
+  }
 
-  async getStockPrice(symbol: string): Promise<StockPrice | null> {
-    console.log(`Fetching price for ${symbol}...`)
+  private setCache<T>(key: string, data: T, ttlMinutes: number): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttlMinutes * 60 * 1000,
+    })
+  }
 
-    // Try multiple symbol variations for European ETFs and Swiss stocks
-    const symbolVariations = this.getSymbolVariations(symbol)
+  private async rateLimit(): Promise<void> {
+    const now = Date.now()
+    const lastRequest = this.rateLimitMap.get("global") || 0
+    const timeSinceLastRequest = now - lastRequest
 
-    for (const symbolVariation of symbolVariations) {
+    if (timeSinceLastRequest < this.RATE_LIMIT_DELAY) {
+      await new Promise((resolve) => setTimeout(resolve, this.RATE_LIMIT_DELAY - timeSinceLastRequest))
+    }
+
+    this.rateLimitMap.set("global", Date.now())
+  }
+
+  private async resolveSymbol(originalSymbol: string): Promise<string> {
+    // Check if we already resolved this symbol
+    if (this.symbolCache.has(originalSymbol)) {
+      return this.symbolCache.get(originalSymbol)!
+    }
+
+    console.log(`🔍 Resolving symbol: ${originalSymbol}`)
+
+    // Get all possible variations
+    const variations = this.getSymbolVariations(originalSymbol)
+
+    // Try each variation until we find one that works
+    for (const variation of variations) {
       try {
-        console.log(`Trying symbol variation: ${symbolVariation}`)
+        await this.rateLimit()
+        console.log(`  Trying: ${variation}`)
 
-        const response = await fetch(`${this.baseURL}/quote/${symbolVariation}`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        })
+        const response = await fetch(`${this.baseUrl}/quote/${variation}`)
 
         if (response.ok) {
           const data = await response.json()
-          console.log(`✅ Successfully fetched price for ${symbolVariation}:`, data)
-          return {
-            symbol: symbol, // Return original symbol
-            price: data.price || data.regularMarketPrice || 0,
-            currency: data.currency || this.inferCurrency(symbolVariation),
-            change: data.change || data.regularMarketChange || 0,
-            changePercent: data.changePercent || data.regularMarketChangePercent || 0,
-            lastUpdated: new Date().toISOString(),
+          if (data && (data.price || data.regularMarketPrice)) {
+            console.log(`  ✅ Found working symbol: ${variation}`)
+            this.symbolCache.set(originalSymbol, variation)
+            return variation
           }
+        } else if (response.status === 401) {
+          console.log(`  ⚠️ 401 for ${variation} - skipping`)
+          continue
         }
       } catch (error) {
-        console.log(`Failed to fetch ${symbolVariation}:`, error)
+        console.log(`  ❌ Error with ${variation}:`, error)
         continue
       }
     }
 
-    console.log(`❌ All symbol variations failed for ${symbol}, using fallback`)
-    return this.getFallbackPrice(symbol)
+    console.log(`  🔄 No working symbol found, using original: ${originalSymbol}`)
+    this.symbolCache.set(originalSymbol, originalSymbol)
+    return originalSymbol
+  }
+
+  async getStockPrice(symbol: string): Promise<StockPrice | null> {
+    const cacheKey = `price_${symbol}`
+    const cached = this.getCached<StockPrice>(cacheKey)
+    if (cached) return cached
+
+    console.log(`📈 Fetching price for ${symbol}`)
+
+    // Resolve the correct symbol first
+    const resolvedSymbol = await this.resolveSymbol(symbol)
+
+    try {
+      await this.rateLimit()
+      const response = await fetch(`${this.baseUrl}/quote/${resolvedSymbol}`)
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ Price data for ${symbol}:`, data)
+
+        const result: StockPrice = {
+          symbol: symbol, // Always return original symbol
+          price: data.price || data.regularMarketPrice || 0,
+          currency: data.currency || this.inferCurrency(resolvedSymbol),
+          change: data.change || data.regularMarketChange || 0,
+          changePercent: data.changePercent || data.regularMarketChangePercent || 0,
+          lastUpdated: new Date().toISOString(),
+        }
+
+        this.setCache(cacheKey, result, 5) // Cache for 5 minutes
+        return result
+      }
+    } catch (error) {
+      console.error(`Error fetching price for ${symbol}:`, error)
+    }
+
+    // Return fallback
+    const fallback = this.getFallbackPrice(symbol)
+    this.setCache(cacheKey, fallback, 60)
+    return fallback
   }
 
   async getAssetMetadata(symbol: string): Promise<AssetMetadata | null> {
-    console.log(`Fetching metadata for ${symbol}...`)
+    const cacheKey = `metadata_${symbol}`
+    const cached = this.getCached<AssetMetadata>(cacheKey)
+    if (cached) return cached
 
-    const symbolVariations = this.getSymbolVariations(symbol)
+    console.log(`📊 Fetching metadata for ${symbol}`)
 
-    for (const symbolVariation of symbolVariations) {
-      try {
-        const response = await fetch(`${this.baseURL}/search/${symbolVariation}`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        })
+    // Resolve the correct symbol first
+    const resolvedSymbol = await this.resolveSymbol(symbol)
 
-        if (response.ok) {
-          const data = await response.json()
-          console.log(`✅ Successfully fetched metadata for ${symbolVariation}:`, data)
-          return {
-            symbol: symbol, // Return original symbol
-            name: data.name || data.longName || symbol,
-            sector: data.sector || this.inferSector(symbol),
-            country: data.country || this.inferCountry(symbolVariation),
-            currency: data.currency || this.inferCurrency(symbolVariation),
-            type: data.type || this.inferAssetType(symbol),
-          }
+    try {
+      await this.rateLimit()
+      const response = await fetch(`${this.baseUrl}/search/${resolvedSymbol}`)
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ Metadata for ${symbol}:`, data)
+
+        const result: AssetMetadata = {
+          symbol: symbol, // Always return original symbol
+          name: data.name || data.longName || this.getKnownName(symbol) || symbol,
+          sector: data.sector || this.inferSector(symbol),
+          country: data.country || this.inferCountry(resolvedSymbol),
+          currency: data.currency || this.inferCurrency(resolvedSymbol),
+          type: data.type || this.inferAssetType(symbol),
         }
-      } catch (error) {
-        console.log(`Failed to fetch metadata for ${symbolVariation}:`, error)
-        continue
+
+        this.setCache(cacheKey, result, 1440) // Cache for 24 hours
+        return result
       }
+    } catch (error) {
+      console.error(`Error fetching metadata for ${symbol}:`, error)
     }
 
-    console.log(`❌ All metadata requests failed for ${symbol}, using fallback`)
-    return this.getFallbackMetadata(symbol)
+    // Return fallback
+    const fallback = this.getFallbackMetadata(symbol)
+    this.setCache(cacheKey, fallback, 1440)
+    return fallback
   }
 
   async getETFComposition(symbol: string): Promise<ETFComposition | null> {
-    console.log(`Fetching ETF composition for ${symbol}...`)
+    const cacheKey = `etf_${symbol}`
+    const cached = this.getCached<ETFComposition>(cacheKey)
+    if (cached) return cached
 
-    // Check if we have fallback data first
-    if (FALLBACK_ETF_DATA[symbol]) {
-      console.log(`Using fallback ETF data for ${symbol}`)
-      const fallbackData = FALLBACK_ETF_DATA[symbol]
-      return {
-        symbol: symbol,
-        currency: fallbackData.currency || [],
-        country: fallbackData.country || [],
-        sector: fallbackData.sector || [],
-        holdings: [],
-        domicile: fallbackData.domicile || "Unknown",
-        withholdingTax: fallbackData.withholdingTax || 15,
-        lastUpdated: new Date().toISOString(),
-      }
-    }
+    console.log(`🏦 Fetching ETF composition for ${symbol}`)
 
-    const symbolVariations = this.getSymbolVariations(symbol)
+    // Resolve the correct symbol first
+    const resolvedSymbol = await this.resolveSymbol(symbol)
 
-    for (const symbolVariation of symbolVariations) {
-      try {
-        const response = await fetch(`${this.baseURL}/etf/${symbolVariation}`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        })
+    try {
+      await this.rateLimit()
+      const response = await fetch(`${this.baseUrl}/etf/${resolvedSymbol}`)
 
-        if (response.ok) {
-          const data = await response.json()
-          console.log(`✅ Successfully fetched ETF composition for ${symbolVariation}:`, data)
-          return {
-            symbol: symbol, // Return original symbol
-            currency: data.currency || [],
-            country: data.country || [],
-            sector: data.sector || [],
-            holdings: data.holdings || [],
-            domicile: data.domicile || this.inferDomicile(symbol),
-            withholdingTax: data.withholdingTax || this.inferWithholdingTax(symbol),
-            lastUpdated: new Date().toISOString(),
-          }
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ ETF composition for ${symbol}:`, data)
+
+        // Process the scraped data - accept freetext values
+        const result: ETFComposition = {
+          symbol: symbol, // Always return original symbol
+          currency: this.processCurrencyData(data.currency || []),
+          country: this.processCountryData(data.country || []),
+          sector: this.processSectorData(data.sector || []),
+          holdings: data.holdings || [],
+          domicile: data.domicile || this.inferDomicile(symbol),
+          withholdingTax: data.withholdingTax || this.inferWithholdingTax(symbol),
+          lastUpdated: new Date().toISOString(),
         }
-      } catch (error) {
-        console.log(`Failed to fetch ETF composition for ${symbolVariation}:`, error)
-        continue
+
+        this.setCache(cacheKey, result, 1440) // Cache for 24 hours
+        return result
       }
+    } catch (error) {
+      console.error(`Error fetching ETF composition for ${symbol}:`, error)
     }
 
-    console.log(`❌ All ETF composition requests failed for ${symbol}, using generic fallback`)
-    return this.getFallbackETFComposition(symbol)
+    // Return fallback
+    const fallback = this.getFallbackETFComposition(symbol)
+    this.setCache(cacheKey, fallback, 1440)
+    return fallback
+  }
+
+  private processCurrencyData(currencies: any[]): Array<{ currency: string; weight: number }> {
+    return currencies
+      .map((curr) => ({
+        currency: curr.currency || curr.name || "Unknown",
+        weight: curr.weight || 0,
+      }))
+      .filter((curr) => curr.weight > 0)
+  }
+
+  private processCountryData(countries: any[]): Array<{ country: string; weight: number }> {
+    return countries
+      .map((country) => ({
+        country: country.country || country.name || "Unknown",
+        weight: country.weight || 0,
+      }))
+      .filter((country) => country.weight > 0)
+  }
+
+  private processSectorData(sectors: any[]): Array<{ sector: string; weight: number }> {
+    return sectors
+      .map((sector) => ({
+        sector: sector.sector || sector.name || "Unknown",
+        weight: sector.weight || 0,
+      }))
+      .filter((sector) => sector.weight > 0)
   }
 
   private getSymbolVariations(symbol: string): string[] {
-    const variations = [symbol] // Start with original symbol
+    const variations = [symbol] // Start with original
 
-    // Add European ETF variations
+    // Add known mappings
     if (EUROPEAN_ETF_MAPPING[symbol]) {
       variations.push(...EUROPEAN_ETF_MAPPING[symbol])
     }
 
-    // Add Swiss stock variations
     if (SWISS_STOCK_MAPPING[symbol]) {
       variations.push(SWISS_STOCK_MAPPING[symbol])
     }
 
     // Auto-detect European symbols and add exchange suffixes
-    if (this.isEuropeanSymbol(symbol)) {
+    if (this.isEuropeanSymbol(symbol) && !symbol.includes(".")) {
       const exchanges = [".L", ".DE", ".AS", ".MI", ".PA", ".SW"]
       exchanges.forEach((exchange) => {
-        if (!symbol.includes(".")) {
-          variations.push(`${symbol}${exchange}`)
-        }
+        variations.push(`${symbol}${exchange}`)
       })
     }
 
-    // Remove duplicates and return
+    // Remove duplicates
     return [...new Set(variations)]
   }
 
   private isEuropeanSymbol(symbol: string): boolean {
-    // Common European ETF patterns
     const europeanPatterns = [
-      /^V[A-Z]{3}$/, // Vanguard ETFs (VWRL, VWCE, etc.)
-      /^I[A-Z]{3}$/, // iShares ETFs (IWDA, IUSA, etc.)
-      /^IS[0-9][A-Z]$/, // iShares numbered ETFs (IS3N, etc.)
+      /^V[A-Z]{3}$/, // Vanguard ETFs
+      /^I[A-Z]{3}$/, // iShares ETFs
+      /^IS[0-9][A-Z]$/, // iShares numbered ETFs
       /^X[A-Z]{3}$/, // Xtrackers ETFs
       /^SP[A-Z]{2}$/, // SPDR ETFs
     ]
 
     return (
-      europeanPatterns.some((pattern) => pattern.test(symbol)) || Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)
+      europeanPatterns.some((pattern) => pattern.test(symbol)) ||
+      Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol) ||
+      Object.keys(SWISS_STOCK_MAPPING).includes(symbol)
     )
   }
 
   private inferCurrency(symbol: string): string {
-    if (symbol.endsWith(".L")) return "GBP" // London
-    if (symbol.endsWith(".DE")) return "EUR" // Germany
-    if (symbol.endsWith(".AS")) return "EUR" // Amsterdam
-    if (symbol.endsWith(".MI")) return "EUR" // Milan
-    if (symbol.endsWith(".PA")) return "EUR" // Paris
-    if (symbol.endsWith(".SW")) return "CHF" // Switzerland
-    return "USD" // Default
+    if (symbol.endsWith(".L")) return "GBP"
+    if (symbol.endsWith(".DE")) return "EUR"
+    if (symbol.endsWith(".AS")) return "EUR"
+    if (symbol.endsWith(".MI")) return "EUR"
+    if (symbol.endsWith(".PA")) return "EUR"
+    if (symbol.endsWith(".SW")) return "CHF"
+    return "USD"
   }
 
   private inferCountry(symbol: string): string {
@@ -410,51 +360,59 @@ class APIService {
     if (symbol.endsWith(".MI")) return "Italy"
     if (symbol.endsWith(".PA")) return "France"
     if (symbol.endsWith(".SW")) return "Switzerland"
-    return "United States" // Default
+    return "United States"
   }
 
   private inferSector(symbol: string): string {
-    // ETFs are typically diversified
-    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol) || Object.keys(FALLBACK_ETF_DATA).includes(symbol)) {
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
       return "Diversified"
     }
     return "Unknown"
   }
 
   private inferAssetType(symbol: string): string {
-    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol) || Object.keys(FALLBACK_ETF_DATA).includes(symbol)) {
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
       return "ETF"
     }
     return "Stock"
   }
 
   private inferDomicile(symbol: string): string {
-    // Most European ETFs are domiciled in Ireland or Luxembourg for tax efficiency
-    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
-      return "IE" // Ireland is most common
+    // US ETFs
+    if (symbol.match(/^(VTI|VXUS|VEA|VWO|SPY|QQQ|IVV)$/)) {
+      return "US"
     }
+
+    // European ETFs are typically Irish or Luxembourg
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
+      return "IE" // Most are Irish
+    }
+
     return "Unknown"
   }
 
   private inferWithholdingTax(symbol: string): number {
-    // Irish and Luxembourg ETFs typically have 15% withholding tax
-    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
-      return 15
+    const domicile = this.inferDomicile(symbol)
+
+    switch (domicile) {
+      case "US":
+        return 15 // US-Switzerland tax treaty
+      case "IE":
+      case "LU":
+        return 15 // European ETFs
+      default:
+        return 30
     }
-    return 30 // US default
   }
 
   private getFallbackPrice(symbol: string): StockPrice {
-    // Provide realistic fallback prices based on asset type
-    let price = 100 // Default price
+    let price = 100
     let currency = "USD"
 
     if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
-      // European ETFs typically trade in 50-100 range
       price = 75 + Math.random() * 50
       currency = "EUR"
     } else if (Object.keys(SWISS_STOCK_MAPPING).includes(symbol)) {
-      // Swiss stocks can be quite expensive
       price = 50 + Math.random() * 200
       currency = "CHF"
     }
@@ -470,37 +428,87 @@ class APIService {
   }
 
   private getFallbackMetadata(symbol: string): AssetMetadata {
-    let name = symbol
-    let sector = "Unknown"
-    let country = "Unknown"
-    let currency = "USD"
-    let type = "Stock"
-
-    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
-      name = this.getETFName(symbol)
-      sector = "Diversified"
-      country = "Ireland"
-      currency = "EUR"
-      type = "ETF"
-    } else if (Object.keys(SWISS_STOCK_MAPPING).includes(symbol)) {
-      name = this.getSwissStockName(symbol)
-      country = "Switzerland"
-      currency = "CHF"
-      sector = this.getSwissStockSector(symbol)
-    }
-
     return {
       symbol: symbol,
-      name: name,
-      sector: sector,
-      country: country,
-      currency: currency,
-      type: type,
+      name: this.getKnownName(symbol) || symbol,
+      sector: this.inferSector(symbol),
+      country: this.inferCountry(symbol),
+      currency: this.inferCurrency(symbol),
+      type: this.inferAssetType(symbol),
     }
   }
 
   private getFallbackETFComposition(symbol: string): ETFComposition {
-    // Generic diversified portfolio allocation
+    // Return realistic composition based on known ETF types
+    const isWorldETF = symbol.match(/^(VWRL|VWCE|IWDA|IS3N)$/)
+    const isUSETF = symbol.match(/^(VTI|SPY|QQQ|IVV|SPYY)$/)
+
+    if (isWorldETF) {
+      return {
+        symbol: symbol,
+        currency: [
+          { currency: "USD", weight: 65 },
+          { currency: "EUR", weight: 15 },
+          { currency: "JPY", weight: 8 },
+          { currency: "GBP", weight: 4 },
+          { currency: "Other", weight: 8 },
+        ],
+        country: [
+          { country: "United States", weight: 65 },
+          { country: "Japan", weight: 8 },
+          { country: "United Kingdom", weight: 4 },
+          { country: "China", weight: 3 },
+          { country: "Canada", weight: 3 },
+          { country: "France", weight: 3 },
+          { country: "Germany", weight: 3 },
+          { country: "Other", weight: 11 },
+        ],
+        sector: [
+          { sector: "Technology", weight: 25 },
+          { sector: "Financial Services", weight: 15 },
+          { sector: "Healthcare", weight: 12 },
+          { sector: "Consumer Discretionary", weight: 10 },
+          { sector: "Industrials", weight: 10 },
+          { sector: "Communication Services", weight: 8 },
+          { sector: "Consumer Staples", weight: 7 },
+          { sector: "Energy", weight: 5 },
+          { sector: "Materials", weight: 4 },
+          { sector: "Utilities", weight: 2 },
+          { sector: "Real Estate", weight: 2 },
+        ],
+        holdings: [],
+        domicile: "IE",
+        withholdingTax: 15,
+        lastUpdated: new Date().toISOString(),
+      }
+    }
+
+    if (isUSETF) {
+      return {
+        symbol: symbol,
+        currency: [{ currency: "USD", weight: 100 }],
+        country: [{ country: "United States", weight: 100 }],
+        sector: [
+          { sector: "Technology", weight: 28 },
+          { sector: "Financial Services", weight: 13 },
+          { sector: "Healthcare", weight: 12 },
+          { sector: "Consumer Discretionary", weight: 11 },
+          { sector: "Industrials", weight: 9 },
+          { sector: "Communication Services", weight: 8 },
+          { sector: "Consumer Staples", weight: 6 },
+          { sector: "Energy", weight: 4 },
+          { sector: "Materials", weight: 4 },
+          { sector: "Utilities", weight: 3 },
+          { sector: "Real Estate", weight: 2 },
+        ],
+        holdings: [],
+        domicile: "US",
+        withholdingTax: 15, // US-Switzerland tax treaty
+        lastUpdated: new Date().toISOString(),
+      }
+    }
+
+    // Generic fallback
     return {
       symbol: symbol,
       currency: [
@@ -517,32 +525,38 @@ class APIService {
       ],
       sector: [
         { sector: "Technology", weight: 25 },
-        { sector: "Financials", weight: 15 },
+        { sector: "Financial Services", weight: 15 },
         { sector: "Healthcare", weight: 12 },
         { sector: "Consumer Discretionary", weight: 10 },
         { sector: "Industrials", weight: 10 },
         { sector: "Other", weight: 28 },
       ],
       holdings: [],
-      domicile: "IE",
+      domicile: "Unknown",
       withholdingTax: 15,
       lastUpdated: new Date().toISOString(),
     }
   }
 
-  private getETFName(symbol: string): string {
+  private getKnownName(symbol: string): string | null {
     const names: Record<string, string> = {
+      // US ETFs
+      VTI: "Vanguard Total Stock Market ETF",
+      VXUS: "Vanguard Total International Stock ETF",
+      VEA: "Vanguard FTSE Developed Markets ETF",
+      VWO: "Vanguard FTSE Emerging Markets ETF",
+      SPY: "SPDR S&P 500 ETF Trust",
+      QQQ: "Invesco QQQ Trust",
+      IVV: "iShares Core S&P 500 ETF",
+
+      // European ETFs
       VWRL: "Vanguard FTSE All-World UCITS ETF",
       VWCE: "Vanguard FTSE All-World UCITS ETF (Acc)",
       IS3N: "iShares Core MSCI World UCITS ETF",
       IWDA: "iShares Core MSCI World UCITS ETF",
       EUNL: "iShares Core MSCI Europe UCITS ETF",
-    }
-    return names[symbol] || `${symbol} ETF`
-  }
 
-  private getSwissStockName(symbol: string): string {
-    const names: Record<string, string> = {
+      // Swiss stocks
       NESN: "Nestlé SA",
       NOVN: "Novartis AG",
       ROG: "Roche Holding AG",
@@ -558,27 +572,8 @@ class APIService {
       BAER: "Julius Baer Group Ltd",
       CFR: "Compagnie Financière Richemont SA",
     }
-    return names[symbol] || `${symbol} AG`
-  }
 
-  private getSwissStockSector(symbol: string): string {
-    const sectors: Record<string, string> = {
-      NESN: "Consumer Staples",
-      NOVN: "Healthcare",
-      ROG: "Healthcare",
-      UHR: "Consumer Discretionary",
-      ABBN: "Industrials",
-      UBSG: "Financials",
-      CSGN: "Financials",
-      ZURN: "Financials",
-      SLHN: "Financials",
-      LONN: "Healthcare",
-      GIVN: "Materials",
-      SCMN: "Communication Services",
-      BAER: "Financials",
-      CFR: "Consumer Discretionary",
-    }
-    return sectors[symbol] || "Unknown"
+    return names[symbol] || null
   }
 }
 

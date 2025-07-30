@@ -941,6 +941,10 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
       const currentPrice = priceData?.price || parsed.price
       const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
 
+      // Determine tax optimization for Swiss investors
+      const domicile = etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown")
+      const taxOptimized = domicile === "US" // US domiciled is better for Swiss investors
+
       const enrichedPosition: PortfolioPosition = {
         symbol: parsed.symbol,
         name: metadata?.name || parsed.name,
@@ -953,9 +957,10 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         category: parsed.category,
         sector: metadata?.sector || "Unknown",
         geography: metadata?.country || "Unknown",
-        domicile: etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown"),
-        withholdingTax: etfComposition?.withholdingTax || (metadata?.country === "United States" ? 30 : 15),
-        taxOptimized: etfComposition?.domicile === "IE" || etfComposition?.domicile === "LU",
+        domicile: domicile,
+        withholdingTax:
+          etfComposition?.withholdingTax || (domicile === "US" ? 15 : domicile === "IE" || domicile === "LU" ? 15 : 30),
+        taxOptimized: taxOptimized,
         gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
         unrealizedGainLoss: (currentPrice - parsed.price) * parsed.quantity,
         unrealizedGainLossPercent: ((currentPrice - parsed.price) / parsed.price) * 100,
