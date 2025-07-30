@@ -81,12 +81,20 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
   }, [])
 
   const formatCurrency = (amount: number, currency = "CHF") => {
-    return new Intl.NumberFormat("de-CH", {
-      style: "currency",
-      currency: currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
+    // Validate currency code and provide fallback
+    const validCurrency = currency && currency.length === 3 && /^[A-Z]{3}$/.test(currency) ? currency : "CHF"
+
+    try {
+      return new Intl.NumberFormat("de-CH", {
+        style: "currency",
+        currency: validCurrency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(amount)
+    } catch (error) {
+      // Fallback formatting if currency is still invalid
+      return `${validCurrency} ${amount.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    }
   }
 
   const formatPercentage = (value: number) => {
@@ -309,7 +317,7 @@ export default function SwissPortfolioAnalyzer({ defaultData }: SwissPortfolioAn
                           <TableCell>{formatCurrency(position.price, position.currency)}</TableCell>
                           <TableCell>{formatCurrency(position.totalValueCHF)}</TableCell>
                           <TableCell>
-                            <Badge variant="outline">{position.currency}</Badge>
+                            <Badge variant="outline">{position.currency || "CHF"}</Badge>
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">{position.category}</Badge>

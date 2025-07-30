@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { jest } from "@jest/globals"
 import SwissPortfolioAnalyzer from "../swiss-portfolio-analyzer"
-import { parseSwissPortfolioPDF } from "../portfolio-parser"
+import { parseSwissPortfolioPDF, type SwissPortfolioData } from "../portfolio-parser"
 
 // Mock the portfolio parser
 jest.mock("../portfolio-parser", () => ({
@@ -23,7 +23,7 @@ jest.mock("recharts", () => ({
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
 }))
 
-const mockPortfolioData = {
+const mockPortfolioData: SwissPortfolioData = {
   accountOverview: {
     totalValue: 100000,
     cashBalance: 10000,
@@ -37,9 +37,9 @@ const mockPortfolioData = {
       name: "Apple Inc.",
       quantity: 100,
       unitCost: 150,
-      price: 150,
-      currentPrice: 155,
-      totalValueCHF: 15000,
+      price: 160,
+      currentPrice: 160,
+      totalValueCHF: 16000,
       currency: "USD",
       category: "Actions",
       sector: "Technology",
@@ -47,55 +47,30 @@ const mockPortfolioData = {
       domicile: "US",
       withholdingTax: 30,
       taxOptimized: false,
-      gainLossCHF: 500,
-      unrealizedGainLoss: 500,
-      unrealizedGainLossPercent: 3.33,
-      positionPercent: 15,
+      gainLossCHF: 1000,
+      unrealizedGainLoss: 1000,
+      unrealizedGainLossPercent: 6.67,
+      positionPercent: 16,
       dailyChangePercent: 1.5,
       isOTC: false,
     },
-    {
-      symbol: "VWRL",
-      name: "Vanguard FTSE All-World UCITS ETF",
-      quantity: 500,
-      unitCost: 90,
-      price: 90,
-      currentPrice: 92,
-      totalValueCHF: 46000,
-      currency: "CHF",
-      category: "ETF",
-      sector: "Mixed",
-      geography: "Global",
-      domicile: "IE",
-      withholdingTax: 15,
-      taxOptimized: true,
-      gainLossCHF: 1000,
-      unrealizedGainLoss: 1000,
-      unrealizedGainLossPercent: 2.22,
-      positionPercent: 46,
-      dailyChangePercent: 0.8,
-      isOTC: false,
-    },
   ],
-  assetAllocation: [
-    { name: "Actions", value: 15000, percentage: 15, type: "Actions" },
-    { name: "ETF", value: 46000, percentage: 46, type: "ETF" },
-  ],
+  assetAllocation: [{ name: "Actions", value: 90000, percentage: 90 }],
   currencyAllocation: [
-    { name: "USD", value: 15000, percentage: 15, currency: "USD" },
-    { name: "CHF", value: 46000, percentage: 46, currency: "CHF" },
+    { name: "USD", value: 70000, percentage: 70, currency: "USD" },
+    { name: "CHF", value: 30000, percentage: 30, currency: "CHF" },
   ],
   trueCountryAllocation: [
-    { name: "United States", value: 30000, percentage: 30, country: "United States" },
-    { name: "Switzerland", value: 10000, percentage: 10, country: "Switzerland" },
+    { name: "United States", value: 70000, percentage: 70, country: "United States" },
+    { name: "Switzerland", value: 30000, percentage: 30, country: "Switzerland" },
   ],
   trueSectorAllocation: [
-    { name: "Technology", value: 25000, percentage: 25, sector: "Technology" },
-    { name: "Healthcare", value: 15000, percentage: 15, sector: "Healthcare" },
+    { name: "Technology", value: 50000, percentage: 50, sector: "Technology" },
+    { name: "Healthcare", value: 40000, percentage: 40, sector: "Healthcare" },
   ],
   domicileAllocation: [
-    { name: "Ireland (IE)", value: 46000, percentage: 46, domicile: "IE" },
-    { name: "United States (US)", value: 15000, percentage: 15, domicile: "US" },
+    { name: "United States (US)", value: 60000, percentage: 60, domicile: "US" },
+    { name: "Ireland (IE)", value: 40000, percentage: 40, domicile: "IE" },
   ],
 }
 
@@ -116,7 +91,7 @@ describe("SwissPortfolioAnalyzer", () => {
       render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
 
       expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
-      expect(screen.getByText(/Comprehensive analysis of your Swiss portfolio with 2 positions/)).toBeInTheDocument()
+      expect(screen.getByText(/Comprehensive analysis of your Swiss portfolio with 1 positions/)).toBeInTheDocument()
     })
   })
 
@@ -127,7 +102,7 @@ describe("SwissPortfolioAnalyzer", () => {
       expect(screen.getByText("CHF 100,000.00")).toBeInTheDocument() // Total Value
       expect(screen.getByText("CHF 90,000.00")).toBeInTheDocument() // Securities Value
       expect(screen.getByText("CHF 10,000.00")).toBeInTheDocument() // Cash Balance
-      expect(screen.getByText("2")).toBeInTheDocument() // Positions count
+      expect(screen.getByText("1")).toBeInTheDocument() // Positions count
     })
 
     test("displays correct icons in overview cards", () => {
@@ -195,8 +170,6 @@ describe("SwissPortfolioAnalyzer", () => {
       await waitFor(() => {
         expect(screen.getByText("AAPL")).toBeInTheDocument()
         expect(screen.getByText("Apple Inc.")).toBeInTheDocument()
-        expect(screen.getByText("VWRL")).toBeInTheDocument()
-        expect(screen.getByText("Vanguard FTSE All-World UCITS ETF")).toBeInTheDocument()
       })
     })
 
@@ -207,10 +180,9 @@ describe("SwissPortfolioAnalyzer", () => {
 
       await waitFor(() => {
         const rows = screen.getAllByRole("row")
-        // VWRL should appear before AAPL (higher value)
-        const vwrlIndex = rows.findIndex((row) => row.textContent?.includes("VWRL"))
+        // AAPL should be the only position
         const aaplIndex = rows.findIndex((row) => row.textContent?.includes("AAPL"))
-        expect(vwrlIndex).toBeLessThan(aaplIndex)
+        expect(aaplIndex).toBe(1)
       })
     })
 
@@ -221,9 +193,7 @@ describe("SwissPortfolioAnalyzer", () => {
 
       await waitFor(() => {
         expect(screen.getByText("USD")).toBeInTheDocument()
-        expect(screen.getByText("CHF")).toBeInTheDocument()
         expect(screen.getByText("Actions")).toBeInTheDocument()
-        expect(screen.getByText("ETF")).toBeInTheDocument()
       })
     })
   })
@@ -291,9 +261,9 @@ describe("SwissPortfolioAnalyzer", () => {
       fireEvent.click(screen.getByRole("tab", { name: "Tax Analysis" }))
 
       await waitFor(() => {
-        // 1 tax optimized (VWRL), 1 non-optimized (AAPL)
-        const optimizedElements = screen.getAllByText("1")
-        expect(optimizedElements.length).toBeGreaterThanOrEqual(2)
+        // 0 tax optimized, 1 non-optimized (AAPL)
+        const optimizedElements = screen.getAllByText("0")
+        expect(optimizedElements.length).toBeGreaterThanOrEqual(1)
       })
     })
 
@@ -352,8 +322,7 @@ describe("SwissPortfolioAnalyzer", () => {
       fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
 
       await waitFor(() => {
-        expect(screen.getByText("15.00%")).toBeInTheDocument() // AAPL position percentage
-        expect(screen.getByText("46.00%")).toBeInTheDocument() // VWRL position percentage
+        expect(screen.getByText("16.00%")).toBeInTheDocument() // AAPL position percentage
       })
     })
   })

@@ -1,141 +1,101 @@
-// Script to analyze the structure of the uploaded CSV file
-async function analyzeSQCSV() {
-  console.log("🔍 Analyzing Swissquote CSV Structure...")
+import Papa from "papaparse"
 
-  try {
-    // Fetch the actual CSV file from the provided URL
-    const csvUrl =
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_08072025_10_59-3uIndJzrWFR29SdmvEW2b3RPE5CQU0.csv"
+interface CSVAnalysis {
+  totalRows: number
+  columns: string[]
+  sampleRows: string[][]
+  detectedDelimiter: string
+  encoding: string
+  possibleCategories: string[]
+  numberFormats: string[]
+}
 
-    console.log("📥 Fetching CSV file from:", csvUrl)
-    const response = await fetch(csvUrl)
+function detectDelimiter(csvText: string): string {
+  const delimiters = [",", ";", "\t", "|"]
+  const firstLine = csvText.split(/\r?\n/).find((line) => line.trim()) || ""
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch CSV: ${response.status} ${response.statusText}`)
+  const counts = delimiters.map((d) => ({
+    delimiter: d,
+    count: (firstLine.match(new RegExp(`\\${d}`, "g")) || []).length,
+  }))
+
+  const best = counts.reduce((a, b) => (b.count > a.count ? b : a), { delimiter: ",", count: 0 })
+  return best.count === 0 ? "," : best.delimiter
+}
+
+function analyzeCSVStructure(csvText: string): CSVAnalysis {
+  const delimiter = detectDelimiter(csvText)
+  console.log("Detected delimiter:", delimiter)
+
+  const { data } = Papa.parse(csvText, {
+    delimiter,
+    skipEmptyLines: "greedy",
+    dynamicTyping: false,
+  })
+
+  const rows = data as string[][]
+  const header = rows[0] || []
+  const sampleRows = rows.slice(1, 6) // First 5 data rows
+
+  // Detect possible categories
+  const possibleCategories = new Set<string>()
+  rows.forEach((row) => {
+    const firstCell = (row[0] || "").toString().trim()
+    if (firstCell.match(/^(Actions|ETF|Obligations|Fonds|Equities|Bonds|Funds)/i)) {
+      possibleCategories.add(firstCell)
     }
+  })
 
-    const csvText = await response.text()
-    console.log("✅ CSV file fetched successfully")
-    console.log("📊 File size:", csvText.length, "characters")
-
-    // Split into lines
-    const lines = csvText.split("\n").filter((line) => line.trim())
-    console.log("📋 Total lines:", lines.length)
-
-    // Analyze first few lines
-    console.log("\n🔍 First 10 lines:")
-    lines.slice(0, 10).forEach((line, index) => {
-      console.log(`${index + 1}: ${line}`)
-    })
-
-    // Detect delimiter
-    const firstLine = lines[0] || ""
-    const delimiters = [",", ";", "\t", "|"]
-    const delimiterCounts = delimiters.map((d) => ({
-      delimiter: d,
-      count: (firstLine.match(new RegExp(`\\${d}`, "g")) || []).length,
-    }))
-
-    const bestDelimiter = delimiterCounts.reduce((a, b) => (b.count > a.count ? b : a))
-    console.log("\n🔧 Delimiter analysis:", delimiterCounts)
-    console.log("✅ Best delimiter:", bestDelimiter.delimiter, "with", bestDelimiter.count, "occurrences")
-
-    // Parse header
-    const header = firstLine.split(bestDelimiter.delimiter)
-    console.log("\n📋 Header columns:")
-    header.forEach((col, index) => {
-      console.log(`${index}: "${col.trim()}"`)
-    })
-
-    // Analyze column mapping
-    console.log("\n🗺️ Column mapping analysis:")
-    const symbolIndex = header.findIndex((h) => h.includes("Symbole") || h.includes("Symbol"))
-    const quantityIndex = header.findIndex((h) => h.includes("Quantit") || h.includes("Quantity"))
-    const unitCostIndex = header.findIndex((h) => h.includes("unitaire") || h.includes("Cost"))
-    const priceIndex = header.findIndex((h) => h.includes("Prix") || h.includes("Price"))
-    const currencyIndex = header.findIndex((h) => h.includes("Dev") || h.includes("Currency"))
-    const totalCHFIndex = header.findIndex((h) => h.includes("totale CHF") || h.includes("Total CHF"))
-    const gainLossIndex = header.findIndex((h) => h.includes("G&P CHF") || h.includes("Gain"))
-    const positionPercentIndex = header.findIndex((h) => h.includes("Positions %") || h.includes("Position %"))
-
-    console.log("Symbol column:", symbolIndex, symbolIndex >= 0 ? `"${header[symbolIndex]}"` : "NOT FOUND")
-    console.log("Quantity column:", quantityIndex, quantityIndex >= 0 ? `"${header[quantityIndex]}"` : "NOT FOUND")
-    console.log("Unit cost column:", unitCostIndex, unitCostIndex >= 0 ? `"${header[unitCostIndex]}"` : "NOT FOUND")
-    console.log("Price column:", priceIndex, priceIndex >= 0 ? `"${header[priceIndex]}"` : "NOT FOUND")
-    console.log("Currency column:", currencyIndex, currencyIndex >= 0 ? `"${header[currencyIndex]}"` : "NOT FOUND")
-    console.log("Total CHF column:", totalCHFIndex, totalCHFIndex >= 0 ? `"${header[totalCHFIndex]}"` : "NOT FOUND")
-    console.log("Gain/Loss column:", gainLossIndex, gainLossIndex >= 0 ? `"${header[gainLossIndex]}"` : "NOT FOUND")
-    console.log(
-      "Position % column:",
-      positionPercentIndex,
-      positionPercentIndex >= 0 ? `"${header[positionPercentIndex]}"` : "NOT FOUND",
-    )
-
-    // Analyze data rows
-    console.log("\n📊 Sample data rows:")
-    const dataRows = lines.slice(1, 6) // Skip header, take next 5 rows
-    dataRows.forEach((row, index) => {
-      const columns = row.split(bestDelimiter.delimiter)
-      console.log(`\nRow ${index + 2}:`)
-      columns.forEach((col, colIndex) => {
-        if (colIndex < 12) {
-          // Show first 12 columns
-          console.log(`  [${colIndex}] "${col.trim()}"`)
-        }
-      })
-    })
-
-    // Look for category indicators
-    console.log("\n🏷️ Looking for category indicators:")
-    const categoryKeywords = ["Actions", "ETF", "Obligations", "Fonds", "Total", "Sous-total"]
-    lines.forEach((line, index) => {
-      const firstColumn = line.split(bestDelimiter.delimiter)[0]?.trim()
-      if (categoryKeywords.some((keyword) => firstColumn?.includes(keyword))) {
-        console.log(`Line ${index + 1}: "${firstColumn}" - Potential category/summary row`)
+  // Detect number formats
+  const numberFormats = new Set<string>()
+  rows.slice(1, 10).forEach((row) => {
+    row.forEach((cell) => {
+      const cellStr = (cell || "").toString().trim()
+      if (cellStr.match(/^\d+[',.]?\d*$/)) {
+        numberFormats.add(cellStr)
       }
     })
+  })
 
-    // Analyze number formats
-    console.log("\n🔢 Number format analysis:")
-    const sampleNumbers = []
-    lines.slice(1, 10).forEach((line) => {
-      const columns = line.split(bestDelimiter.delimiter)
-      columns.forEach((col) => {
-        const trimmed = col.trim()
-        if (trimmed.match(/[\d'.,]+/) && trimmed.length > 2) {
-          sampleNumbers.push(trimmed)
-        }
-      })
-    })
-
-    console.log("Sample numbers found:", sampleNumbers.slice(0, 10))
-
-    // Test Swiss number parsing
-    console.log("\n🧮 Testing Swiss number parsing:")
-    const testNumbers = ["1'234.56", "1,234.56", "1234.56", "12.34%", "1'000'000.00"]
-    testNumbers.forEach((num) => {
-      const parsed = parseSwissNumber(num)
-      console.log(`"${num}" -> ${parsed}`)
-    })
-
-    console.log("\n✅ CSV analysis complete!")
-  } catch (error) {
-    console.error("❌ Error analyzing CSV:", error)
+  return {
+    totalRows: rows.length,
+    columns: header,
+    sampleRows,
+    detectedDelimiter: delimiter,
+    encoding: "UTF-8", // Assumption
+    possibleCategories: Array.from(possibleCategories),
+    numberFormats: Array.from(numberFormats).slice(0, 10),
   }
 }
 
-function parseSwissNumber(str: string): number {
-  if (!str) return 0
-  // Handle Swiss number format: 1'234'567.89 and encoding issues
-  const cleaned = str
-    .toString()
-    .replace(/'/g, "") // Remove apostrophes
-    .replace(/,/g, ".") // Replace comma with dot
-    .replace(/[^\d.-]/g, "") // Remove non-numeric characters except dots and minus
+// Example usage with sample CSV data
+const sampleCSV = `Symbole,Quantité,Prix unitaire,Prix,Dev.,Valeur totale CHF,G&P CHF,G&P %,Positions %,Var. quot. %
+Actions
+AAPL,100,150.00,160.00,USD,16'000.00,1'000.00,6.67,16.00,1.50
+MSFT,50,200.00,210.00,USD,10'500.00,500.00,5.00,10.50,0.75
+ETF
+IWDA,200,75.00,78.00,USD,15'600.00,600.00,4.00,15.60,0.25
+VTI,100,180.00,185.00,USD,18'500.00,500.00,2.78,18.50,-0.50`
 
-  const parsed = Number.parseFloat(cleaned)
-  return isNaN(parsed) ? 0 : parsed
+export function runCSVAnalysis(csvText?: string): CSVAnalysis {
+  const textToAnalyze = csvText || sampleCSV
+  const analysis = analyzeCSVStructure(textToAnalyze)
+
+  console.log("=== CSV Structure Analysis ===")
+  console.log("Total rows:", analysis.totalRows)
+  console.log("Detected delimiter:", analysis.detectedDelimiter)
+  console.log("Columns:", analysis.columns)
+  console.log("Possible categories:", analysis.possibleCategories)
+  console.log("Sample number formats:", analysis.numberFormats)
+  console.log("Sample rows:")
+  analysis.sampleRows.forEach((row, index) => {
+    console.log(`Row ${index + 1}:`, row)
+  })
+
+  return analysis
 }
 
-// Run the analysis
-analyzeSQCSV().catch(console.error)
+// Run analysis if called directly
+if (require.main === module) {
+  runCSVAnalysis()
+}
