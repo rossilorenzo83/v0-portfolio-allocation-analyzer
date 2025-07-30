@@ -1,5 +1,78 @@
 import { parseSwissPortfolioPDF } from "../portfolio-parser"
 import { jest } from "@jest/globals" // Import jest to declare the variable
+import { parse } from "csv-parse/sync"
+import fs from "fs"
+import path from "path"
+
+interface ColumnInfo {
+  name: string
+  sampleValues: string[]
+  dataType: "string" | "number" | "boolean" | "unknown"
+  isEmpty: boolean
+}
+
+function inferDataType(value: string): "string" | "number" | "boolean" | "unknown" {
+  if (value === null || value === undefined || value.trim() === "") {
+    return "unknown"
+  }
+  if (!isNaN(Number.parseFloat(value)) && isFinite(Number(value))) {
+    return "number"
+  }
+  if (value.toLowerCase() === "true" || value.toLowerCase() === "false") {
+    return "boolean"
+  }
+  return "string"
+}
+
+export function analyzeCsvStructure(csvContent: string): ColumnInfo[] {
+  const records = parse(csvContent, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+  })
+
+  if (!records || records.length === 0) {
+    return []
+  }
+
+  const headers = Object.keys(records[0])
+  const columnInfos: ColumnInfo[] = headers.map((header) => ({
+    name: header,
+    sampleValues: [],
+    dataType: "unknown",
+    isEmpty: true,
+  }))
+
+  records.forEach((record: { [key: string]: string }, rowIndex: number) => {
+    headers.forEach((header, colIndex) => {
+      const value = record[header]
+      if (value !== undefined && value !== null && value.trim() !== "") {
+        columnInfos[colIndex].isEmpty = false
+        if (columnInfos[colIndex].sampleValues.length < 5) {
+          // Collect up to 5 samples
+          columnInfos[colIndex].sampleValues.push(value)
+        }
+
+        const currentDataType = columnInfos[colIndex].dataType
+        const inferred = inferDataType(value)
+
+        if (currentDataType === "unknown") {
+          columnInfos[colIndex].dataType = inferred
+        } else if (currentDataType !== inferred && inferred !== "unknown") {
+          // If types conflict, default to string unless one is unknown
+          if (currentDataType === "number" && inferred === "string") {
+            columnInfos[colIndex].dataType = "string"
+          } else if (currentDataType === "boolean" && inferred === "string") {
+            columnInfos[colIndex].dataType = "string"
+          }
+          // If current is string, it remains string
+        }
+      }
+    })
+  })
+
+  return columnInfos
+}
 
 // Mock the API service for this script to avoid actual network calls
 // In a real scenario, you might want to fetch real data or use a more sophisticated mock
@@ -201,7 +274,7 @@ jest.mock("../lib/api-service", () => ({
   },
 }))
 
-async function analyzeCsvStructure(csvText: string) {
+async function analyzeCsvStructureDetailed(csvText: string) {
   console.log("--- CSV Structure Analysis ---")
   console.log("Input CSV (first 500 chars):\n", csvText.substring(0, 500) + "...")
 
@@ -336,7 +409,7 @@ async function analyzeCsvStructure(csvText: string) {
 // const sampleCsv = `Symbole,Nom,Quantité,Prix unitaire,Devise,Valeur totale CHF
 // AAPL,Apple Inc.,100,150.00,USD,15000.00
 // VWRL,Vanguard FTSE All-World,500,89.96,CHF,44980.00`;
-// analyzeCsvStructure(sampleCsv);
+// analyzeCsvStructureDetailed(sampleCsv);
 
 // To run with the real CSV from the previous step:
 async function runAnalysisOnRealCsv() {
@@ -350,9 +423,41 @@ async function runAnalysisOnRealCsv() {
     }
     const csvText = await response.text()
     console.log("CSV fetched successfully. Starting analysis...")
-    await analyzeCsvStructure(csvText)
+    const analysis = analyzeCsvStructure(csvText)
+    console.log("CSV Structure Analysis:")
+    analysis.forEach((col) => {
+      console.log(`\nColumn: "${col.name}"`)
+      console.log(`  Data Type: ${col.dataType}`)
+      console.log(`  Is Empty: ${col.isEmpty}`)
+      console.log(`  Sample Values: [${col.sampleValues.map((s) => `"${s}"`).join(", ")}]`)
+    })
   } catch (error) {
     console.error("Error during CSV fetch or analysis:", error)
+  }
+}
+
+if (require.main === module) {
+  const csvFilePath = process.argv[2]
+  if (!csvFilePath) {
+    console.error("Usage: ts-node analyze-csv-structure.ts <path_to_csv_file>")
+    process.exit(1)
+  }
+
+  try {
+    const fullPath = path.resolve(process.cwd(), csvFilePath)
+    const csvContent = fs.readFileSync(fullPath, "utf8")
+    const analysis = analyzeCsvStructure(csvContent)
+
+    console.log("CSV Structure Analysis:")
+    analysis.forEach((col) => {
+      console.log(`\nColumn: "${col.name}"`)
+      console.log(`  Data Type: ${col.dataType}`)
+      console.log(`  Is Empty: ${col.isEmpty}`)
+      console.log(`  Sample Values: [${col.sampleValues.map((s) => `"${s}"`).join(", ")}]`)
+    })
+  } catch (error: any) {
+    console.error(`Error analyzing CSV: ${error.message}`)
+    process.exit(1)
   }
 }
 

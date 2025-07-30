@@ -1,6 +1,7 @@
 import { safePDFExtraction } from "./lib/pdf-utils"
 import { apiService } from "./lib/api-service"
 import Papa from "papaparse"
+import { parse as parseCsv } from "csv-parse/sync"
 
 export interface SwissPortfolioData {
   accountOverview: {
@@ -88,6 +89,131 @@ const CATEGORY_ALIASES: Record<string, string> = {
   Aktien: "Actions",
   Fonds: "Funds",
   Anleihen: "Bonds",
+}
+
+export interface Position {
+  symbol: string
+  quantity: number
+  averagePrice: number
+  currency: string
+  exchange?: string
+  isin?: string
+  name?: string
+}
+
+export interface Portfolio {
+  positions: Position[]
+  totalValue: number
+  totalCost: number
+}
+
+interface ColumnMapping {
+  [key: string]: string // Maps a detected header to a standard Position key
+}
+
+const COMMON_HEADERS: { [key: string]: string[] } = {
+  symbol: ["symbol", "ticker", "isin", "security id", "asset", "instrument"],
+  quantity: ["quantity", "shares", "amount", "units"],
+  averagePrice: ["average price", "avg price", "cost basis", "price", "purchase price"],
+  currency: ["currency", "ccy"],
+  exchange: ["exchange", "market"],
+  name: ["name", "description", "security name"],
+}
+
+const detectColumnMapping = (headers: string[]): ColumnMapping => {
+  const mapping: ColumnMapping = {}
+  const lowerCaseHeaders = headers.map((h) => h.toLowerCase().trim())
+
+  for (const standardKey in COMMON_HEADERS) {
+    const possibleHeaders = COMMON_HEADERS[standardKey]
+    for (const possibleHeader of possibleHeaders) {
+      const index = lowerCaseHeaders.indexOf(possibleHeader)
+      if (index !== -1) {
+        mapping[standardKey] = headers[index] // Use original header for mapping
+        break
+      }
+    }
+  }
+  return mapping
+}
+
+const parseValue = (value: string, key: string): any => {
+  if (value === undefined || value === null || value.trim() === "") {
+    return undefined
+  }
+  switch (key) {
+    case "quantity":
+    case "averagePrice":
+      const num = Number.parseFloat(value.replace(/,/g, "")) // Handle comma as thousands separator
+      return isNaN(num) ? undefined : num
+    case "symbol":
+      return value.toUpperCase().trim() // Standardize symbols to uppercase
+    case "currency":
+      return value.toUpperCase().trim() // Standardize currency to uppercase
+    default:
+      return value.trim()
+  }
+}
+
+export const parsePortfolioCsv = (csvContent: string): Portfolio => {
+  const records = parseCsv(csvContent, {
+    columns: true, // Automatically detect columns from the first row
+    skip_empty_lines: true,
+    trim: true,
+  })
+
+  if (!records || records.length === 0) {
+    console.warn("CSV parsing resulted in no records.")
+    return { positions: [], totalValue: 0, totalCost: 0 }
+  }
+
+  const headers = Object.keys(records[0])
+  const columnMapping = detectColumnMapping(headers)
+
+  console.log("Detected CSV Headers:", headers)
+  console.log("Inferred Column Mapping:", columnMapping)
+
+  const positions: Position[] = []
+  let totalValue = 0
+  let totalCost = 0
+
+  for (const record of records) {
+    const position: Partial<Position> = {}
+    let isValidPosition = true
+
+    for (const standardKey in columnMapping) {
+      const originalHeader = columnMapping[standardKey]
+      const rawValue = record[originalHeader]
+      const parsedValue = parseValue(rawValue, standardKey)
+
+      if (parsedValue !== undefined) {
+        ;(position as any)[standardKey] = parsedValue
+      }
+    }
+
+    // Basic validation for required fields
+    if (!position.symbol || !position.quantity || !position.averagePrice || !position.currency) {
+      console.warn("Skipping row due to missing required fields:", record)
+      isValidPosition = false
+    } else if (position.quantity <= 0 || position.averagePrice <= 0) {
+      console.warn("Skipping row due to non-positive quantity or price:", record)
+      isValidPosition = false
+    }
+
+    if (isValidPosition) {
+      const currentPosition = position as Position
+      positions.push(currentPosition)
+      totalValue += currentPosition.quantity * currentPosition.averagePrice
+      totalCost += currentPosition.quantity * currentPosition.averagePrice // For now, totalCost is same as totalValue
+    }
+  }
+
+  if (positions.length === 0) {
+    console.error("No valid positions found after parsing and validation.")
+    throw new Error("No valid positions found in the CSV file.")
+  }
+
+  return { positions, totalValue, totalCost }
 }
 
 /**
@@ -339,6 +465,9 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
       "chf",
       "usd",
       "eur",
+      "gbp",
+      "jpy",
+      "cad",
       "libellé",
       "libelle",
       "description",

@@ -3,12 +3,8 @@
 import type React from "react"
 
 import { useState, useCallback } from "react"
-import { Upload, FileText, PieChart, BarChart3, Globe, DollarSign, Building2 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { PieChartIcon, BarChart3 } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import {
   Pie,
@@ -194,7 +190,7 @@ export default function PortfolioAnalyzer() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <PieChart className="h-5 w-5" />
+          <PieChartIcon className="h-5 w-5" />
           {title}
         </CardTitle>
       </CardHeader>
@@ -277,186 +273,11 @@ export default function PortfolioAnalyzer() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold">Portfolio Allocation Analyzer</h1>
-          <p className="text-muted-foreground">
-            Upload your portfolio CSV to analyze allocation by currency, geography, and sector
-          </p>
-        </div>
-
-        {/* File Upload */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload Portfolio Data
-            </CardTitle>
-            <CardDescription>
-              Upload a CSV file with columns: symbol, name, quantity, price, currency, type, sector, geography
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-              <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
-              <label htmlFor="csv-upload" className="cursor-pointer">
-                <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-lg font-medium">Click to upload CSV file</p>
-                <p className="text-sm text-muted-foreground">Supports .csv files up to 10MB</p>
-              </label>
-            </div>
-            {isLoading && (
-              <div className="mt-4">
-                <Progress value={50} className="w-full" />
-                <p className="text-sm text-muted-foreground mt-2">Processing portfolio data...</p>
-              </div>
-            )}
-            {error && (
-              <Alert className="mt-4">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-
-        {portfolio.length > 0 && (
-          <>
-            {/* Portfolio Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">${totalValue.toLocaleString()}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Total Holdings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{portfolio.length}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Asset Types</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{new Set(portfolio.map((p) => p.type)).size}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Currencies</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{new Set(portfolio.map((p) => p.currency)).size}</div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Analysis Tabs */}
-            <Tabs defaultValue="overview" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="currency">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Currency
-                </TabsTrigger>
-                <TabsTrigger value="geography">
-                  <Globe className="h-4 w-4 mr-2" />
-                  Geography
-                </TabsTrigger>
-                <TabsTrigger value="sector">
-                  <Building2 className="h-4 w-4 mr-2" />
-                  Sector
-                </TabsTrigger>
-                <TabsTrigger value="holdings">Holdings</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="overview" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getAssetTypeBreakdown(), "Asset Type Distribution")}
-                  {renderPieChart(getCurrencyBreakdown(), "Currency Distribution")}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="currency" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getCurrencyBreakdown(), "Currency Allocation")}
-                  {renderBarChart(getCurrencyBreakdown(), "Currency Breakdown")}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="geography" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getGeographyBreakdown(), "Geographic Allocation")}
-                  {renderBarChart(getGeographyBreakdown(), "Geographic Breakdown")}
-                </div>
-                <Alert>
-                  <AlertDescription>
-                    ETF holdings are analyzed based on their underlying geographic distribution for more accurate
-                    allocation.
-                  </AlertDescription>
-                </Alert>
-              </TabsContent>
-
-              <TabsContent value="sector" className="space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {renderPieChart(getSectorBreakdown(), "Sector Allocation")}
-                  {renderBarChart(getSectorBreakdown(), "Sector Breakdown")}
-                </div>
-                <Alert>
-                  <AlertDescription>
-                    ETF sector allocation is calculated from underlying holdings for deeper analysis.
-                  </AlertDescription>
-                </Alert>
-              </TabsContent>
-
-              <TabsContent value="holdings" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Portfolio Holdings</CardTitle>
-                    <CardDescription>Detailed view of all your investments</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {portfolio.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{item.symbol}</span>
-                              <Badge variant="outline">{item.type}</Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground">{item.name}</p>
-                            <div className="flex gap-4 text-xs text-muted-foreground">
-                              <span>Qty: {item.quantity}</span>
-                              <span>
-                                Price: {item.currency} {item.price}
-                              </span>
-                              <span>Sector: {item.sector}</span>
-                              <span>Geography: {item.geography}</span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-medium">${item.value.toLocaleString()}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {((item.value / totalValue) * 100).toFixed(1)}%
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </>
-        )}
-      </div>
+    <div className="flex flex-col items-center justify-center min-h-screen p-4">
+      <h1 className="text-3xl font-bold mb-6">Portfolio Analyzer</h1>
+      <p className="text-lg text-muted-foreground">
+        This component is a placeholder. Please refer to `swiss-portfolio-analyzer.tsx` for the main application logic.
+      </p>
     </div>
   )
 }

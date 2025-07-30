@@ -4,15 +4,16 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { type VariantProps, cva } from "class-variance-authority"
 import { PanelLeft } from "lucide-react"
-
-import { useIsMobile } from "@/hooks/use-mobile"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { useMediaQuery } from "react-responsive"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 const SIDEBAR_COOKIE_NAME = "sidebar:state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
@@ -50,7 +51,7 @@ const SidebarProvider = React.forwardRef<
     onOpenChange?: (open: boolean) => void
   }
 >(({ defaultOpen = true, open: openProp, onOpenChange: setOpenProp, className, style, children, ...props }, ref) => {
-  const isMobile = useIsMobile()
+  const isMobile = useMediaQuery({ query: "(max-width: 768px)" })
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar.
@@ -136,9 +137,16 @@ const Sidebar = React.forwardRef<
     side?: "left" | "right"
     variant?: "sidebar" | "floating" | "inset"
     collapsible?: "offcanvas" | "icon" | "none"
+    links: {
+      title: string
+      label?: string
+      icon: React.ElementType
+      href: string
+    }[]
   }
->(({ side = "left", variant = "sidebar", collapsible = "offcanvas", className, children, ...props }, ref) => {
+>(({ side = "left", variant = "sidebar", collapsible = "offcanvas", className, links, ...props }, ref) => {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const pathname = usePathname()
 
   if (collapsible === "none") {
     return (
@@ -147,7 +155,49 @@ const Sidebar = React.forwardRef<
         ref={ref}
         {...props}
       >
-        {children}
+        <nav className="grid gap-1 px-2 group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+          {links.map((link, index) =>
+            isMobile ? (
+              <TooltipProvider key={index}>
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    <Link
+                      href={link.href}
+                      className={cn(
+                        "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-8",
+                        pathname === link.href && "bg-accent text-accent-foreground",
+                      )}
+                    >
+                      <link.icon className="h-5 w-5" />
+                      <span className="sr-only">{link.title}</span>
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="flex items-center gap-4">
+                    {link.title}
+                    {link.label && <span className="ml-auto text-muted-foreground">{link.label}</span>}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <Link
+                key={index}
+                href={link.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-foreground",
+                  pathname === link.href && "bg-accent text-accent-foreground",
+                )}
+              >
+                <link.icon className="h-4 w-4" />
+                {link.title}
+                {link.label && (
+                  <span className={cn("ml-auto", pathname === link.href && "text-background dark:text-white")}>
+                    {link.label}
+                  </span>
+                )}
+              </Link>
+            ),
+          )}
+        </nav>
       </div>
     )
   }
@@ -166,7 +216,51 @@ const Sidebar = React.forwardRef<
           }
           side={side}
         >
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <div className="flex h-full w-full flex-col">
+            <nav className="grid gap-1 px-2 group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+              {links.map((link, index) =>
+                isMobile ? (
+                  <TooltipProvider key={index}>
+                    <Tooltip delayDuration={0}>
+                      <TooltipTrigger asChild>
+                        <Link
+                          href={link.href}
+                          className={cn(
+                            "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-8",
+                            pathname === link.href && "bg-accent text-accent-foreground",
+                          )}
+                        >
+                          <link.icon className="h-5 w-5" />
+                          <span className="sr-only">{link.title}</span>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="flex items-center gap-4">
+                        {link.title}
+                        {link.label && <span className="ml-auto text-muted-foreground">{link.label}</span>}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <Link
+                    key={index}
+                    href={link.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-foreground",
+                      pathname === link.href && "bg-accent text-accent-foreground",
+                    )}
+                  >
+                    <link.icon className="h-4 w-4" />
+                    {link.title}
+                    {link.label && (
+                      <span className={cn("ml-auto", pathname === link.href && "text-background dark:text-white")}>
+                        {link.label}
+                      </span>
+                    )}
+                  </Link>
+                ),
+              )}
+            </nav>
+          </div>
         </SheetContent>
       </Sheet>
     )
@@ -210,7 +304,49 @@ const Sidebar = React.forwardRef<
           data-sidebar="sidebar"
           className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
         >
-          {children}
+          <nav className="grid gap-1 px-2 group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+            {links.map((link, index) =>
+              isMobile ? (
+                <TooltipProvider key={index}>
+                  <Tooltip delayDuration={0}>
+                    <TooltipTrigger asChild>
+                      <Link
+                        href={link.href}
+                        className={cn(
+                          "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-8",
+                          pathname === link.href && "bg-accent text-accent-foreground",
+                        )}
+                      >
+                        <link.icon className="h-5 w-5" />
+                        <span className="sr-only">{link.title}</span>
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="flex items-center gap-4">
+                      {link.title}
+                      {link.label && <span className="ml-auto text-muted-foreground">{link.label}</span>}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                <Link
+                  key={index}
+                  href={link.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:text-foreground",
+                    pathname === link.href && "bg-accent text-accent-foreground",
+                  )}
+                >
+                  <link.icon className="h-4 w-4" />
+                  {link.title}
+                  {link.label && (
+                    <span className={cn("ml-auto", pathname === link.href && "text-background dark:text-white")}>
+                      {link.label}
+                    </span>
+                  )}
+                </Link>
+              ),
+            )}
+          </nav>
         </div>
       </div>
     </div>
@@ -665,7 +801,7 @@ function SettingsIcon(props: React.SVGProps<SVGSVGElement>) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.78 1.28a2 2 0 0 0 .73 2.73l.09.15a2 2 0 0 1 0 2l-.08.15a2 2 0 0 0-.73 2.73l-.78 1.28a2 2 0 0 0-2.73.73l-.15-.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.78-1.28a2 2 0 0 0-.73-2.73l-.09-.15a2 2 0 0 1 0-2l-.08-.15a2 2 0 0 0-.73-2.73l-.78-1.28a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.78 1.28a2 2 0 0 0-.73 2.73l-.09.15a2 2 0 0 1 0 2l-.08.15a2 2 0 0 0-.73 2.73l-.78 1.28a2 2 0 0 0-2.73.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
   )

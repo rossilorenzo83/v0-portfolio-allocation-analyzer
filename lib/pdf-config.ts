@@ -1,5 +1,16 @@
 // PDF.js configuration without external dependencies
 
+export const PDF_OPTIONS = {
+  format: "A4",
+  printBackground: true,
+  margin: {
+    top: "20mm",
+    right: "20mm",
+    bottom: "20mm",
+    left: "20mm",
+  },
+}
+
 export function configurePDFJS() {
   // Only configure if we're in the browser
   if (typeof window === "undefined") return

@@ -1,4 +1,4 @@
-import { parseSwissPortfolioPDF } from "../portfolio-parser"
+import { parseSwissPortfolioPDF, parsePortfolioCsv } from "../portfolio-parser"
 import { apiService } from "../lib/api-service"
 import { jest } from "@jest/globals"
 
@@ -222,6 +222,148 @@ VWRL,Vanguard FTSE All-World,500,89.96,CHF,44980.00`
       // expect(position).toBeDefined();
       // expect(position?.quantity).toBeGreaterThan(0);
     })
+
+    describe("parsePortfolioCsv", () => {
+      it("should correctly parse a CSV with standard headers", () => {
+        const csvContent = `Symbol,Quantity,Average Price,Currency,Exchange,Name
+AAPL,10,150.00,USD,NASDAQ,Apple Inc.
+MSFT,5,200.50,USD,NASDAQ,Microsoft Corp.`
+        const portfolio = parsePortfolioCsv(csvContent)
+
+        expect(portfolio.positions).toHaveLength(2)
+        expect(portfolio.positions[0]).toEqual({
+          symbol: "AAPL",
+          quantity: 10,
+          averagePrice: 150.0,
+          currency: "USD",
+          exchange: "NASDAQ",
+          name: "Apple Inc.",
+        })
+        expect(portfolio.positions[1]).toEqual({
+          symbol: "MSFT",
+          quantity: 5,
+          averagePrice: 200.5,
+          currency: "USD",
+          exchange: "NASDAQ",
+          name: "Microsoft Corp.",
+        })
+        expect(portfolio.totalValue).toBeCloseTo(10 * 150 + 5 * 200.5)
+      })
+
+      it("should handle variations in header names (case-insensitive, different terms)", () => {
+        const csvContent = `TICKER,shares,Avg Price,CCY,Market,Security Name
+GOOG,20,1000,EUR,XETRA,Alphabet Inc.
+TSLA,2,750.25,USD,NASDAQ,Tesla Inc.`
+        const portfolio = parsePortfolioCsv(csvContent)
+
+        expect(portfolio.positions).toHaveLength(2)
+        expect(portfolio.positions[0]).toEqual({
+          symbol: "GOOG",
+          quantity: 20,
+          averagePrice: 1000,
+          currency: "EUR",
+          exchange: "XETRA",
+          name: "Alphabet Inc.",
+        })
+        expect(portfolio.positions[1]).toEqual({
+          symbol: "TSLA",
+          quantity: 2,
+          averagePrice: 750.25,
+          currency: "USD",
+          exchange: "NASDAQ",
+          name: "Tesla Inc.",
+        })
+      })
+
+      it("should ignore rows with missing required fields", () => {
+        const csvContent = `Symbol,Quantity,Average Price,Currency
+AAPL,10,150.00,USD
+MSFT,,200.50,USD
+GOOG,20,,EUR`
+        const portfolio = parsePortfolioCsv(csvContent)
+
+        expect(portfolio.positions).toHaveLength(1)
+        expect(portfolio.positions[0].symbol).toBe("AAPL")
+      })
+
+      it("should ignore rows with non-positive quantity or price", () => {
+        const csvContent = `Symbol,Quantity,Average Price,Currency
+AAPL,10,150.00,USD
+MSFT,0,200.50,USD
+GOOG,20,-100,EUR`
+        const portfolio = parsePortfolioCsv(csvContent)
+        expect(portfolio.positions).toHaveLength(1)
+        expect(portfolio.positions[0].symbol).toBe("AAPL")
+      })
+
+      it("should handle empty CSV content", () => {
+        const csvContent = ``
+        const portfolio = parsePortfolioCsv(csvContent)
+        expect(portfolio.positions).toHaveLength(0)
+        expect(portfolio.totalValue).toBe(0)
+      })
+
+      it("should handle CSV with only headers", () => {
+        const csvContent = `Symbol,Quantity,Average Price,Currency`
+        const portfolio = parsePortfolioCsv(csvContent)
+        expect(portfolio.positions).toHaveLength(0)
+        expect(portfolio.totalValue).toBe(0)
+      })
+
+      it("should handle CSV with extra columns not mapped", () => {
+        const csvContent = `Symbol,Quantity,Average Price,Currency,ExtraColumn
+AAPL,10,150.00,USD,SomeData`
+        const portfolio = parsePortfolioCsv(csvContent)
+        expect(portfolio.positions).toHaveLength(1)
+        expect(portfolio.positions[0]).toEqual(
+          expect.objectContaining({
+            symbol: "AAPL",
+            quantity: 10,
+            averagePrice: 150.0,
+            currency: "USD",
+          }),
+        )
+        expect(portfolio.positions[0]).not.toHaveProperty("ExtraColumn")
+      })
+
+      it("should handle numeric values with commas", () => {
+        const csvContent = `Symbol,Quantity,Average Price,Currency
+VOO,1000,400.50,USD
+SPY,500,4,500.75,USD` // Example with comma in price
+        const portfolio = parsePortfolioCsv(csvContent)
+        expect(portfolio.positions).toHaveLength(2)
+        expect(portfolio.positions[0].averagePrice).toBe(400.5)
+        expect(portfolio.positions[1].averagePrice).toBe(4500.75)
+      })
+
+      it("should trim whitespace from values and headers", () => {
+        const csvContent = ` Symbol , Quantity , Average Price , Currency 
+ AAPL , 10 , 150.00 , USD `
+        const portfolio = parsePortfolioCsv(csvContent)
+        expect(portfolio.positions).toHaveLength(1)
+        expect(portfolio.positions[0]).toEqual({
+          symbol: "AAPL",
+          quantity: 10,
+          averagePrice: 150.0,
+          currency: "USD",
+        })
+      })
+
+      it("should standardize symbol and currency to uppercase", () => {
+        const csvContent = `symbol,quantity,average price,currency
+aapl,10,150.00,usd`
+        const portfolio = parsePortfolioCsv(csvContent)
+        expect(portfolio.positions).toHaveLength(1)
+        expect(portfolio.positions[0].symbol).toBe("AAPL")
+        expect(portfolio.positions[0].currency).toBe("USD")
+      })
+
+      it("should throw an error if no valid positions are found", () => {
+        const csvContent = `Symbol,Quantity,Average Price,Currency
+INVALID,,,-`
+        expect(() => parsePortfolioCsv(csvContent)).toThrow("No valid positions found in the CSV file.")
+      })
+    })
   })
 
   describe("Number Parsing", () => {
@@ -259,9 +401,14 @@ VWRL,Vanguard FTSE All-World,500,89.96,CHF,44980.00`
     test("should identify different currencies", async () => {
       const text = `
         Valeur totale 100'000.00
+        Actions
         AAPL Apple Inc. 100 150.00 USD 15'000.00
-        NESN Nestlé SA 50 120.00 CHF 6'000.00
-        ASML ASML Holding 25 600.00 EUR 15'000.00
+        
+        ETF
+        VWRL Vanguard FTSE All-World 500 89.96 CHF 44'980.00
+        
+        Obligations
+        US Treasury Bond 10 1000.00 USD 10'000.00
       `
 
       const result = await parseSwissPortfolioPDF(text)

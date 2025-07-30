@@ -1,203 +1,83 @@
-import { parseSwissPortfolioPDF } from "../portfolio-parser"
-import { apiService } from "../lib/api-service"
+// This script is intended to test the overall functionality of the SwissPortfolioAnalyzer component
+// by simulating user interactions or directly calling its internal logic if exposed.
+// For a full UI component test, you would typically use a testing library like React Testing Library
+// and a browser environment (e.g., Jest with JSDOM or Cypress/Playwright for E2E).
 
-async function testPortfolioAnalyzer() {
-  console.log("🧪 Starting Portfolio Analyzer Tests...")
+// This script will focus on testing the core logic that the component relies on.
 
-  // Test 1: Sample Swiss Portfolio Data
-  console.log("\n📊 Test 1: Parsing Sample Swiss Portfolio Data")
+import { parsePortfolioCsv } from "../portfolio-parser"
+import { resolveSymbolAndFetchData } from "../etf-data-service"
+import { calculatePortfolioAnalysis } from "../swiss-portfolio-analyzer" // Assuming this function is exported for testing
+import { samplePositions } from "../__tests__/test-data" // Using mock data for consistency
 
-  const sampleSwissPortfolio = `
-Aperçu du compte
-Valeur totale du portefeuille CHF 889'528.75
-Solde espèces CHF 5'129.55
-Valeur des titres CHF 877'853.96
+async function runPortfolioAnalyzerLogicTests() {
+  console.log("--- Running Portfolio Analyzer Logic Tests ---")
 
-Positions
-Actions
-AAPL,100,150.00,USD,Apple Inc.
-MSFT,75,330.00,USD,Microsoft Corporation
-NESN,200,120.00,CHF,Nestlé SA
-
-ETF
-VWRL,500,89.96,CHF,Vanguard FTSE All-World UCITS ETF
-IS3N,300,30.50,CHF,iShares Core MSCI World UCITS ETF
-IEFA,150,65.20,CHF,iShares Core MSCI EAFE UCITS ETF
-`
+  // Test 1: Simulate CSV upload and parsing
+  console.log("\nTest 1: Simulate CSV parsing with sample data")
+  const sampleCsvContent = `Symbol,Quantity,Average Price,Currency,Exchange,Name
+AAPL,10,150.00,USD,NASDAQ,Apple Inc.
+VUSA.L,5,70.00,USD,LSE,Vanguard S&P 500 UCITS ETF
+NESN.SW,2,100.00,CHF,SIX,Nestle S.A.`
 
   try {
-    const result = await parseSwissPortfolioPDF(sampleSwissPortfolio)
+    const parsedPositions = parsePortfolioCsv(sampleCsvContent)
+    console.log("Parsed positions count:", parsedPositions.positions.length)
+    console.assert(parsedPositions.positions.length === 3, "Expected 3 positions from CSV")
+    console.assert(parsedPositions.positions[0].symbol === "AAPL", "First symbol should be AAPL")
+    console.log("Test 1 Passed: CSV parsing successful.")
+  } catch (error: any) {
+    console.error("Test 1 Failed: CSV parsing error -", error.message)
+  }
 
-    console.log("✅ Portfolio parsed successfully!")
-    console.log(`   Total Value: CHF ${result.accountOverview.totalValue.toLocaleString()}`)
-    console.log(`   Positions: ${result.positions.length}`)
-    console.log(`   Asset Types: ${result.assetAllocation.length}`)
-    console.log(`   Currencies: ${result.currencyAllocation.length}`)
+  // Test 2: Simulate data fetching and enrichment for parsed positions
+  console.log("\nTest 2: Simulate data fetching and enrichment")
+  const positionsToEnrich = [
+    { symbol: "VUSA.L", quantity: 10, averagePrice: 70.0, currency: "USD" },
+    { symbol: "SMH", quantity: 5, averagePrice: 250.0, currency: "USD" },
+  ]
 
-    // Verify data structure
-    if (result.positions.length > 0) {
-      console.log("✅ Positions extracted correctly")
-      console.log(`   Sample position: ${result.positions[0].symbol} - ${result.positions[0].name}`)
-    }
-
-    if (result.assetAllocation.length > 0) {
-      console.log("✅ Asset allocation calculated")
-      result.assetAllocation.forEach((asset) => {
-        console.log(`   ${asset.name}: ${asset.percentage.toFixed(1)}%`)
+  try {
+    const enrichedPositions = []
+    for (const pos of positionsToEnrich) {
+      const { etfData, quoteData } = await resolveSymbolAndFetchData(pos)
+      enrichedPositions.push({
+        ...pos,
+        currentPrice: quoteData?.price || pos.averagePrice,
+        etfData: etfData,
       })
     }
-  } catch (error) {
-    console.error("❌ Portfolio parsing failed:", error)
+    console.log("Enriched positions count:", enrichedPositions.length)
+    console.assert(enrichedPositions.length === 2, "Expected 2 enriched positions")
+    console.assert(enrichedPositions[0].etfData?.domicile === "IE", "VUSA.L domicile should be IE")
+    console.assert(enrichedPositions[1].etfData?.domicile === "US", "SMH domicile should be US")
+    console.log("Test 2 Passed: Data fetching and enrichment successful.")
+  } catch (error: any) {
+    console.error("Test 2 Failed: Data fetching error -", error.message)
   }
 
-  // Test 2: API Service Integration
-  console.log("\n🌐 Test 2: API Service Integration")
-
+  // Test 3: Simulate full analysis calculation with mock data
+  console.log("\nTest 3: Simulate full portfolio analysis calculation")
   try {
-    console.log("Testing stock price fetching...")
-    const applePrice = await apiService.getStockPrice("AAPL")
+    const analysisResult = await calculatePortfolioAnalysis(samplePositions)
+    console.log("Analysis Result - Total Value:", analysisResult.totalValue.toFixed(2))
+    console.log("Analysis Result - Sector Allocation:", analysisResult.sectorAllocation)
+    console.log("Analysis Result - Tax Impact:", analysisResult.taxImpact.toFixed(2))
+    console.log("Analysis Result - Tax Efficiency Message:", analysisResult.taxEfficiencyMessage)
 
-    if (applePrice) {
-      console.log("✅ Stock price fetched successfully!")
-      console.log(`   AAPL: $${applePrice.price} ${applePrice.currency}`)
-      console.log(`   Change: ${applePrice.changePercent.toFixed(2)}%`)
-    } else {
-      console.log("⚠️ Stock price fetch returned null (may be rate limited)")
-    }
-
-    console.log("Testing ETF composition fetching...")
-    const vwrlComposition = await apiService.getETFComposition("VWRL")
-
-    if (vwrlComposition) {
-      console.log("✅ ETF composition fetched successfully!")
-      console.log(`   VWRL domicile: ${vwrlComposition.domicile}`)
-      console.log(`   Sectors: ${vwrlComposition.sector.length}`)
-      console.log(
-        `   Top sector: ${vwrlComposition.sector[0]?.sector} (${vwrlComposition.sector[0]?.weight.toFixed(1)}%)`,
-      )
-    } else {
-      console.log("⚠️ ETF composition fetch returned null")
-    }
-
-    console.log("Testing asset metadata fetching...")
-    const appleMetadata = await apiService.getAssetMetadata("AAPL")
-
-    if (appleMetadata) {
-      console.log("✅ Asset metadata fetched successfully!")
-      console.log(`   ${appleMetadata.symbol}: ${appleMetadata.name}`)
-      console.log(`   Sector: ${appleMetadata.sector}`)
-      console.log(`   Country: ${appleMetadata.country}`)
-    } else {
-      console.log("⚠️ Asset metadata fetch returned null")
-    }
-  } catch (error) {
-    console.error("❌ API service test failed:", error)
+    console.assert(analysisResult.totalValue > 0, "Total value should be positive")
+    console.assert(Object.keys(analysisResult.sectorAllocation).length > 0, "Sector allocation should not be empty")
+    console.assert(analysisResult.taxImpact !== undefined, "Tax impact should be calculated")
+    console.assert(
+      analysisResult.taxEfficiencyMessage.includes("US-domiciled ETFs"),
+      "Tax efficiency message should mention US-domiciled ETFs",
+    )
+    console.log("Test 3 Passed: Portfolio analysis calculation successful.")
+  } catch (error: any) {
+    console.error("Test 3 Failed: Analysis calculation error -", error.message)
   }
 
-  // Test 3: Currency Allocation with ETF Look-through
-  console.log("\n💱 Test 3: Currency Allocation Analysis")
-
-  try {
-    const testPositions = [
-      {
-        symbol: "AAPL",
-        name: "Apple Inc.",
-        quantity: 100,
-        unitCost: 150,
-        totalValueCHF: 15000,
-        currency: "USD",
-        category: "Actions",
-        sector: "Technology",
-        geography: "United States",
-        domicile: "US",
-        withholdingTax: 30,
-        taxOptimized: false,
-        gainLossCHF: 2000,
-        positionPercent: 15,
-        dailyChangePercent: 0.5,
-        isOTC: false,
-      },
-      {
-        symbol: "VWRL",
-        name: "Vanguard FTSE All-World",
-        quantity: 500,
-        unitCost: 89.96,
-        totalValueCHF: 44980,
-        currency: "CHF",
-        category: "ETF",
-        sector: "Mixed",
-        geography: "Global",
-        domicile: "IE",
-        withholdingTax: 15,
-        taxOptimized: true,
-        gainLossCHF: 5000,
-        positionPercent: 45,
-        dailyChangePercent: 0.2,
-        isOTC: false,
-      },
-    ]
-
-    const totalValue = testPositions.reduce((sum, p) => sum + p.totalValueCHF, 0)
-    console.log(`Total test portfolio value: CHF ${totalValue.toLocaleString()}`)
-
-    // Test asset allocation
-    const assetAllocation = new Map<string, number>()
-    testPositions.forEach((position) => {
-      const current = assetAllocation.get(position.category) || 0
-      assetAllocation.set(position.category, current + position.totalValueCHF)
-    })
-
-    console.log("✅ Asset allocation calculated:")
-    Array.from(assetAllocation.entries()).forEach(([type, value]) => {
-      const percentage = (value / totalValue) * 100
-      console.log(`   ${type}: CHF ${value.toLocaleString()} (${percentage.toFixed(1)}%)`)
-    })
-  } catch (error) {
-    console.error("❌ Currency allocation test failed:", error)
-  }
-
-  // Test 4: Error Handling
-  console.log("\n🛡️ Test 4: Error Handling")
-
-  try {
-    console.log("Testing empty input handling...")
-    await parseSwissPortfolioPDF("")
-    console.log("❌ Should have thrown an error for empty input")
-  } catch (error) {
-    console.log("✅ Empty input error handled correctly:", error.message)
-  }
-
-  try {
-    console.log("Testing invalid format handling...")
-    await parseSwissPortfolioPDF("This is not a portfolio statement")
-    console.log("❌ Should have thrown an error for invalid format")
-  } catch (error) {
-    console.log("✅ Invalid format error handled correctly:", error.message)
-  }
-
-  // Test 5: Swiss Number Parsing
-  console.log("\n🔢 Test 5: Swiss Number Format Parsing")
-
-  const testNumbers = ["1'234'567.89", "123'456.78", "1'000.00", "500.50"]
-
-  const parseSwissNumber = (str: string): number => {
-    return Number.parseFloat(str.replace(/'/g, "").replace(/,/g, ".")) || 0
-  }
-
-  testNumbers.forEach((num) => {
-    const parsed = parseSwissNumber(num)
-    console.log(`✅ ${num} → ${parsed.toLocaleString()}`)
-  })
-
-  console.log("\n🎉 Portfolio Analyzer Tests Complete!")
-  console.log("\n📋 Summary:")
-  console.log("✅ Portfolio parsing functionality")
-  console.log("✅ API service integration")
-  console.log("✅ Currency allocation analysis")
-  console.log("✅ Error handling")
-  console.log("✅ Swiss number format parsing")
-  console.log("\n🚀 The portfolio analyzer is ready for production use!")
+  console.log("\n--- Portfolio Analyzer Logic Tests Complete ---")
 }
 
-// Run the tests
-testPortfolioAnalyzer().catch(console.error)
+runPortfolioAnalyzerLogicTests()

@@ -1,83 +1,51 @@
-// Test script to analyze and parse the real CSV file
-async function testRealCSV() {
+import { parsePortfolioCsv } from "../portfolio-parser"
+
+async function fetchCsvContent(url: string): Promise<string> {
   try {
-    console.log("🔍 Fetching and analyzing real CSV file...")
-
-    const response = await fetch(
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_30072025_09_52-2pA6mub91t5KX9pPZHD5lGMTwk5gD6.csv",
-    )
-
+    const response = await fetch(url)
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
-
-    const csvText = await response.text()
-    console.log("✅ CSV fetched successfully!")
-    console.log("File size:", csvText.length, "characters")
-
-    // Analyze structure
-    const lines = csvText.split(/\r?\n/)
-    console.log("Total lines:", lines.length)
-
-    console.log("\n=== FIRST 10 LINES ===")
-    lines.slice(0, 10).forEach((line, index) => {
-      console.log(`${index}: "${line}"`)
-    })
-
-    // Test delimiter detection
-    console.log("\n=== DELIMITER ANALYSIS ===")
-    const delimiters = [",", ";", "\t", "|"]
-
-    for (const delimiter of delimiters) {
-      const firstLineColumns = lines[0]?.split(delimiter).length || 0
-      const secondLineColumns = lines[1]?.split(delimiter).length || 0
-
-      console.log(`'${delimiter}': Line 0=${firstLineColumns} cols, Line 1=${secondLineColumns} cols`)
-
-      if (firstLineColumns > 1) {
-        console.log(`  Sample split: [${lines[0]?.split(delimiter).slice(0, 5).join(", ")}...]`)
-      }
-    }
-
-    // Look for data patterns
-    console.log("\n=== DATA PATTERN ANALYSIS ===")
-    lines.slice(1, 6).forEach((line, index) => {
-      if (line.trim()) {
-        console.log(`Data ${index + 1}: "${line}"`)
-
-        // Try different delimiters
-        const commaSplit = line.split(",")
-        const semicolonSplit = line.split(";")
-
-        console.log(`  Comma split (${commaSplit.length}): [${commaSplit.slice(0, 3).join(", ")}...]`)
-        console.log(`  Semicolon split (${semicolonSplit.length}): [${semicolonSplit.slice(0, 3).join(", ")}...]`)
-      }
-    })
-
-    // Now try to parse it with our parser
-    console.log("\n=== TESTING PARSER ===")
-    try {
-      const { parseSwissPortfolioPDF } = await import("../portfolio-parser")
-      const result = await parseSwissPortfolioPDF(csvText)
-
-      console.log("🎉 PARSING SUCCESS!")
-      console.log("Positions found:", result.positions.length)
-      console.log("Total value:", result.accountOverview.totalValue)
-
-      if (result.positions.length > 0) {
-        console.log("\n=== SAMPLE POSITIONS ===")
-        result.positions.slice(0, 5).forEach((pos, index) => {
-          console.log(`${index + 1}. ${pos.symbol} - ${pos.name} - ${pos.quantity} @ ${pos.price} ${pos.currency}`)
-        })
-      }
-    } catch (parseError) {
-      console.error("❌ PARSING FAILED:", parseError)
-      console.error("Error details:", parseError instanceof Error ? parseError.message : String(parseError))
-    }
+    return await response.text()
   } catch (error) {
-    console.error("❌ Error:", error)
+    console.error(`Failed to fetch CSV from ${url}:`, error)
+    throw error
   }
 }
 
-// Run the test
-testRealCSV()
+async function testRealCsvParsing() {
+  const csvUrl = "https://raw.githubusercontent.com/vercel/v0-portfolio-analyzer/main/public/sample-portfolio.csv" // Example URL
+  console.log(`Fetching CSV from: ${csvUrl}`)
+
+  try {
+    const csvContent = await fetchCsvContent(csvUrl)
+    console.log("\n--- Fetched CSV Content (first 500 chars) ---")
+    console.log(csvContent.substring(0, 500) + "...")
+
+    console.log("\n--- Parsing CSV Content ---")
+    const portfolio = parsePortfolioCsv(csvContent)
+
+    console.log("\n--- Parsing Successful! ---")
+    console.log("Total Positions:", portfolio.positions.length)
+    console.log("Total Portfolio Value:", portfolio.totalValue.toFixed(2))
+    console.log("Total Portfolio Cost:", portfolio.totalCost.toFixed(2))
+
+    console.log("\n--- Detailed Positions ---")
+    portfolio.positions.forEach((pos, index) => {
+      console.log(`Position ${index + 1}:`)
+      console.log(`  Symbol: ${pos.symbol}`)
+      console.log(`  Quantity: ${pos.quantity}`)
+      console.log(`  Average Price: ${pos.averagePrice}`)
+      console.log(`  Currency: ${pos.currency}`)
+      if (pos.exchange) console.log(`  Exchange: ${pos.exchange}`)
+      if (pos.name) console.log(`  Name: ${pos.name}`)
+      console.log("---")
+    })
+  } catch (error: any) {
+    console.error("\n--- CSV Parsing Failed ---")
+    console.error("Error:", error.message)
+  }
+}
+
+// Execute the test function
+testRealCsvParsing()

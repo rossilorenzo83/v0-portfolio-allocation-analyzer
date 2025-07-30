@@ -4,126 +4,149 @@ import type React from "react"
 import { useState, useCallback } from "react"
 import { useDropzone } from "react-dropzone"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { UploadCloud, Clipboard } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Loader2, UploadCloud, FileText } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 
 interface FileUploadHelperProps {
-  onFileChange: (file: File | string | null) => void
+  onFileUpload: (file: File) => Promise<void>
   isLoading: boolean
+  acceptedFileTypes?: string[]
+  maxFileSizeMb?: number
+  sampleCsvUrl?: string
 }
 
-export function FileUploadHelper({ onFileChange, isLoading }: FileUploadHelperProps) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [textInput, setTextInput] = useState<string>("")
-  const [activeTab, setActiveTab] = useState<"upload" | "paste">("upload")
+export function FileUploadHelper({
+  onFileUpload,
+  isLoading,
+  acceptedFileTypes = [".csv"],
+  maxFileSizeMb = 5,
+  sampleCsvUrl,
+}: FileUploadHelperProps) {
+  const [isDragging, setIsDragging] = useState(false)
 
   const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
+    async (acceptedFiles: File[]) => {
+      setIsDragging(false)
       if (acceptedFiles.length > 0) {
         const file = acceptedFiles[0]
-        setSelectedFile(file)
-        setTextInput("") // Clear text input if file is uploaded
-        onFileChange(file)
-        toast({
-          title: "File selected",
-          description: `${file.name} (${(file.size / 1024).toFixed(2)} KB) ready for analysis.`,
-        })
+        if (file.size > maxFileSizeMb * 1024 * 1024) {
+          toast({
+            title: "File too large",
+            description: `Please upload a file smaller than ${maxFileSizeMb}MB.`,
+            variant: "destructive",
+          })
+          return
+        }
+        if (!acceptedFileTypes.some((type) => file.name.endsWith(type))) {
+          toast({
+            title: "Invalid file type",
+            description: `Please upload a file of type: ${acceptedFileTypes.join(", ")}.`,
+            variant: "destructive",
+          })
+          return
+        }
+        await onFileUpload(file)
       }
     },
-    [onFileChange],
+    [onFileUpload, maxFileSizeMb, acceptedFileTypes],
   )
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps } = useDropzone({
     onDrop,
-    accept: {
-      "text/csv": [".csv"],
-      "application/pdf": [".pdf"],
-      "text/plain": [".txt"],
-    },
-    multiple: false,
-    disabled: isLoading,
+    accept: acceptedFileTypes.reduce((acc, type) => ({ ...acc, [type]: [] }), {}),
+    maxFiles: 1,
+    onDragEnter: () => setIsDragging(true),
+    onDragLeave: () => setIsDragging(false),
   })
 
-  const handleTextInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setTextInput(e.target.value)
-    setSelectedFile(null) // Clear file if text is entered
-    onFileChange(e.target.value)
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      const file = event.target.files[0]
+      if (file.size > maxFileSizeMb * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: `Please upload a file smaller than ${maxFileSizeMb}MB.`,
+          variant: "destructive",
+        })
+        return
+      }
+      if (!acceptedFileTypes.some((type) => file.name.endsWith(type))) {
+        toast({
+          title: "Invalid file type",
+          description: `Please upload a file of type: ${acceptedFileTypes.join(", ")}.`,
+          variant: "destructive",
+        })
+        return
+      }
+      await onFileUpload(file)
+    }
   }
 
-  const handleClear = () => {
-    setSelectedFile(null)
-    setTextInput("")
-    onFileChange(null)
-    toast({
-      title: "Input cleared",
-      description: "Ready for new file upload or text paste.",
-    })
+  const handleSampleData = async () => {
+    if (!sampleCsvUrl) return
+    try {
+      const response = await fetch(sampleCsvUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sample data: ${response.statusText}`)
+      }
+      const blob = await response.blob()
+      const file = new File([blob], "sample-portfolio.csv", { type: "text/csv" })
+      await onFileUpload(file)
+    } catch (error: any) {
+      toast({
+        title: "Error loading sample data",
+        description: error.message,
+        variant: "destructive",
+      })
+    }
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold text-center">Upload or Paste Portfolio Data</CardTitle>
+    <Card className="w-full max-w-md">
+      <CardHeader className="text-center">
+        <CardTitle>Upload Your Portfolio</CardTitle>
+        <CardDescription>Upload a CSV file to analyze your investment portfolio.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="flex justify-center mb-4 space-x-2">
-          <Button
-            variant={activeTab === "upload" ? "default" : "outline"}
-            onClick={() => setActiveTab("upload")}
-            disabled={isLoading}
-          >
-            <UploadCloud className="mr-2 h-4 w-4" /> Upload File
-          </Button>
-          <Button
-            variant={activeTab === "paste" ? "default" : "outline"}
-            onClick={() => setActiveTab("paste")}
-            disabled={isLoading}
-          >
-            <Clipboard className="mr-2 h-4 w-4" /> Paste Text
-          </Button>
+      <CardContent className="grid gap-4">
+        <div
+          {...getRootProps()}
+          className={`flex flex-col items-center justify-center rounded-md border-2 border-dashed p-6 text-center transition-colors ${
+            isDragging
+              ? "border-primary bg-muted"
+              : "border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600"
+          } cursor-pointer`}
+        >
+          <Input {...getInputProps()} id="file-upload" type="file" className="sr-only" onChange={handleFileSelect} />
+          {isLoading ? (
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          ) : (
+            <UploadCloud className="h-8 w-8 text-gray-500 dark:text-gray-400" />
+          )}
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            {isLoading ? "Processing..." : "Drag & drop your CSV here, or click to select"}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-500">
+            Max file size: {maxFileSizeMb}MB. Accepted: {acceptedFileTypes.join(", ")}
+          </p>
         </div>
-
-        {activeTab === "upload" && (
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed p-6 rounded-lg text-center cursor-pointer transition-colors ${
-              isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-gray-400"
-            } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
-          >
-            <input {...getInputProps()} disabled={isLoading} />
-            <UploadCloud className="mx-auto h-12 w-12 text-gray-400 mb-3" />
-            {isDragActive ? (
-              <p className="text-gray-600">Drop the files here ...</p>
-            ) : (
-              <p className="text-gray-600">Drag 'n' drop a CSV, PDF, or TXT file here, or click to select one</p>
-            )}
-            {selectedFile && <p className="mt-2 text-sm text-green-600">Selected file: {selectedFile.name}</p>}
-          </div>
-        )}
-
-        {activeTab === "paste" && (
-          <div className="grid gap-2">
-            <Label htmlFor="portfolio-text">Paste your portfolio data here</Label>
-            <Textarea
-              id="portfolio-text"
-              placeholder="Paste your CSV or PDF text content here..."
-              value={textInput}
-              onChange={handleTextInputChange}
-              rows={10}
-              className="resize-y"
-              disabled={isLoading}
-            />
-          </div>
-        )}
-
-        <div className="mt-4 flex justify-end space-x-2">
-          <Button onClick={handleClear} variant="outline" disabled={isLoading || (!selectedFile && !textInput)}>
-            Clear Input
-          </Button>
+        <div className="relative flex items-center justify-center text-xs uppercase text-gray-600 dark:text-gray-400">
+          <span className="bg-background px-2">Or</span>
         </div>
+        <Label htmlFor="file-upload" className="sr-only">
+          Upload file
+        </Label>
+        <Button onClick={() => document.getElementById("file-upload")?.click()} disabled={isLoading} className="w-full">
+          <FileText className="mr-2 h-4 w-4" />
+          Choose File
+        </Button>
+        {sampleCsvUrl && (
+          <Button onClick={handleSampleData} disabled={isLoading} variant="outline" className="w-full bg-transparent">
+            Load Sample Data
+          </Button>
+        )}
       </CardContent>
     </Card>
   )

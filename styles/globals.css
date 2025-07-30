@@ -84,6 +84,9 @@ body {
   }
 }
 
+/* This file is intentionally left empty as app/globals.css is used for Tailwind CSS. */
+/* If you need to add global CSS, please add it to app/globals.css */
+
 @layer base {
   * {
     @apply border-border;

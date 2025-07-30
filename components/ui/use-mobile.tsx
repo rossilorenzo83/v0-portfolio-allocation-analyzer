@@ -10,11 +10,11 @@ export function useMobile() {
       setIsMobile(window.innerWidth < 768) // Tailwind's 'md' breakpoint
     }
 
-    checkMobile()
-    window.addEventListener("resize", checkMobile)
+    checkMobile() // Check on initial render
+    window.addEventListener("resize", checkMobile) // Add event listener for resize
 
     return () => {
-      window.removeEventListener("resize", checkMobile)
+      window.removeEventListener("resize", checkMobile) // Clean up on unmount
     }
   }, [])
 

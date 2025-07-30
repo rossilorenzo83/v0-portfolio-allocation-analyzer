@@ -1,18 +1,14 @@
 # Portfolio Allocation Analyzer
 
-This project is an AI-powered portfolio allocation analyzer designed to help users understand and optimize their investment portfolios. It provides insights into asset allocation, currency exposure, geographic breakdown, sector analysis, and tax implications, especially for Swiss investors.
+This project is a portfolio allocation analyzer built with Next.js, React, and Tailwind CSS. It allows users to upload a CSV file containing their investment positions, analyze their portfolio's allocation, and get insights into diversification, risk, and tax implications.
 
 ## Features
 
-- **CSV/PDF Upload**: Upload portfolio statements in CSV or PDF format for analysis.
-- **Real-time ETF Data Integration**: Fetches real-time data for ETFs and stocks to provide up-to-date analysis.
-- **Smart Symbol Resolution**: Intelligently resolves ETF symbols, including European variations, with caching to prevent rate limiting.
-- **ETF Composition Scraping**: Scrapes and processes detailed ETF compositions (currency, country, sector) from various sources.
-- **Swiss Tax Optimization**: Analyzes and provides insights into tax efficiency for Swiss investors, particularly regarding US-domiciled ETFs.
-- **Dynamic Data Processing**: Handles dynamic processing of sector, country, and currency data from scraped content.
-- **Fallback Data**: Provides realistic fallback data for common ETFs when API data is unavailable.
-- **Comprehensive Allocations**: Calculates and visualizes asset, currency, country, sector, and domicile allocations.
-- **Performance Tracking**: Tracks unrealized gains/losses and daily changes for positions.
+- **CSV Upload**: Upload your portfolio data via CSV.
+- **Portfolio Analysis**: View your portfolio's breakdown by sector, country, and currency.
+- **Tax Optimization (Swiss Focus)**: Get insights into tax efficiency for Swiss investors, particularly regarding US-domiciled ETFs.
+- **Real-time ETF Data**: Integration with a mock Yahoo Finance API for real-time ETF data (prices, compositions).
+- **Responsive UI**: A clean and responsive user interface built with Shadcn UI components.
 
 ## Getting Started
 
@@ -25,9 +21,10 @@ This project is an AI-powered portfolio allocation analyzer designed to help use
 
 1. Clone the repository:
    \`\`\`bash
-   git clone https://github.com/your-username/portfolio-analyzer.git
-   cd portfolio-analyzer
+   git clone https://github.com/vercel/v0-portfolio-analyzer.git
+   cd v0-portfolio-analyzer
    \`\`\`
+
 2. Install dependencies:
    \`\`\`bash
    npm install
@@ -35,13 +32,13 @@ This project is an AI-powered portfolio allocation analyzer designed to help use
    yarn install
    \`\`\`
 
-### Environment Variables
+3. Set up environment variables:
+   Create a `.env.local` file in the root directory and add your API keys. For this project, a mock API is used, so no actual keys are strictly required for basic functionality, but you can configure them if you extend the API integration.
 
-Create a `.env.local` file in the root directory and add your API keys for financial data services.
-Example:
-\`\`\`
-YAHOO_FINANCE_API_KEY=your_yahoo_finance_api_key
-\`\`\`
+   \`\`\`
+   # Example .env.local (if you were to integrate with a real API)
+   # YAHOO_FINANCE_API_KEY=your_api_key_here
+   \`\`\`
 
 ### Running the Development Server
 
@@ -55,37 +52,48 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ### Running Tests
 
-To run the unit and integration tests:
 \`\`\`bash
 npm test
-\`\`\`
-
-To run specific scripts for testing CSV parsing or API services:
-\`\`\`bash
-npm run script scripts/test-real-csv.ts
-npm run script scripts/analyze-csv-structure.ts
-npm run script scripts/test-api-service.ts
+# or
+yarn test
 \`\`\`
 
 ### Building for Production
 
 \`\`\`bash
 npm run build
+# or
+yarn build
 \`\`\`
 
-### Deployment
+### Running in Production Mode
 
-The application can be easily deployed to Vercel.
+\`\`\`bash
+npm start
+# or
+yarn start
+\`\`\`
 
 ## Project Structure
 
 - `app/`: Next.js App Router pages and API routes.
 - `components/`: Reusable React components, including Shadcn UI components.
-- `lib/`: Utility functions, API service integrations, and PDF/CSV parsing logic.
+- `lib/`: Utility functions and helper modules.
 - `hooks/`: Custom React hooks.
 - `public/`: Static assets.
-- `scripts/`: Standalone scripts for testing and analysis.
 - `__tests__/`: Jest test files.
+- `scripts/`: Utility scripts for testing and analysis.
+- `portfolio-parser.ts`: Core logic for parsing CSV portfolio data.
+- `etf-data-service.ts`: Service for fetching and caching ETF data.
+- `swiss-portfolio-analyzer.tsx`: Main component for the portfolio analysis UI.
+
+## API Endpoints (Mocked)
+
+The application uses mocked API endpoints for Yahoo Finance data. These are located in `app/api/yahoo/`.
+
+- `/api/yahoo/search/[symbol]`: Search for symbols.
+- `/api/yahoo/quote/[symbol]`: Get quote data for a symbol.
+- `/api/yahoo/etf/[symbol]`: Get ETF composition data.
 
 ## Contributing
 
