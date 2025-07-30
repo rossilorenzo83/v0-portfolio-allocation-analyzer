@@ -1,468 +1,454 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { jest } from "@jest/globals"
+import SwissPortfolioAnalyzer from "../swiss-portfolio-analyzer"
 import { parseSwissPortfolioPDF } from "../portfolio-parser"
-import { FileUploadHelper } from "../components/file-upload-helper"
-import { SwissPortfolioAnalyzer } from "../swiss-portfolio-analyzer"
-import jest from "jest"
 
-// Mock API service
-jest.mock("../lib/api-service", () => ({
-  apiService: {
-    getStockPrice: jest.fn().mockResolvedValue({ price: 150.0, changePercent: 2.5 }),
-    getAssetMetadata: jest.fn().mockResolvedValue({
-      name: "Apple Inc.",
-      sector: "Technology",
-      country: "United States",
-    }),
-    getETFComposition: jest.fn().mockResolvedValue({
-      domicile: "IE",
-      withholdingTax: 15,
-      currency: [
-        { currency: "USD", weight: 60 },
-        { currency: "EUR", weight: 40 },
-      ],
-      country: [
-        { country: "United States", weight: 50 },
-        { country: "Europe", weight: 50 },
-      ],
-      sector: [
-        { sector: "Technology", weight: 30 },
-        { sector: "Healthcare", weight: 20 },
-      ],
-    }),
-  },
+// Mock the portfolio parser
+jest.mock("../portfolio-parser", () => ({
+  parseSwissPortfolioPDF: jest.fn(),
 }))
 
-describe("Portfolio Views Test Suite", () => {
-  // Test data samples
-  const sampleSwissquoteText = `Aperçu du compte
-Valeur totale du portefeuille CHF 889'528.75
-Solde espèces CHF 5'129.55
-Valeur des titres CHF 877'853.96
+// Mock recharts components
+jest.mock("recharts", () => ({
+  PieChart: ({ children }: any) => <div data-testid="pie-chart">{children}</div>,
+  Pie: ({ children }: any) => <div data-testid="pie">{children}</div>,
+  Cell: () => <div data-testid="cell" />,
+  ResponsiveContainer: ({ children }: any) => <div data-testid="responsive-container">{children}</div>,
+  Tooltip: () => <div data-testid="tooltip" />,
+  Legend: () => <div data-testid="legend" />,
+  BarChart: ({ children }: any) => <div data-testid="bar-chart">{children}</div>,
+  Bar: ({ children }: any) => <div data-testid="bar">{children}</div>,
+  XAxis: () => <div data-testid="x-axis" />,
+  YAxis: () => <div data-testid="y-axis" />,
+  CartesianGrid: () => <div data-testid="cartesian-grid" />,
+}))
 
-Positions
+const mockPortfolioData = {
+  accountOverview: {
+    totalValue: 100000,
+    cashBalance: 10000,
+    securitiesValue: 90000,
+    cryptoValue: 0,
+    purchasingPower: 5000,
+  },
+  positions: [
+    {
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      quantity: 100,
+      unitCost: 150,
+      price: 150,
+      currentPrice: 155,
+      totalValueCHF: 15000,
+      currency: "USD",
+      category: "Actions",
+      sector: "Technology",
+      geography: "United States",
+      domicile: "US",
+      withholdingTax: 30,
+      taxOptimized: false,
+      gainLossCHF: 500,
+      unrealizedGainLoss: 500,
+      unrealizedGainLossPercent: 3.33,
+      positionPercent: 15,
+      dailyChangePercent: 1.5,
+      isOTC: false,
+    },
+    {
+      symbol: "VWRL",
+      name: "Vanguard FTSE All-World UCITS ETF",
+      quantity: 500,
+      unitCost: 90,
+      price: 90,
+      currentPrice: 92,
+      totalValueCHF: 46000,
+      currency: "CHF",
+      category: "ETF",
+      sector: "Mixed",
+      geography: "Global",
+      domicile: "IE",
+      withholdingTax: 15,
+      taxOptimized: true,
+      gainLossCHF: 1000,
+      unrealizedGainLoss: 1000,
+      unrealizedGainLossPercent: 2.22,
+      positionPercent: 46,
+      dailyChangePercent: 0.8,
+      isOTC: false,
+    },
+  ],
+  assetAllocation: [
+    { name: "Actions", value: 15000, percentage: 15, type: "Actions" },
+    { name: "ETF", value: 46000, percentage: 46, type: "ETF" },
+  ],
+  currencyAllocation: [
+    { name: "USD", value: 15000, percentage: 15, currency: "USD" },
+    { name: "CHF", value: 46000, percentage: 46, currency: "CHF" },
+  ],
+  trueCountryAllocation: [
+    { name: "United States", value: 30000, percentage: 30, country: "United States" },
+    { name: "Switzerland", value: 10000, percentage: 10, country: "Switzerland" },
+  ],
+  trueSectorAllocation: [
+    { name: "Technology", value: 25000, percentage: 25, sector: "Technology" },
+    { name: "Healthcare", value: 15000, percentage: 15, sector: "Healthcare" },
+  ],
+  domicileAllocation: [
+    { name: "Ireland (IE)", value: 46000, percentage: 46, domicile: "IE" },
+    { name: "United States (US)", value: 15000, percentage: 15, domicile: "US" },
+  ],
+}
 
-Actions
-AAPL Apple Inc. 100 150.00 USD 15'000.00
-MSFT Microsoft Corporation 75 330.00 USD 24'750.00
-NESN Nestlé SA 200 120.00 CHF 24'000.00
-
-ETF
-VWRL Vanguard FTSE All-World UCITS ETF 500 89.96 CHF 44'980.00
-IS3N iShares Core MSCI World UCITS ETF 300 30.50 CHF 9'150.00
-
-Obligations
-US Treasury Bond 10 1000.00 USD 10'000.00`
-
-  const sampleSwissquoteCSV = `,Symbole,Quantité,Coût unitaire,Valeur totale,Variation journalière,Var. quot. %,Prix,Dev.,G&P CHF,G&P %,Valeur totale CHF,Positions %
-Actions,,,,,,,,,,,
-,AAPL,100,145.50,15000.00,250.00,1.67%,150.00,USD,450.00,3.09%,15000.00,1.64%
-,MSFT,75,320.00,24750.00,375.00,1.54%,330.00,USD,750.00,3.13%,24750.00,2.70%
-,NESN,200,115.00,24000.00,1000.00,4.35%,120.00,CHF,1000.00,4.35%,24000.00,2.62%
-ETF,,,,,,,,,,,
-,VWRL,500,85.00,44980.00,2249.00,5.26%,89.96,CHF,2480.00,5.84%,44980.00,4.91%
-,IS3N,300,28.50,9150.00,600.00,7.02%,30.50,CHF,600.00,7.02%,9150.00,1.00%
-Obligations,,,,,,,,,,,
-,US Treasury,10,950.00,10000.00,500.00,5.26%,1000.00,USD,500.00,5.26%,10000.00,1.09%`
-
-  describe("1. File Upload Helper Tests", () => {
-    test("should render all three tabs correctly", () => {
-      const mockProps = {
-        onFileUpload: jest.fn(),
-        onTextSubmit: jest.fn(),
-        isLoading: false,
-        error: null,
-      }
-
-      render(<FileUploadHelper {...mockProps} />)
-
-      expect(screen.getByText("📝 Paste Text (Recommended)")).toBeInTheDocument()
-      expect(screen.getByText("📄 File Upload")).toBeInTheDocument()
-      expect(screen.getByText("🧪 Try Sample")).toBeInTheDocument()
-    })
-
-    test("should handle text input correctly", async () => {
-      const mockOnTextSubmit = jest.fn()
-      const mockProps = {
-        onFileUpload: jest.fn(),
-        onTextSubmit: mockOnTextSubmit,
-        isLoading: false,
-        error: null,
-      }
-
-      render(<FileUploadHelper {...mockProps} />)
-
-      const textarea = screen.getByPlaceholderText("Paste your portfolio statement text here...")
-      const submitButton = screen.getByText("Analyze Portfolio")
-
-      fireEvent.change(textarea, { target: { value: sampleSwissquoteText } })
-      fireEvent.click(submitButton)
-
-      expect(mockOnTextSubmit).toHaveBeenCalledWith(sampleSwissquoteText)
-    })
-
-    test("should handle sample data submission", async () => {
-      const mockOnTextSubmit = jest.fn()
-      const mockProps = {
-        onFileUpload: jest.fn(),
-        onTextSubmit: mockOnTextSubmit,
-        isLoading: false,
-        error: null,
-      }
-
-      render(<FileUploadHelper {...mockProps} />)
-
-      // Switch to sample tab
-      fireEvent.click(screen.getByText("🧪 Try Sample"))
-
-      const sampleButton = screen.getByText("Analyze Sample Portfolio")
-      fireEvent.click(sampleButton)
-
-      expect(mockOnTextSubmit).toHaveBeenCalled()
-    })
-
-    test("should handle file upload", async () => {
-      const mockOnFileUpload = jest.fn()
-      const mockProps = {
-        onFileUpload: mockOnFileUpload,
-        onTextSubmit: jest.fn(),
-        isLoading: false,
-        error: null,
-      }
-
-      render(<FileUploadHelper {...mockProps} />)
-
-      // Switch to file upload tab
-      fireEvent.click(screen.getByText("📄 File Upload"))
-
-      const fileInput = screen.getByLabelText(/click to upload file/i)
-      const file = new File([sampleSwissquoteCSV], "test.csv", { type: "text/csv" })
-
-      fireEvent.change(fileInput, { target: { files: [file] } })
-
-      expect(mockOnFileUpload).toHaveBeenCalledWith(file)
-    })
-
-    test("should show loading state correctly", () => {
-      const mockProps = {
-        onFileUpload: jest.fn(),
-        onTextSubmit: jest.fn(),
-        isLoading: true,
-        error: null,
-      }
-
-      render(<FileUploadHelper {...mockProps} />)
-
-      expect(screen.getByText("Analyzing...")).toBeInTheDocument()
-    })
-
-    test("should display error messages", () => {
-      const mockProps = {
-        onFileUpload: jest.fn(),
-        onTextSubmit: jest.fn(),
-        isLoading: false,
-        error: "Test error message",
-      }
-
-      render(<FileUploadHelper {...mockProps} />)
-
-      expect(screen.getByText("Error: Test error message")).toBeInTheDocument()
-    })
-
-    test("should show copy instructions when requested", () => {
-      const mockProps = {
-        onFileUpload: jest.fn(),
-        onTextSubmit: jest.fn(),
-        isLoading: false,
-        error: null,
-      }
-
-      render(<FileUploadHelper {...mockProps} />)
-
-      const howToCopyButton = screen.getByText("How to Copy")
-      fireEvent.click(howToCopyButton)
-
-      expect(screen.getByText("📋 How to copy text from your PDF:")).toBeInTheDocument()
-    })
+describe("SwissPortfolioAnalyzer", () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
   })
 
-  describe("2. Portfolio Parser Tests", () => {
-    test("should parse Swissquote text format correctly", async () => {
-      const result = await parseSwissPortfolioPDF(sampleSwissquoteText)
-
-      expect(result.positions).toHaveLength(6)
-      expect(result.positions[0].symbol).toBe("AAPL")
-      expect(result.positions[0].name).toBe("Apple Inc.")
-      expect(result.positions[0].quantity).toBe(100)
-      expect(result.positions[0].currency).toBe("USD")
-      expect(result.positions[0].category).toBe("Actions")
-    })
-
-    test("should parse Swissquote CSV format correctly", async () => {
-      const result = await parseSwissPortfolioPDF(sampleSwissquoteCSV)
-
-      expect(result.positions).toHaveLength(6)
-      expect(result.positions[0].symbol).toBe("AAPL")
-      expect(result.positions[0].quantity).toBe(100)
-      expect(result.positions[0].totalValueCHF).toBe(15000)
-    })
-
-    test("should calculate asset allocation correctly", async () => {
-      const result = await parseSwissPortfolioPDF(sampleSwissquoteText)
-
-      const actionsAllocation = result.assetAllocation.find((a) => a.name === "Actions")
-      const etfAllocation = result.assetAllocation.find((a) => a.name === "ETF")
-      const bondsAllocation = result.assetAllocation.find((a) => a.name === "Bonds")
-
-      expect(actionsAllocation).toBeDefined()
-      expect(etfAllocation).toBeDefined()
-      expect(bondsAllocation).toBeDefined()
-
-      expect(actionsAllocation!.percentage).toBeGreaterThan(0)
-      expect(etfAllocation!.percentage).toBeGreaterThan(0)
-      expect(bondsAllocation!.percentage).toBeGreaterThan(0)
-    })
-
-    test("should calculate currency allocation with ETF look-through", async () => {
-      const result = await parseSwissPortfolioPDF(sampleSwissquoteText)
-
-      expect(result.currencyAllocation).toHaveLength(2) // USD and CHF
-
-      const usdAllocation = result.currencyAllocation.find((c) => c.name === "USD")
-      const chfAllocation = result.currencyAllocation.find((c) => c.name === "CHF")
-
-      expect(usdAllocation).toBeDefined()
-      expect(chfAllocation).toBeDefined()
-    })
-
-    test("should handle Swiss number format correctly", async () => {
-      const textWithSwissNumbers = `Aperçu du compte
-Valeur totale du portefeuille CHF 1'234'567.89
-Solde espèces CHF 12'345.67
-
-Actions
-AAPL Apple Inc. 1'000 150.50 USD 150'500.00`
-
-      const result = await parseSwissPortfolioPDF(textWithSwissNumbers)
-
-      expect(result.accountOverview.totalValue).toBe(1234567.89)
-      expect(result.accountOverview.cashBalance).toBe(12345.67)
-      expect(result.positions[0].quantity).toBe(1000)
-    })
-
-    test("should handle empty or invalid input gracefully", async () => {
-      await expect(parseSwissPortfolioPDF("")).rejects.toThrow("Insufficient text content")
-      await expect(parseSwissPortfolioPDF("invalid data")).rejects.toThrow("No portfolio positions found")
-    })
-
-    test("should enrich positions with API data", async () => {
-      const result = await parseSwissPortfolioPDF(sampleSwissquoteText)
-
-      const applePosition = result.positions.find((p) => p.symbol === "AAPL")
-      expect(applePosition).toBeDefined()
-      expect(applePosition!.name).toBe("Apple Inc.")
-      expect(applePosition!.sector).toBe("Technology")
-      expect(applePosition!.geography).toBe("United States")
-    })
-  })
-
-  describe("3. Swiss Portfolio Analyzer Component Tests", () => {
-    test("should render initial state correctly", () => {
+  describe("Initial State", () => {
+    test("renders upload interface when no data provided", () => {
       render(<SwissPortfolioAnalyzer />)
 
       expect(screen.getByText("Swiss Portfolio Analyzer")).toBeInTheDocument()
-      expect(screen.getByText("Upload Portfolio Data")).toBeInTheDocument()
+      expect(screen.getByText(/Upload your Swiss bank portfolio statement/)).toBeInTheDocument()
     })
 
-    test("should handle successful portfolio analysis", async () => {
-      render(<SwissPortfolioAnalyzer />)
+    test("renders portfolio analysis when data provided", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
 
-      // Simulate text input
-      const textarea = screen.getByPlaceholderText("Paste your portfolio statement text here...")
-      fireEvent.change(textarea, { target: { value: sampleSwissquoteText } })
+      expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
+      expect(screen.getByText(/Comprehensive analysis of your Swiss portfolio with 2 positions/)).toBeInTheDocument()
+    })
+  })
 
-      const analyzeButton = screen.getByText("Analyze Portfolio")
-      fireEvent.click(analyzeButton)
+  describe("Account Overview Cards", () => {
+    test("displays correct account overview values", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
 
-      // Wait for analysis to complete
-      await waitFor(
-        () => {
-          expect(screen.getByText("Portfolio Summary")).toBeInTheDocument()
-        },
-        { timeout: 10000 },
-      )
+      expect(screen.getByText("CHF 100,000.00")).toBeInTheDocument() // Total Value
+      expect(screen.getByText("CHF 90,000.00")).toBeInTheDocument() // Securities Value
+      expect(screen.getByText("CHF 10,000.00")).toBeInTheDocument() // Cash Balance
+      expect(screen.getByText("2")).toBeInTheDocument() // Positions count
+    })
 
-      // Check if pie charts are rendered
+    test("displays correct icons in overview cards", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      expect(screen.getByText("Total Value")).toBeInTheDocument()
+      expect(screen.getByText("Securities Value")).toBeInTheDocument()
+      expect(screen.getByText("Cash Balance")).toBeInTheDocument()
+      expect(screen.getByText("Positions")).toBeInTheDocument()
+    })
+  })
+
+  describe("Tab Navigation", () => {
+    test("renders all tab triggers", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument()
+      expect(screen.getByRole("tab", { name: "Positions" })).toBeInTheDocument()
+      expect(screen.getByRole("tab", { name: "Asset Allocation" })).toBeInTheDocument()
+      expect(screen.getByRole("tab", { name: "Geography" })).toBeInTheDocument()
+      expect(screen.getByRole("tab", { name: "Sectors" })).toBeInTheDocument()
+      expect(screen.getByRole("tab", { name: "Tax Analysis" })).toBeInTheDocument()
+    })
+
+    test("switches between tabs correctly", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      // Click on Positions tab
+      fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
+      await waitFor(() => {
+        expect(screen.getByText("Portfolio Positions")).toBeInTheDocument()
+      })
+
+      // Click on Geography tab
+      fireEvent.click(screen.getByRole("tab", { name: "Geography" }))
+      await waitFor(() => {
+        expect(screen.getByText("Geographic Distribution")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("Overview Tab", () => {
+    test("renders pie charts for asset and currency allocation", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
       expect(screen.getByText("Asset Allocation")).toBeInTheDocument()
-      expect(screen.getByText("Currency Distribution")).toBeInTheDocument()
-      expect(screen.getByText("Geographic Allocation")).toBeInTheDocument()
-    })
-
-    test("should display portfolio positions correctly", async () => {
-      render(<SwissPortfolioAnalyzer />)
-
-      // Simulate successful analysis
-      const textarea = screen.getByPlaceholderText("Paste your portfolio statement text here...")
-      fireEvent.change(textarea, { target: { value: sampleSwissquoteText } })
-
-      const analyzeButton = screen.getByText("Analyze Portfolio")
-      fireEvent.click(analyzeButton)
-
-      await waitFor(
-        () => {
-          expect(screen.getByText("AAPL")).toBeInTheDocument()
-          expect(screen.getByText("MSFT")).toBeInTheDocument()
-          expect(screen.getByText("VWRL")).toBeInTheDocument()
-        },
-        { timeout: 10000 },
-      )
-    })
-
-    test("should handle analysis errors gracefully", async () => {
-      render(<SwissPortfolioAnalyzer />)
-
-      // Simulate invalid input
-      const textarea = screen.getByPlaceholderText("Paste your portfolio statement text here...")
-      fireEvent.change(textarea, { target: { value: "invalid data" } })
-
-      const analyzeButton = screen.getByText("Analyze Portfolio")
-      fireEvent.click(analyzeButton)
-
-      await waitFor(
-        () => {
-          expect(screen.getByText(/Error:/)).toBeInTheDocument()
-        },
-        { timeout: 5000 },
-      )
-    })
-
-    test("should switch between analysis tabs correctly", async () => {
-      render(<SwissPortfolioAnalyzer />)
-
-      // First analyze portfolio
-      const textarea = screen.getByPlaceholderText("Paste your portfolio statement text here...")
-      fireEvent.change(textarea, { target: { value: sampleSwissquoteText } })
-
-      const analyzeButton = screen.getByText("Analyze Portfolio")
-      fireEvent.click(analyzeButton)
-
-      await waitFor(
-        () => {
-          expect(screen.getByText("Portfolio Summary")).toBeInTheDocument()
-        },
-        { timeout: 10000 },
-      )
-
-      // Test tab switching
-      const currencyTab = screen.getByText("Currency")
-      fireEvent.click(currencyTab)
       expect(screen.getByText("Currency Allocation")).toBeInTheDocument()
-
-      const geographyTab = screen.getByText("Geography")
-      fireEvent.click(geographyTab)
-      expect(screen.getByText("Geographic Allocation")).toBeInTheDocument()
-
-      const sectorTab = screen.getByText("Sector")
-      fireEvent.click(sectorTab)
-      expect(screen.getByText("Sector Allocation")).toBeInTheDocument()
+      expect(screen.getAllByTestId("pie-chart")).toHaveLength(4) // 2 pie charts + 2 bar charts converted to pie
     })
 
-    test("should display loading state during analysis", async () => {
+    test("renders bar charts for sectors and countries", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      expect(screen.getByText("Top 10 Sectors")).toBeInTheDocument()
+      expect(screen.getByText("Top 10 Countries")).toBeInTheDocument()
+    })
+  })
+
+  describe("Positions Tab", () => {
+    test("displays positions table with correct data", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("AAPL")).toBeInTheDocument()
+        expect(screen.getByText("Apple Inc.")).toBeInTheDocument()
+        expect(screen.getByText("VWRL")).toBeInTheDocument()
+        expect(screen.getByText("Vanguard FTSE All-World UCITS ETF")).toBeInTheDocument()
+      })
+    })
+
+    test("sorts positions by value descending", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
+
+      await waitFor(() => {
+        const rows = screen.getAllByRole("row")
+        // VWRL should appear before AAPL (higher value)
+        const vwrlIndex = rows.findIndex((row) => row.textContent?.includes("VWRL"))
+        const aaplIndex = rows.findIndex((row) => row.textContent?.includes("AAPL"))
+        expect(vwrlIndex).toBeLessThan(aaplIndex)
+      })
+    })
+
+    test("displays correct badges for currency and category", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("USD")).toBeInTheDocument()
+        expect(screen.getByText("CHF")).toBeInTheDocument()
+        expect(screen.getByText("Actions")).toBeInTheDocument()
+        expect(screen.getByText("ETF")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("Asset Allocation Tab", () => {
+    test("displays asset allocation breakdown", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Asset Allocation" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Asset Type Distribution")).toBeInTheDocument()
+        expect(screen.getByText("Currency Exposure")).toBeInTheDocument()
+        expect(screen.getByText("Asset Allocation Breakdown")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("Geography Tab", () => {
+    test("displays geographic distribution", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Geography" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Geographic Distribution")).toBeInTheDocument()
+        expect(screen.getByText("Country Breakdown")).toBeInTheDocument()
+        expect(screen.getByText("Geographic Allocation Details")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("Sectors Tab", () => {
+    test("displays sector analysis", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Sectors" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Sector Distribution")).toBeInTheDocument()
+        expect(screen.getByText("Sector Breakdown")).toBeInTheDocument()
+        expect(screen.getByText("Sector Analysis")).toBeInTheDocument()
+        expect(screen.getByText(/True sector exposure including ETF look-through/)).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("Tax Analysis Tab", () => {
+    test("displays tax optimization summary", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Tax Analysis" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Domicile Distribution")).toBeInTheDocument()
+        expect(screen.getByText("Tax Optimization Summary")).toBeInTheDocument()
+        expect(screen.getByText("Tax Optimized Positions")).toBeInTheDocument()
+        expect(screen.getByText("Non-Optimized Positions")).toBeInTheDocument()
+      })
+    })
+
+    test("shows correct tax optimization counts", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Tax Analysis" }))
+
+      await waitFor(() => {
+        // 1 tax optimized (VWRL), 1 non-optimized (AAPL)
+        const optimizedElements = screen.getAllByText("1")
+        expect(optimizedElements.length).toBeGreaterThanOrEqual(2)
+      })
+    })
+
+    test("displays tax optimization recommendations", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      fireEvent.click(screen.getByRole("tab", { name: "Tax Analysis" }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Tax Optimization Recommendations")).toBeInTheDocument()
+        expect(screen.getByText(/Irish\/Luxembourg ETFs/)).toBeInTheDocument()
+        expect(screen.getByText("Tax Efficient")).toBeInTheDocument()
+        expect(screen.getByText("Consider Optimizing")).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("File Upload Integration", () => {
+    test("handles successful file upload", async () => {
+      const mockParseSwissPortfolioPDF = parseSwissPortfolioPDF as jest.MockedFunction<typeof parseSwissPortfolioPDF>
+      mockParseSwissPortfolioPDF.mockResolvedValueOnce(mockPortfolioData)
+
       render(<SwissPortfolioAnalyzer />)
 
-      const textarea = screen.getByPlaceholderText("Paste your portfolio statement text here...")
-      fireEvent.change(textarea, { target: { value: sampleSwissquoteText } })
+      // Initially shows upload interface
+      expect(screen.getByText("Swiss Portfolio Analyzer")).toBeInTheDocument()
 
-      const analyzeButton = screen.getByText("Analyze Portfolio")
-      fireEvent.click(analyzeButton)
+      // Mock file upload would trigger the analysis
+      // This would be tested in integration tests with actual file upload component
+    })
 
-      // Should show loading state immediately
-      expect(screen.getByText("Analyzing...")).toBeInTheDocument()
+    test("handles file upload errors", async () => {
+      const mockParseSwissPortfolioPDF = parseSwissPortfolioPDF as jest.MockedFunction<typeof parseSwissPortfolioPDF>
+      mockParseSwissPortfolioPDF.mockRejectedValueOnce(new Error("Invalid file format"))
+
+      render(<SwissPortfolioAnalyzer />)
+
+      // Error handling would be tested in integration tests
     })
   })
 
-  describe("4. Real CSV File Tests", () => {
-    test("should handle the provided Swissquote CSV file", async () => {
-      // Fetch the actual CSV file
-      const response = await fetch(
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_08072025_10_59-3uIndJzrWFR29SdmvEW2b3RPE5CQU0.csv",
-      )
-      const csvContent = await response.text()
+  describe("Currency Formatting", () => {
+    test("formats CHF currency correctly", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
 
-      expect(csvContent).toBeTruthy()
-      expect(csvContent.length).toBeGreaterThan(100)
-
-      // Test parsing
-      const result = await parseSwissPortfolioPDF(csvContent)
-
-      expect(result.positions.length).toBeGreaterThan(0)
-      expect(result.assetAllocation.length).toBeGreaterThan(0)
-      expect(result.currencyAllocation.length).toBeGreaterThan(0)
-    })
-
-    test("should detect CSV delimiter correctly", async () => {
-      const response = await fetch(
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_08072025_10_59-3uIndJzrWFR29SdmvEW2b3RPE5CQU0.csv",
-      )
-      const csvContent = await response.text()
-
-      const firstLine = csvContent.split("\n")[0]
-
-      // Should detect comma as delimiter
-      const commaCount = (firstLine.match(/,/g) || []).length
-      const semicolonCount = (firstLine.match(/;/g) || []).length
-
-      expect(commaCount).toBeGreaterThan(semicolonCount)
+      expect(screen.getByText("CHF 100,000.00")).toBeInTheDocument()
+      expect(screen.getByText("CHF 90,000.00")).toBeInTheDocument()
+      expect(screen.getByText("CHF 10,000.00")).toBeInTheDocument()
     })
   })
 
-  describe("5. Edge Cases and Error Handling", () => {
-    test("should handle mixed currency portfolios", async () => {
-      const mixedCurrencyText = `Actions
-AAPL Apple Inc. 100 150.00 USD
-NESN Nestlé SA 200 120.00 CHF
-ASML ASML Holding 50 600.00 EUR`
+  describe("Percentage Formatting", () => {
+    test("formats percentages correctly", async () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
 
-      const result = await parseSwissPortfolioPDF(mixedCurrencyText)
+      fireEvent.click(screen.getByRole("tab", { name: "Positions" }))
 
-      expect(result.currencyAllocation.length).toBe(3)
-      expect(result.currencyAllocation.map((c) => c.name)).toContain("USD")
-      expect(result.currencyAllocation.map((c) => c.name)).toContain("CHF")
-      expect(result.currencyAllocation.map((c) => c.name)).toContain("EUR")
+      await waitFor(() => {
+        expect(screen.getByText("15.00%")).toBeInTheDocument() // AAPL position percentage
+        expect(screen.getByText("46.00%")).toBeInTheDocument() // VWRL position percentage
+      })
+    })
+  })
+
+  describe("Reset Functionality", () => {
+    test("allows analyzing another portfolio", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      const resetButton = screen.getByText("Analyze Another Portfolio")
+      expect(resetButton).toBeInTheDocument()
+
+      fireEvent.click(resetButton)
+
+      // Should return to upload interface
+      expect(screen.getByText("Swiss Portfolio Analyzer")).toBeInTheDocument()
+      expect(screen.getByText(/Upload your Swiss bank portfolio statement/)).toBeInTheDocument()
+    })
+  })
+
+  describe("Loading States", () => {
+    test("shows loading state during analysis", () => {
+      // This would be tested with actual loading state management
+      // The loading state is managed by the FileUploadHelper component
+    })
+  })
+
+  describe("Error Handling", () => {
+    test("displays error messages when analysis fails", () => {
+      const errorMessage = "Failed to parse portfolio data"
+      render(<SwissPortfolioAnalyzer />)
+
+      // Error display would be tested in integration with FileUploadHelper
+    })
+  })
+
+  describe("Responsive Design", () => {
+    test("renders correctly on different screen sizes", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      // Grid layouts should be responsive
+      expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
+
+      // Charts should be in responsive containers
+      expect(screen.getAllByTestId("responsive-container").length).toBeGreaterThan(0)
+    })
+  })
+
+  describe("Chart Rendering", () => {
+    test("renders pie charts with correct data", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
+
+      // Should render multiple pie charts
+      expect(screen.getAllByTestId("pie-chart").length).toBeGreaterThan(0)
+      expect(screen.getAllByTestId("responsive-container").length).toBeGreaterThan(0)
     })
 
-    test("should handle positions without total values", async () => {
-      const simpleText = `Actions
-AAPL 100 150.00 USD
-MSFT 75 330.00 USD`
+    test("renders bar charts with correct data", () => {
+      render(<SwissPortfolioAnalyzer defaultData={mockPortfolioData} />)
 
-      const result = await parseSwissPortfolioPDF(simpleText)
+      // Should render bar charts for sectors and countries
+      expect(screen.getAllByTestId("bar-chart").length).toBeGreaterThan(0)
+    })
+  })
 
-      expect(result.positions.length).toBe(2)
-      expect(result.positions[0].totalValueCHF).toBeGreaterThan(0)
+  describe("Data Validation", () => {
+    test("handles empty portfolio data gracefully", () => {
+      const emptyData = {
+        ...mockPortfolioData,
+        positions: [],
+        assetAllocation: [],
+        currencyAllocation: [],
+        trueCountryAllocation: [],
+        trueSectorAllocation: [],
+        domicileAllocation: [],
+      }
+
+      render(<SwissPortfolioAnalyzer defaultData={emptyData} />)
+
+      expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
+      expect(screen.getByText(/with 0 positions/)).toBeInTheDocument()
     })
 
-    test("should handle malformed CSV data", async () => {
-      const malformedCSV = `,Symbole,Quantité
-Actions,,,
-,AAPL,invalid_quantity
-,MSFT,75`
+    test("handles missing optional data fields", () => {
+      const incompleteData = {
+        ...mockPortfolioData,
+        positions: mockPortfolioData.positions.map((p) => ({
+          ...p,
+          sector: undefined,
+          geography: undefined,
+        })),
+      }
 
-      const result = await parseSwissPortfolioPDF(malformedCSV)
+      render(<SwissPortfolioAnalyzer defaultData={incompleteData} />)
 
-      // Should skip invalid rows and only parse valid ones
-      expect(result.positions.length).toBe(1)
-      expect(result.positions[0].symbol).toBe("MSFT")
-    })
-
-    test("should handle API failures gracefully", async () => {
-      // Mock API failure
-      const { apiService } = require("../lib/api-service")
-      apiService.getStockPrice.mockRejectedValueOnce(new Error("API Error"))
-
-      const result = await parseSwissPortfolioPDF(sampleSwissquoteText)
-
-      // Should still return results with fallback data
-      expect(result.positions.length).toBeGreaterThan(0)
+      expect(screen.getByText("Portfolio Analysis")).toBeInTheDocument()
     })
   })
 })

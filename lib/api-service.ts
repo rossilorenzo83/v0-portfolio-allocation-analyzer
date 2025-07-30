@@ -1,28 +1,35 @@
 interface StockPrice {
+  symbol: string
   price: number
+  change: number
   changePercent: number
   currency: string
+  lastUpdated: string
 }
 
 interface AssetMetadata {
+  symbol: string
   name: string
   sector: string
   country: string
-  marketCap?: number
+  currency: string
+  type: string
 }
 
 interface ETFComposition {
+  symbol: string
   domicile: string
   withholdingTax: number
   currency: Array<{ currency: string; weight: number }>
   country: Array<{ country: string; weight: number }>
   sector: Array<{ sector: string; weight: number }>
+  holdings: Array<{ symbol: string; name: string; weight: number }>
 }
 
 class APIService {
   private cache = new Map<string, { data: any; timestamp: number; ttl: number }>()
   private rateLimitMap = new Map<string, number>()
-  private readonly RATE_LIMIT_DELAY = 100 // 100ms between requests
+  private readonly RATE_LIMIT_DELAY = 200 // 200ms between requests
 
   private async rateLimit(key: string): Promise<void> {
     const lastRequest = this.rateLimitMap.get(key) || 0
@@ -65,23 +72,32 @@ class APIService {
       const response = await fetch(`/api/yahoo/quote/${symbol}`)
       if (response.ok) {
         const data = await response.json()
-        if (data && data.price) {
+        if (data && data.price !== undefined) {
           const result: StockPrice = {
+            symbol: data.symbol || symbol,
             price: data.price,
+            change: data.change || 0,
             changePercent: data.changePercent || 0,
             currency: data.currency || "USD",
+            lastUpdated: data.lastUpdated || new Date().toISOString(),
           }
           this.setCache(cacheKey, result, 5) // Cache for 5 minutes
           return result
         }
       }
 
-      // Fallback to known prices
-      const knownPrices = this.getKnownPrices()
-      if (knownPrices[symbol]) {
-        const result = knownPrices[symbol]
-        this.setCache(cacheKey, result, 60) // Cache fallback for 1 hour
-        return result
+      // Fallback to web scraping Yahoo Finance
+      const scrapedPrice = await this.scrapeYahooPrice(symbol)
+      if (scrapedPrice) {
+        this.setCache(cacheKey, scrapedPrice, 15) // Cache scrapped data longer
+        return scrapedPrice
+      }
+
+      // Final fallback to known prices
+      const knownPrice = this.getKnownPrice(symbol)
+      if (knownPrice) {
+        this.setCache(cacheKey, knownPrice, 60) // Cache fallback for 1 hour
+        return knownPrice
       }
 
       return null
@@ -89,8 +105,8 @@ class APIService {
       console.error(`Error fetching price for ${symbol}:`, error)
 
       // Return known price as fallback
-      const knownPrices = this.getKnownPrices()
-      return knownPrices[symbol] || null
+      const knownPrice = this.getKnownPrice(symbol)
+      return knownPrice
     }
   }
 
@@ -108,22 +124,30 @@ class APIService {
         const data = await response.json()
         if (data && data.name) {
           const result: AssetMetadata = {
+            symbol: data.symbol || symbol,
             name: data.name,
             sector: data.sector || "Unknown",
             country: data.country || "Unknown",
-            marketCap: data.marketCap,
+            currency: data.currency || "USD",
+            type: data.type || "Stock",
           }
           this.setCache(cacheKey, result, 1440) // Cache for 24 hours
           return result
         }
       }
 
-      // Fallback to known metadata
-      const knownMetadata = this.getKnownMetadata()
-      if (knownMetadata[symbol]) {
-        const result = knownMetadata[symbol]
-        this.setCache(cacheKey, result, 1440)
-        return result
+      // Fallback to web scraping
+      const scrapedMetadata = await this.scrapeYahooMetadata(symbol)
+      if (scrapedMetadata) {
+        this.setCache(cacheKey, scrapedMetadata, 1440)
+        return scrapedMetadata
+      }
+
+      // Final fallback to known metadata
+      const knownMetadata = this.getKnownMetadata(symbol)
+      if (knownMetadata) {
+        this.setCache(cacheKey, knownMetadata, 1440)
+        return knownMetadata
       }
 
       return null
@@ -131,8 +155,8 @@ class APIService {
       console.error(`Error fetching metadata for ${symbol}:`, error)
 
       // Return known metadata as fallback
-      const knownMetadata = this.getKnownMetadata()
-      return knownMetadata[symbol] || null
+      const knownMetadata = this.getKnownMetadata(symbol)
+      return knownMetadata
     }
   }
 
@@ -148,25 +172,33 @@ class APIService {
       const response = await fetch(`/api/yahoo/etf/${symbol}`)
       if (response.ok) {
         const data = await response.json()
-        if (data && data.holdings) {
+        if (data && data.symbol) {
           const result: ETFComposition = {
+            symbol: data.symbol,
             domicile: data.domicile || "US",
             withholdingTax: data.withholdingTax || 30,
             currency: data.currency || [],
             country: data.country || [],
             sector: data.sector || [],
+            holdings: data.holdings || [],
           }
           this.setCache(cacheKey, result, 1440) // Cache for 24 hours
           return result
         }
       }
 
-      // Fallback to known ETF compositions
-      const knownCompositions = this.getKnownETFCompositions()
-      if (knownCompositions[symbol]) {
-        const result = knownCompositions[symbol]
-        this.setCache(cacheKey, result, 1440)
-        return result
+      // Fallback to web scraping ETF data
+      const scrapedComposition = await this.scrapeETFComposition(symbol)
+      if (scrapedComposition) {
+        this.setCache(cacheKey, scrapedComposition, 1440)
+        return scrapedComposition
+      }
+
+      // Final fallback to known ETF compositions
+      const knownComposition = this.getKnownETFComposition(symbol)
+      if (knownComposition) {
+        this.setCache(cacheKey, knownComposition, 1440)
+        return knownComposition
       }
 
       return null
@@ -174,60 +206,326 @@ class APIService {
       console.error(`Error fetching ETF composition for ${symbol}:`, error)
 
       // Return known composition as fallback
-      const knownCompositions = this.getKnownETFCompositions()
-      return knownCompositions[symbol] || null
+      const knownComposition = this.getKnownETFComposition(symbol)
+      return knownComposition
     }
   }
 
-  private getKnownPrices(): Record<string, StockPrice> {
-    return {
-      AAPL: { price: 150.0, changePercent: 1.5, currency: "USD" },
-      MSFT: { price: 330.0, changePercent: 0.8, currency: "USD" },
-      GOOGL: { price: 2800.0, changePercent: -0.5, currency: "USD" },
-      AMZN: { price: 3200.0, changePercent: 2.1, currency: "USD" },
-      NVDA: { price: 450.0, changePercent: 3.2, currency: "USD" },
-      TSLA: { price: 800.0, changePercent: -1.2, currency: "USD" },
-      META: { price: 280.0, changePercent: 1.8, currency: "USD" },
-      NESN: { price: 120.0, changePercent: 0.3, currency: "CHF" },
-      NOVN: { price: 85.0, changePercent: -0.2, currency: "CHF" },
-      ROG: { price: 280.0, changePercent: 0.5, currency: "CHF" },
-      ASML: { price: 600.0, changePercent: 1.2, currency: "EUR" },
-      SAP: { price: 120.0, changePercent: 0.7, currency: "EUR" },
-      VWRL: { price: 89.96, changePercent: 0.9, currency: "CHF" },
-      IS3N: { price: 30.5, changePercent: 1.1, currency: "CHF" },
-      VTI: { price: 220.0, changePercent: 1.0, currency: "USD" },
-      VXUS: { price: 58.0, changePercent: 0.5, currency: "USD" },
-      VEA: { price: 48.0, changePercent: 0.3, currency: "USD" },
-      VWO: { price: 42.0, changePercent: 1.5, currency: "USD" },
+  // Web scraping methods
+  private async scrapeYahooPrice(symbol: string): Promise<StockPrice | null> {
+    try {
+      const url = `https://finance.yahoo.com/quote/${symbol}`
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      })
+
+      if (!response.ok) return null
+
+      const html = await response.text()
+
+      // Extract price using regex patterns
+      const priceMatch =
+        html.match(/data-symbol="[^"]*"[^>]*data-field="regularMarketPrice"[^>]*>([^<]+)</i) ||
+        html.match(/"regularMarketPrice":\{"raw":([^,}]+)/i)
+
+      const changeMatch = html.match(/"regularMarketChange":\{"raw":([^,}]+)/i)
+      const changePercentMatch = html.match(/"regularMarketChangePercent":\{"raw":([^,}]+)/i)
+      const currencyMatch = html.match(/"currency":"([^"]+)"/i)
+
+      if (priceMatch) {
+        return {
+          symbol,
+          price: Number.parseFloat(priceMatch[1]),
+          change: changeMatch ? Number.parseFloat(changeMatch[1]) : 0,
+          changePercent: changePercentMatch ? Number.parseFloat(changePercentMatch[1]) : 0,
+          currency: currencyMatch ? currencyMatch[1] : "USD",
+          lastUpdated: new Date().toISOString(),
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error(`Error scraping price for ${symbol}:`, error)
+      return null
     }
   }
 
-  private getKnownMetadata(): Record<string, AssetMetadata> {
-    return {
-      AAPL: { name: "Apple Inc.", sector: "Technology", country: "United States" },
-      MSFT: { name: "Microsoft Corporation", sector: "Technology", country: "United States" },
-      GOOGL: { name: "Alphabet Inc.", sector: "Technology", country: "United States" },
-      AMZN: { name: "Amazon.com Inc.", sector: "Consumer Discretionary", country: "United States" },
-      NVDA: { name: "NVIDIA Corporation", sector: "Technology", country: "United States" },
-      TSLA: { name: "Tesla Inc.", sector: "Consumer Discretionary", country: "United States" },
-      META: { name: "Meta Platforms Inc.", sector: "Technology", country: "United States" },
-      NESN: { name: "Nestlé SA", sector: "Consumer Staples", country: "Switzerland" },
-      NOVN: { name: "Novartis AG", sector: "Healthcare", country: "Switzerland" },
-      ROG: { name: "Roche Holding AG", sector: "Healthcare", country: "Switzerland" },
-      ASML: { name: "ASML Holding NV", sector: "Technology", country: "Netherlands" },
-      SAP: { name: "SAP SE", sector: "Technology", country: "Germany" },
-      VWRL: { name: "Vanguard FTSE All-World UCITS ETF", sector: "Mixed", country: "Global" },
-      IS3N: { name: "iShares Core MSCI World UCITS ETF", sector: "Mixed", country: "Global" },
-      VTI: { name: "Vanguard Total Stock Market ETF", sector: "Mixed", country: "United States" },
-      VXUS: { name: "Vanguard Total International Stock ETF", sector: "Mixed", country: "Global" },
-      VEA: { name: "Vanguard FTSE Developed Markets ETF", sector: "Mixed", country: "Global" },
-      VWO: { name: "Vanguard FTSE Emerging Markets ETF", sector: "Mixed", country: "Global" },
+  private async scrapeYahooMetadata(symbol: string): Promise<AssetMetadata | null> {
+    try {
+      const url = `https://finance.yahoo.com/quote/${symbol}/profile`
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      })
+
+      if (!response.ok) return null
+
+      const html = await response.text()
+
+      // Extract metadata using regex patterns
+      const nameMatch = html.match(/<h1[^>]*>([^<]+)</i) || html.match(/"longName":"([^"]+)"/i)
+
+      const sectorMatch = html.match(/"sector":"([^"]+)"/i) || html.match(/Sector[^>]*>([^<]+)</i)
+
+      const countryMatch = html.match(/"country":"([^"]+)"/i) || html.match(/Country[^>]*>([^<]+)</i)
+
+      if (nameMatch) {
+        return {
+          symbol,
+          name: nameMatch[1].trim(),
+          sector: sectorMatch ? sectorMatch[1] : "Unknown",
+          country: countryMatch ? countryMatch[1] : "Unknown",
+          currency: "USD",
+          type: "Stock",
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error(`Error scraping metadata for ${symbol}:`, error)
+      return null
     }
   }
 
-  private getKnownETFCompositions(): Record<string, ETFComposition> {
-    return {
+  private async scrapeETFComposition(symbol: string): Promise<ETFComposition | null> {
+    try {
+      const url = `https://finance.yahoo.com/quote/${symbol}/holdings`
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      })
+
+      if (!response.ok) return null
+
+      const html = await response.text()
+
+      // Extract sector breakdown
+      const sectorMatches = html.matchAll(/data-reactid="[^"]*"[^>]*>([^<]+)<\/span[^>]*>[^<]*<span[^>]*>([0-9.]+)%/gi)
+      const sectors = Array.from(sectorMatches).map((match) => ({
+        sector: match[1].trim(),
+        weight: Number.parseFloat(match[2]),
+      }))
+
+      // Extract top holdings
+      const holdingMatches = html.matchAll(
+        /<a[^>]*>([A-Z0-9.]+)<\/a>[^<]*<[^>]*>([^<]+)<[^>]*>[^<]*<[^>]*>([0-9.]+)%/gi,
+      )
+      const holdings = Array.from(holdingMatches)
+        .slice(0, 10)
+        .map((match) => ({
+          symbol: match[1].trim(),
+          name: match[2].trim(),
+          weight: Number.parseFloat(match[3]),
+        }))
+
+      if (sectors.length > 0 || holdings.length > 0) {
+        return {
+          symbol,
+          domicile: "US", // Default assumption
+          withholdingTax: 30,
+          currency: [{ currency: "USD", weight: 100 }], // Default assumption
+          country: [{ country: "United States", weight: 100 }], // Default assumption
+          sector: sectors,
+          holdings,
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error(`Error scraping ETF composition for ${symbol}:`, error)
+      return null
+    }
+  }
+
+  // Known data fallbacks
+  private getKnownPrice(symbol: string): StockPrice | null {
+    const knownPrices: Record<string, Omit<StockPrice, "symbol" | "lastUpdated">> = {
+      AAPL: { price: 150.0, change: 2.5, changePercent: 1.69, currency: "USD" },
+      MSFT: { price: 330.0, change: 2.8, changePercent: 0.86, currency: "USD" },
+      GOOGL: { price: 125.0, change: -1.2, changePercent: -0.95, currency: "USD" },
+      AMZN: { price: 145.0, change: 3.1, changePercent: 2.18, currency: "USD" },
+      NVDA: { price: 450.0, change: 15.2, changePercent: 3.49, currency: "USD" },
+      TSLA: { price: 220.0, change: -5.8, changePercent: -2.57, currency: "USD" },
+      META: { price: 280.0, change: 4.2, changePercent: 1.52, currency: "USD" },
+      NESN: { price: 120.0, change: 0.5, changePercent: 0.42, currency: "CHF" },
+      NOVN: { price: 85.0, change: -0.3, changePercent: -0.35, currency: "CHF" },
+      ROG: { price: 280.0, change: 1.2, changePercent: 0.43, currency: "CHF" },
+      ASML: { price: 600.0, change: 8.5, changePercent: 1.44, currency: "EUR" },
+      SAP: { price: 120.0, change: 0.9, changePercent: 0.76, currency: "EUR" },
+      VWRL: { price: 89.96, change: 0.8, changePercent: 0.9, currency: "CHF" },
+      IS3N: { price: 30.5, change: 0.3, changePercent: 0.99, currency: "CHF" },
+      VTI: { price: 220.0, change: 2.2, changePercent: 1.01, currency: "USD" },
+      VXUS: { price: 58.0, change: 0.3, changePercent: 0.52, currency: "USD" },
+      VEA: { price: 48.0, change: 0.1, changePercent: 0.21, currency: "USD" },
+      VWO: { price: 42.0, change: 0.6, changePercent: 1.45, currency: "USD" },
+    }
+
+    const known = knownPrices[symbol]
+    if (known) {
+      return {
+        symbol,
+        ...known,
+        lastUpdated: new Date().toISOString(),
+      }
+    }
+    return null
+  }
+
+  private getKnownMetadata(symbol: string): AssetMetadata | null {
+    const knownMetadata: Record<string, AssetMetadata> = {
+      AAPL: {
+        symbol: "AAPL",
+        name: "Apple Inc.",
+        sector: "Technology",
+        country: "United States",
+        currency: "USD",
+        type: "Stock",
+      },
+      MSFT: {
+        symbol: "MSFT",
+        name: "Microsoft Corporation",
+        sector: "Technology",
+        country: "United States",
+        currency: "USD",
+        type: "Stock",
+      },
+      GOOGL: {
+        symbol: "GOOGL",
+        name: "Alphabet Inc.",
+        sector: "Technology",
+        country: "United States",
+        currency: "USD",
+        type: "Stock",
+      },
+      AMZN: {
+        symbol: "AMZN",
+        name: "Amazon.com Inc.",
+        sector: "Consumer Discretionary",
+        country: "United States",
+        currency: "USD",
+        type: "Stock",
+      },
+      NVDA: {
+        symbol: "NVDA",
+        name: "NVIDIA Corporation",
+        sector: "Technology",
+        country: "United States",
+        currency: "USD",
+        type: "Stock",
+      },
+      TSLA: {
+        symbol: "TSLA",
+        name: "Tesla Inc.",
+        sector: "Consumer Discretionary",
+        country: "United States",
+        currency: "USD",
+        type: "Stock",
+      },
+      META: {
+        symbol: "META",
+        name: "Meta Platforms Inc.",
+        sector: "Technology",
+        country: "United States",
+        currency: "USD",
+        type: "Stock",
+      },
+      NESN: {
+        symbol: "NESN",
+        name: "Nestlé SA",
+        sector: "Consumer Staples",
+        country: "Switzerland",
+        currency: "CHF",
+        type: "Stock",
+      },
+      NOVN: {
+        symbol: "NOVN",
+        name: "Novartis AG",
+        sector: "Healthcare",
+        country: "Switzerland",
+        currency: "CHF",
+        type: "Stock",
+      },
+      ROG: {
+        symbol: "ROG",
+        name: "Roche Holding AG",
+        sector: "Healthcare",
+        country: "Switzerland",
+        currency: "CHF",
+        type: "Stock",
+      },
+      ASML: {
+        symbol: "ASML",
+        name: "ASML Holding NV",
+        sector: "Technology",
+        country: "Netherlands",
+        currency: "EUR",
+        type: "Stock",
+      },
+      SAP: { symbol: "SAP", name: "SAP SE", sector: "Technology", country: "Germany", currency: "EUR", type: "Stock" },
       VWRL: {
+        symbol: "VWRL",
+        name: "Vanguard FTSE All-World UCITS ETF",
+        sector: "Mixed",
+        country: "Global",
+        currency: "CHF",
+        type: "ETF",
+      },
+      IS3N: {
+        symbol: "IS3N",
+        name: "iShares Core MSCI World UCITS ETF",
+        sector: "Mixed",
+        country: "Global",
+        currency: "CHF",
+        type: "ETF",
+      },
+      VTI: {
+        symbol: "VTI",
+        name: "Vanguard Total Stock Market ETF",
+        sector: "Mixed",
+        country: "United States",
+        currency: "USD",
+        type: "ETF",
+      },
+      VXUS: {
+        symbol: "VXUS",
+        name: "Vanguard Total International Stock ETF",
+        sector: "Mixed",
+        country: "Global",
+        currency: "USD",
+        type: "ETF",
+      },
+      VEA: {
+        symbol: "VEA",
+        name: "Vanguard FTSE Developed Markets ETF",
+        sector: "Mixed",
+        country: "Global",
+        currency: "USD",
+        type: "ETF",
+      },
+      VWO: {
+        symbol: "VWO",
+        name: "Vanguard FTSE Emerging Markets ETF",
+        sector: "Mixed",
+        country: "Global",
+        currency: "USD",
+        type: "ETF",
+      },
+    }
+
+    return knownMetadata[symbol] || null
+  }
+
+  private getKnownETFComposition(symbol: string): ETFComposition | null {
+    const knownCompositions: Record<string, ETFComposition> = {
+      VWRL: {
+        symbol: "VWRL",
         domicile: "IE",
         withholdingTax: 15,
         currency: [
@@ -263,8 +561,16 @@ class APIService {
           { sector: "Real Estate", weight: 3.0 },
           { sector: "Other", weight: 2.0 },
         ],
+        holdings: [
+          { symbol: "AAPL", name: "Apple Inc.", weight: 4.2 },
+          { symbol: "MSFT", name: "Microsoft Corp.", weight: 3.8 },
+          { symbol: "GOOGL", name: "Alphabet Inc.", weight: 2.1 },
+          { symbol: "AMZN", name: "Amazon.com Inc.", weight: 1.9 },
+          { symbol: "NVDA", name: "NVIDIA Corp.", weight: 1.8 },
+        ],
       },
       IS3N: {
+        symbol: "IS3N",
         domicile: "IE",
         withholdingTax: 15,
         currency: [
@@ -300,8 +606,16 @@ class APIService {
           { sector: "Real Estate", weight: 2.0 },
           { sector: "Other", weight: 2.0 },
         ],
+        holdings: [
+          { symbol: "AAPL", name: "Apple Inc.", weight: 4.5 },
+          { symbol: "MSFT", name: "Microsoft Corp.", weight: 4.1 },
+          { symbol: "GOOGL", name: "Alphabet Inc.", weight: 2.3 },
+          { symbol: "AMZN", name: "Amazon.com Inc.", weight: 2.0 },
+          { symbol: "NVDA", name: "NVIDIA Corp.", weight: 1.8 },
+        ],
       },
       VTI: {
+        symbol: "VTI",
         domicile: "US",
         withholdingTax: 30,
         currency: [{ currency: "USD", weight: 100.0 }],
@@ -320,8 +634,16 @@ class APIService {
           { sector: "Materials", weight: 3.0 },
           { sector: "Other", weight: 2.0 },
         ],
+        holdings: [
+          { symbol: "AAPL", name: "Apple Inc.", weight: 7.2 },
+          { symbol: "MSFT", name: "Microsoft Corp.", weight: 6.8 },
+          { symbol: "GOOGL", name: "Alphabet Inc.", weight: 4.1 },
+          { symbol: "AMZN", name: "Amazon.com Inc.", weight: 3.4 },
+          { symbol: "NVDA", name: "NVIDIA Corp.", weight: 2.9 },
+        ],
       },
       VXUS: {
+        symbol: "VXUS",
         domicile: "US",
         withholdingTax: 30,
         currency: [
@@ -359,8 +681,11 @@ class APIService {
           { sector: "Real Estate", weight: 2.0 },
           { sector: "Other", weight: 1.0 },
         ],
+        holdings: [],
       },
     }
+
+    return knownCompositions[symbol] || null
   }
 }
 
