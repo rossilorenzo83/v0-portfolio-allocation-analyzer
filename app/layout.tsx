@@ -7,8 +7,8 @@ import ClientLayout from "./ClientLayout" // Import the ClientLayout
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Portfolio Allocation Analyzer",
-  description: "Analyze your investment portfolio allocation and optimize for Swiss taxes.",
+  title: "Swiss Portfolio Analyzer",
+  description: "Analyze your Swiss investment portfolio with ease.",
     generator: 'v0.dev'
 }
 
@@ -18,7 +18,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ClientLayout>{children}</ClientLayout>
       </body>

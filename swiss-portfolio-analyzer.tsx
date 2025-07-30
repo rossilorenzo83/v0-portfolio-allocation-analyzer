@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import {
-  parseSwissPortfolioPDF,
+  parsePortfolioCsv, // Changed from parseSwissPortfolioPDF
   type SwissPortfolioData,
   type PortfolioPosition,
   type AllocationItem,
@@ -68,13 +68,15 @@ export default function SwissPortfolioAnalyzer() {
           title: "Processing File",
           description: `Analyzing ${fileInput.name}...`,
         })
-        data = await parseSwissPortfolioPDF(fileInput)
+        // Read file content as text for CSV parsing
+        const fileContent = await fileInput.text()
+        data = parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
       } else if (textInput) {
         toast({
           title: "Processing Text",
           description: "Analyzing pasted text...",
         })
-        data = await parseSwissPortfolioPDF(textInput)
+        data = parsePortfolioCsv(textInput) // Use parsePortfolioCsv
       } else {
         throw new Error("Please upload a file or paste text to analyze.")
       }
@@ -229,7 +231,7 @@ export default function SwissPortfolioAnalyzer() {
         <CardHeader>
           <CardTitle className="text-3xl font-bold">Swiss Portfolio Analyzer</CardTitle>
           <CardDescription>
-            Upload your Swiss bank PDF/CSV or paste text to get a detailed portfolio analysis.
+            Upload your Swiss bank CSV or paste text to get a detailed portfolio analysis.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -244,7 +246,7 @@ export default function SwissPortfolioAnalyzer() {
             </TabsContent>
             <TabsContent value="paste" className="space-y-4">
               <Textarea
-                placeholder="Paste your portfolio data here (e.g., from a PDF or CSV file)"
+                placeholder="Paste your portfolio data here (e.g., from a CSV file)"
                 rows={10}
                 value={textInput}
                 onChange={handleTextChange}
