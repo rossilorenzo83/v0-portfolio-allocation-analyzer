@@ -203,90 +203,186 @@ async function parseSwissPortfolioPDF(input: File | string): Promise<SwissPortfo
 
 function looksLikeSwissquoteCSV(text: string): boolean {
   const lines = text.split("\n").slice(0, 20) // Check first 20 lines
-  return lines.some(
-    (line) =>
-      line.includes("Symbole") ||
-      line.includes("Symbol") ||
-      line.includes("Quantité") ||
-      line.includes("Quantity") ||
-      line.includes("Prix unitaire") ||
-      line.includes("Unit Price") ||
-      line.includes("Valeur totale CHF") ||
-      line.includes("Total Value CHF"),
+
+  // Check for common CSV indicators
+  const csvIndicators = [
+    "Symbole",
+    "Symbol",
+    "Ticker",
+    "Quantité",
+    "Quantity",
+    "Qty",
+    "Prix unitaire",
+    "Unit Price",
+    "Price",
+    "Valeur totale CHF",
+    "Total Value CHF",
+    "Total CHF",
+    "Devise",
+    "Currency",
+    "Dev",
+    "G&P",
+    "Gain",
+    "Loss",
+    "P&L",
+    "Positions %",
+    "Weight",
+    "Allocation",
+  ]
+
+  return (
+    lines.some((line) => csvIndicators.some((indicator) => line.toLowerCase().includes(indicator.toLowerCase()))) ||
+    text.includes(",") ||
+    text.includes(";")
   )
 }
 
 function detectCSVDelimiter(csvText: string): string {
   const delimiters = [",", ";", "\t", "|"]
-  const firstDataLine =
-    csvText
-      .split(/\r?\n/)
-      .find(
-        (line) => line.trim() && (line.includes("Symbole") || line.includes("Symbol") || line.includes("Quantité")),
-      ) || ""
+  const lines = csvText.split(/\r?\n/).slice(0, 10) // Check first 10 lines
 
-  const counts = delimiters.map((d) => ({
-    d,
-    c: (firstDataLine.match(new RegExp(`\\${d}`, "g")) || []).length,
-  }))
+  let bestDelimiter = ","
+  let maxScore = 0
 
-  const best = counts.reduce((a, b) => (b.c > a.c ? b : a), { d: ",", c: 0 })
-  console.log("Delimiter detection:", counts, "chosen:", best.d)
-  return best.c === 0 ? "," : best.d
+  for (const delimiter of delimiters) {
+    let score = 0
+    let consistentColumns = true
+    let columnCount = -1
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+
+      const columns = line.split(delimiter).length
+
+      if (columnCount === -1) {
+        columnCount = columns
+      } else if (columnCount !== columns) {
+        consistentColumns = false
+      }
+
+      // Score based on number of columns and consistency
+      if (columns > 1) {
+        score += columns
+        if (consistentColumns) score += 5
+      }
+    }
+
+    console.log(`Delimiter '${delimiter}': score=${score}, consistent=${consistentColumns}`)
+
+    if (score > maxScore) {
+      maxScore = score
+      bestDelimiter = delimiter
+    }
+  }
+
+  console.log("Selected delimiter:", bestDelimiter)
+  return bestDelimiter
 }
 
 async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
-  console.log("Starting Swissquote CSV parsing...")
+  console.log("Starting enhanced CSV parsing...")
+  console.log("CSV preview (first 1000 chars):", csv.substring(0, 1000))
 
   const delimiter = detectCSVDelimiter(csv)
-  const { data } = Papa.parse(csv, {
+
+  // Parse with Papa Parse
+  const { data, errors } = Papa.parse(csv, {
     delimiter,
     skipEmptyLines: "greedy",
     dynamicTyping: false,
+    header: false, // We'll handle headers manually for more control
   })
 
-  console.log("CSV parsing completed with", data.length, "rows")
-  console.log("Sample rows:", data.slice(0, 5))
+  if (errors.length > 0) {
+    console.warn("CSV parsing warnings:", errors)
+  }
 
-  // Find header row
+  console.log("CSV parsing completed with", data.length, "rows")
+  console.log("Sample rows:", data.slice(0, 10))
+
+  const rows = data as string[][]
+
+  // Find header row with more flexible matching
   let headerRowIndex = -1
   let headers: string[] = []
 
-  for (let i = 0; i < Math.min(data.length, 50); i++) {
-    const row = data[i] as string[]
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const row = rows[i]
+    if (!row || row.length < 2) continue
+
     const rowText = row.join(" ").toLowerCase()
 
-    if (
-      rowText.includes("symbole") ||
-      rowText.includes("symbol") ||
-      rowText.includes("quantité") ||
-      rowText.includes("quantity")
-    ) {
+    // Look for key header indicators
+    const headerIndicators = [
+      "symbole",
+      "symbol",
+      "ticker",
+      "quantité",
+      "quantity",
+      "qty",
+      "nombre",
+      "prix",
+      "price",
+      "cours",
+      "valeur",
+      "devise",
+      "currency",
+      "dev",
+      "ccy",
+    ]
+
+    const matchCount = headerIndicators.filter((indicator) => rowText.includes(indicator)).length
+
+    console.log(`Row ${i} header match count: ${matchCount}, content: ${rowText.substring(0, 100)}`)
+
+    if (matchCount >= 2) {
+      // Need at least 2 header indicators
       headerRowIndex = i
       headers = row.map((h) => h.toString().trim())
+      console.log("Header found at row", i, ":", headers)
       break
     }
   }
 
+  // If no clear header found, try to infer structure
   if (headerRowIndex === -1) {
-    throw new Error("Could not find header row in CSV file")
+    console.log("No clear header found, attempting structure inference...")
+    return await parseCSVWithoutHeaders(rows)
   }
 
-  console.log("Header found at row", headerRowIndex, ":", headers)
-
-  // Map column indices
+  // Map column indices with more flexible matching
   const columnMap = {
-    symbol: findColumnIndex(headers, ["symbole", "symbol", "ticker"]),
-    name: findColumnIndex(headers, ["nom", "name", "description", "libellé"]),
-    quantity: findColumnIndex(headers, ["quantité", "quantity", "qty", "nombre"]),
-    unitCost: findColumnIndex(headers, ["prix unitaire", "unit price", "cost", "coût unitaire"]),
-    price: findColumnIndex(headers, ["prix", "price", "cours", "valeur"]),
-    currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy"]),
-    totalCHF: findColumnIndex(headers, ["valeur totale chf", "total value chf", "total chf", "montant chf"]),
-    gainLoss: findColumnIndex(headers, ["g&p chf", "gain loss chf", "plus-value", "résultat"]),
-    gainLossPercent: findColumnIndex(headers, ["g&p %", "gain loss %", "plus-value %", "résultat %"]),
-    positionPercent: findColumnIndex(headers, ["positions %", "position %", "poids", "weight"]),
-    dailyChange: findColumnIndex(headers, ["quot. %", "daily %", "variation", "change"]),
+    symbol: findColumnIndex(headers, ["symbole", "symbol", "ticker", "isin", "code"]),
+    name: findColumnIndex(headers, ["nom", "name", "description", "libellé", "libelle", "designation"]),
+    quantity: findColumnIndex(headers, ["quantité", "quantity", "qty", "nombre", "qte"]),
+    unitCost: findColumnIndex(headers, [
+      "prix unitaire",
+      "unit price",
+      "cost",
+      "coût unitaire",
+      "cout unitaire",
+      "prix d'achat",
+    ]),
+    price: findColumnIndex(headers, ["prix", "price", "cours", "valeur", "current price", "market price"]),
+    currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy", "curr"]),
+    totalCHF: findColumnIndex(headers, [
+      "valeur totale chf",
+      "total value chf",
+      "total chf",
+      "montant chf",
+      "valeur chf",
+    ]),
+    gainLoss: findColumnIndex(headers, ["g&p chf", "gain loss chf", "plus-value", "résultat", "resultat", "p&l"]),
+    gainLossPercent: findColumnIndex(headers, [
+      "g&p %",
+      "gain loss %",
+      "plus-value %",
+      "résultat %",
+      "resultat %",
+      "p&l %",
+    ]),
+    positionPercent: findColumnIndex(headers, ["positions %", "position %", "poids", "weight", "allocation"]),
+    dailyChange: findColumnIndex(headers, ["quot. %", "daily %", "variation", "change", "var. quot."]),
   }
 
   console.log("Column mapping:", columnMap)
@@ -296,19 +392,23 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
   let totalPortfolioValue = 0
 
   // Parse data rows
-  for (let i = headerRowIndex + 1; i < data.length; i++) {
-    const row = data[i] as string[]
+  for (let i = headerRowIndex + 1; i < rows.length; i++) {
+    const row = rows[i]
 
-    if (!row || row.length < headers.length) continue
+    if (!row || row.length < Math.max(2, headers.length / 2)) continue
 
     const firstCell = (row[0] || "").toString().trim()
+    const secondCell = (row[1] || "").toString().trim()
+    const fullRowText = row.join(" ").toLowerCase()
 
     // Skip empty rows
-    if (!firstCell) continue
+    if (!firstCell && !secondCell) continue
+
+    console.log(`Processing row ${i}: [${row.slice(0, 5).join(", ")}...]`)
 
     // Check for category headers
-    const categoryMatch = Object.keys(CATEGORY_ALIASES).find((cat) =>
-      firstCell.toLowerCase().includes(cat.toLowerCase()),
+    const categoryMatch = Object.keys(CATEGORY_ALIASES).find(
+      (cat) => firstCell.toLowerCase().includes(cat.toLowerCase()) || fullRowText.includes(cat.toLowerCase()),
     )
 
     if (categoryMatch) {
@@ -319,23 +419,31 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
 
     // Skip total/summary rows
     if (
-      firstCell.toLowerCase().includes("total") ||
-      firstCell.toLowerCase().includes("sous-total") ||
-      firstCell.toLowerCase().includes("subtotal")
+      fullRowText.includes("total") ||
+      fullRowText.includes("sous-total") ||
+      fullRowText.includes("subtotal") ||
+      fullRowText.includes("somme") ||
+      fullRowText.includes("sum")
     ) {
       // Try to extract total portfolio value
-      const totalValue = extractNumberFromRow(row)
+      const totalValue = extractLargestNumberFromRow(row)
       if (totalValue > totalPortfolioValue) {
         totalPortfolioValue = totalValue
+        console.log(`Found potential total value: ${totalValue}`)
       }
       continue
     }
 
     // Parse position data
-    const symbol = columnMap.symbol >= 0 ? row[columnMap.symbol]?.toString().trim() : ""
+    const symbol = columnMap.symbol >= 0 ? cleanSymbol(row[columnMap.symbol]?.toString()) : ""
 
-    if (!symbol || symbol.length < 2) continue
+    // Skip if no valid symbol
+    if (!symbol || symbol.length < 1) {
+      console.log(`Skipping row ${i}: no valid symbol`)
+      continue
+    }
 
+    // Extract other fields
     const name = columnMap.name >= 0 ? row[columnMap.name]?.toString().trim() : symbol
     const quantityStr = columnMap.quantity >= 0 ? row[columnMap.quantity]?.toString() : ""
     const unitCostStr = columnMap.unitCost >= 0 ? row[columnMap.unitCost]?.toString() : ""
@@ -346,7 +454,7 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
     const positionPercentStr = columnMap.positionPercent >= 0 ? row[columnMap.positionPercent]?.toString() : ""
     const dailyChangeStr = columnMap.dailyChange >= 0 ? row[columnMap.dailyChange]?.toString() : ""
 
-    // Parse numbers with Swiss formatting
+    // Parse numbers with enhanced Swiss formatting
     const quantity = parseSwissNumber(quantityStr)
     const unitCost = parseSwissNumber(unitCostStr)
     const price = parseSwissNumber(priceStr) || unitCost
@@ -355,13 +463,29 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
     const positionPercent = parseSwissNumber(positionPercentStr.replace("%", ""))
     const dailyChange = parseSwissNumber(dailyChangeStr.replace("%", ""))
 
+    console.log(
+      `Parsed values: symbol=${symbol}, qty=${quantity}, price=${price}, currency=${currencyStr}, total=${totalCHF}`,
+    )
+
     // Skip if missing essential data
-    if (isNaN(quantity) || quantity <= 0 || isNaN(price) || price <= 0) {
-      console.log(`Skipping invalid position: ${symbol} (qty: ${quantity}, price: ${price})`)
+    if (isNaN(quantity) || quantity <= 0) {
+      console.log(`Skipping ${symbol}: invalid quantity (${quantity})`)
       continue
     }
 
-    console.log(`Processing position: ${symbol} - ${quantity} @ ${price} ${currencyStr} = ${totalCHF} CHF`)
+    if (isNaN(price) || price <= 0) {
+      console.log(`Skipping ${symbol}: invalid price (${price})`)
+      continue
+    }
+
+    // Calculate total value if not provided
+    let calculatedTotal = totalCHF
+    if (isNaN(calculatedTotal) || calculatedTotal <= 0) {
+      calculatedTotal = quantity * price * getCurrencyRate(currencyStr)
+      console.log(`Calculated total for ${symbol}: ${calculatedTotal}`)
+    }
+
+    console.log(`✅ Adding position: ${symbol} - ${quantity} @ ${price} ${currencyStr} = ${calculatedTotal} CHF`)
 
     positions.push({
       symbol: symbol,
@@ -369,7 +493,7 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
       quantity: quantity,
       unitCost: unitCost || price,
       price: price,
-      totalValueCHF: totalCHF || quantity * price * getCurrencyRate(currencyStr),
+      totalValueCHF: calculatedTotal,
       currency: currencyStr || "CHF",
       category: currentCategory || "Unknown",
       sector: "Unknown",
@@ -386,17 +510,23 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
     })
   }
 
-  console.log(`Parsed ${positions.length} positions from CSV`)
+  console.log(`✅ Parsed ${positions.length} positions from CSV`)
 
   if (positions.length === 0) {
+    console.error("No valid positions found. Debugging info:")
+    console.error("Headers:", headers)
+    console.error("Column mapping:", columnMap)
+    console.error("Sample rows:", rows.slice(0, 10))
     throw new Error("No valid positions found in CSV file. Please check the file format.")
   }
 
-  // Calculate total value if not found
+  // Calculate total value
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
-  const finalTotal = totalPortfolioValue > 0 ? totalPortfolioValue : calculatedTotal
+  const finalTotal = totalPortfolioValue > calculatedTotal ? totalPortfolioValue : calculatedTotal
 
-  console.log(`Total portfolio value: ${finalTotal} CHF (calculated: ${calculatedTotal})`)
+  console.log(
+    `Total portfolio value: ${finalTotal} CHF (calculated: ${calculatedTotal}, found: ${totalPortfolioValue})`,
+  )
 
   // Enrich with API data
   const enrichedPositions = await enrichPositionsWithAPIData(
@@ -428,6 +558,121 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
   }
 }
 
+async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioData> {
+  console.log("Attempting to parse CSV without clear headers...")
+
+  const positions: PortfolioPosition[] = []
+  let currentCategory = "Unknown"
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    if (!row || row.length < 3) continue
+
+    const firstCell = row[0]?.toString().trim() || ""
+
+    // Skip empty rows
+    if (!firstCell) continue
+
+    // Check for category
+    const categoryMatch = Object.keys(CATEGORY_ALIASES).find((cat) =>
+      firstCell.toLowerCase().includes(cat.toLowerCase()),
+    )
+
+    if (categoryMatch) {
+      currentCategory = CATEGORY_ALIASES[categoryMatch]
+      continue
+    }
+
+    // Try to parse as position - look for patterns
+    // Pattern 1: Symbol, Name, Quantity, Price, Currency, Total
+    if (row.length >= 4) {
+      const symbol = cleanSymbol(firstCell)
+      if (symbol && symbol.length >= 2) {
+        const quantity = parseSwissNumber(row[2]?.toString() || "")
+        const price = parseSwissNumber(row[3]?.toString() || "")
+
+        if (!isNaN(quantity) && quantity > 0 && !isNaN(price) && price > 0) {
+          const currency = row[4]?.toString().trim() || "CHF"
+          const totalValue = row.length > 5 ? parseSwissNumber(row[5]?.toString() || "") : quantity * price
+
+          console.log(`Inferred position: ${symbol} - ${quantity} @ ${price} ${currency}`)
+
+          positions.push({
+            symbol: symbol,
+            name: row[1]?.toString().trim() || symbol,
+            quantity: quantity,
+            unitCost: price,
+            price: price,
+            totalValueCHF: isNaN(totalValue) ? quantity * price * getCurrencyRate(currency) : totalValue,
+            currency: currency,
+            category: currentCategory,
+            sector: "Unknown",
+            geography: "Unknown",
+            domicile: "Unknown",
+            withholdingTax: 15,
+            taxOptimized: false,
+            gainLossCHF: 0,
+            unrealizedGainLoss: 0,
+            unrealizedGainLossPercent: 0,
+            positionPercent: 0,
+            dailyChangePercent: 0,
+            isOTC: false,
+          })
+        }
+      }
+    }
+  }
+
+  if (positions.length === 0) {
+    throw new Error(
+      "Could not parse CSV structure. Please ensure your CSV has proper headers or try the paste text method.",
+    )
+  }
+
+  console.log(`Inferred ${positions.length} positions without headers`)
+
+  const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
+
+  // Enrich with API data
+  const enrichedPositions = await enrichPositionsWithAPIData(
+    positions.map((p) => ({
+      symbol: p.symbol,
+      name: p.name,
+      quantity: p.quantity,
+      price: p.price,
+      currency: p.currency,
+      category: p.category,
+      totalValue: p.totalValueCHF,
+    })),
+  )
+
+  return {
+    accountOverview: {
+      totalValue: calculatedTotal,
+      cashBalance: 0,
+      securitiesValue: calculatedTotal,
+      cryptoValue: 0,
+      purchasingPower: 0,
+    },
+    positions: enrichedPositions,
+    assetAllocation: calculateAssetAllocation(enrichedPositions, calculatedTotal),
+    currencyAllocation: await calculateTrueCurrencyAllocation(enrichedPositions, calculatedTotal),
+    trueCountryAllocation: await calculateTrueCountryAllocation(enrichedPositions, calculatedTotal),
+    trueSectorAllocation: await calculateTrueSectorAllocation(enrichedPositions, calculatedTotal),
+    domicileAllocation: calculateDomicileAllocation(enrichedPositions, calculatedTotal),
+  }
+}
+
+function cleanSymbol(symbolStr: string | undefined): string {
+  if (!symbolStr) return ""
+
+  return symbolStr
+    .toString()
+    .trim()
+    .replace(/[^\w.-]/g, "") // Remove special characters except dots and dashes
+    .toUpperCase()
+}
+
 function findColumnIndex(headers: string[], searchTerms: string[]): number {
   for (const term of searchTerms) {
     const index = headers.findIndex((h) => h.toLowerCase().includes(term.toLowerCase()))
@@ -436,15 +681,15 @@ function findColumnIndex(headers: string[], searchTerms: string[]): number {
   return -1
 }
 
-function extractNumberFromRow(row: string[]): number {
+function extractLargestNumberFromRow(row: string[]): number {
+  let largest = 0
   for (const cell of row) {
     const num = parseSwissNumber(cell?.toString() || "")
-    if (!isNaN(num) && num > 1000) {
-      // Likely a total value
-      return num
+    if (!isNaN(num) && num > largest) {
+      largest = num
     }
   }
-  return 0
+  return largest
 }
 
 function getCurrencyRate(currency: string): number {

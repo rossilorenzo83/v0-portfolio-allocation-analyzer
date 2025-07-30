@@ -1,33 +1,217 @@
 interface StockPrice {
   symbol: string
   price: number
+  currency: string
   change: number
   changePercent: number
-  currency: string
-  marketState: string
-  timestamp: number
+  lastUpdated: string
 }
 
 interface AssetMetadata {
   symbol: string
   name: string
   sector: string
-  industry: string
   country: string
   currency: string
-  exchange: string
-  quoteType: string
+  type: string
 }
 
 interface ETFComposition {
   symbol: string
-  name: string
-  domicile: string
-  withholdingTax: number
-  expenseRatio: number
+  currency: Array<{ currency: string; weight: number }>
   country: Array<{ country: string; weight: number }>
   sector: Array<{ sector: string; weight: number }>
-  currency: Array<{ currency: string; weight: number }>
+  holdings: Array<{ symbol: string; name: string; weight: number }>
+  domicile: string
+  withholdingTax: number
+  lastUpdated: string
+}
+
+// European ETF symbol mapping for Yahoo Finance
+const EUROPEAN_ETF_MAPPING: Record<string, string[]> = {
+  // Vanguard ETFs
+  VWRL: ["VWRL.L", "VWRL.AS", "VWRL.DE", "VWRL.MI"], // FTSE All-World
+  VWCE: ["VWCE.DE", "VWCE.L", "VWCE.AS", "VWCE.MI"], // FTSE All-World Accumulating
+  VUSA: ["VUSA.L", "VUSA.AS", "VUSA.DE", "VUSA.MI"], // S&P 500
+  VUSD: ["VUSD.L", "VUSD.AS", "VUSD.DE", "VUSD.MI"], // S&P 500 Accumulating
+  VEUR: ["VEUR.L", "VEUR.AS", "VEUR.DE", "VEUR.MI"], // FTSE Developed Europe
+  VJPN: ["VJPN.L", "VJPN.AS", "VJPN.DE", "VJPN.MI"], // FTSE Japan
+  VFEM: ["VFEM.L", "VFEM.AS", "VFEM.DE", "VFEM.MI"], // FTSE Emerging Markets
+
+  // iShares ETFs
+  IS3N: ["IS3N.SW", "IS3N.DE", "IS3N.L", "IS3N.AS"], // Core MSCI World
+  IWDA: ["IWDA.L", "IWDA.AS", "IWDA.DE", "IWDA.MI"], // Core MSCI World
+  IUSA: ["IUSA.L", "IUSA.AS", "IUSA.DE", "IUSA.MI"], // Core S&P 500
+  IEUR: ["IEUR.L", "IEUR.AS", "IEUR.DE", "IEUR.MI"], // Core MSCI Europe
+  IJPN: ["IJPN.L", "IJPN.AS", "IJPN.DE", "IJPN.MI"], // Core MSCI Japan
+  IEMM: ["IEMM.L", "IEMM.AS", "IEMM.DE", "IEMM.MI"], // Core MSCI Emerging Markets
+  EUNL: ["EUNL.DE", "EUNL.L", "EUNL.AS", "EUNL.MI"], // Core MSCI Europe
+
+  // SPDR ETFs
+  SPYY: ["SPYY.L", "SPYY.AS", "SPYY.DE", "SPYY.MI"], // S&P 500
+  SPXP: ["SPXP.L", "SPXP.AS", "SPXP.DE", "SPXP.MI"], // S&P 500 Accumulating
+
+  // Xtrackers ETFs
+  XMWO: ["XMWO.DE", "XMWO.L", "XMWO.AS", "XMWO.MI"], // MSCI World
+  XMEU: ["XMEU.DE", "XMEU.L", "XMEU.AS", "XMEU.MI"], // MSCI Europe
+  XMUS: ["XMUS.DE", "XMUS.L", "XMUS.AS", "XMUS.MI"], // MSCI USA
+}
+
+// Swiss stock symbol mapping
+const SWISS_STOCK_MAPPING: Record<string, string> = {
+  NESN: "NESN.SW", // Nestlé
+  NOVN: "NOVN.SW", // Novartis
+  ROG: "ROG.SW", // Roche
+  UHR: "UHR.SW", // Swatch Group
+  ABBN: "ABBN.SW", // ABB
+  UBSG: "UBSG.SW", // UBS
+  CS: "CSGN.SW", // Credit Suisse (historical)
+  CSGN: "CSGN.SW", // Credit Suisse
+  ZURN: "ZURN.SW", // Zurich Insurance
+  SLHN: "SLHN.SW", // Swiss Life
+  LONN: "LONN.SW", // Lonza
+  GIVN: "GIVN.SW", // Givaudan
+  SCMN: "SCMN.SW", // Swisscom
+  BAER: "BAER.SW", // Julius Baer
+  CFR: "CFR.SW", // Compagnie Financière Richemont
+}
+
+// Fallback ETF composition data for when APIs fail
+const FALLBACK_ETF_DATA: Record<string, Partial<ETFComposition>> = {
+  VWRL: {
+    currency: [
+      { currency: "USD", weight: 65 },
+      { currency: "EUR", weight: 15 },
+      { currency: "JPY", weight: 8 },
+      { currency: "GBP", weight: 4 },
+      { currency: "Other", weight: 8 },
+    ],
+    country: [
+      { country: "United States", weight: 65 },
+      { country: "Japan", weight: 8 },
+      { country: "United Kingdom", weight: 4 },
+      { country: "China", weight: 3 },
+      { country: "Canada", weight: 3 },
+      { country: "France", weight: 3 },
+      { country: "Germany", weight: 3 },
+      { country: "Other", weight: 11 },
+    ],
+    sector: [
+      { sector: "Technology", weight: 25 },
+      { sector: "Financials", weight: 15 },
+      { sector: "Healthcare", weight: 12 },
+      { sector: "Consumer Discretionary", weight: 10 },
+      { sector: "Industrials", weight: 10 },
+      { sector: "Communication Services", weight: 8 },
+      { sector: "Consumer Staples", weight: 7 },
+      { sector: "Energy", weight: 5 },
+      { sector: "Materials", weight: 4 },
+      { sector: "Utilities", weight: 2 },
+      { sector: "Real Estate", weight: 2 },
+    ],
+    domicile: "IE",
+    withholdingTax: 15,
+  },
+  VWCE: {
+    currency: [
+      { currency: "USD", weight: 65 },
+      { currency: "EUR", weight: 15 },
+      { currency: "JPY", weight: 8 },
+      { currency: "GBP", weight: 4 },
+      { currency: "Other", weight: 8 },
+    ],
+    country: [
+      { country: "United States", weight: 65 },
+      { country: "Japan", weight: 8 },
+      { country: "United Kingdom", weight: 4 },
+      { country: "China", weight: 3 },
+      { country: "Canada", weight: 3 },
+      { country: "France", weight: 3 },
+      { country: "Germany", weight: 3 },
+      { country: "Other", weight: 11 },
+    ],
+    sector: [
+      { sector: "Technology", weight: 25 },
+      { sector: "Financials", weight: 15 },
+      { sector: "Healthcare", weight: 12 },
+      { sector: "Consumer Discretionary", weight: 10 },
+      { sector: "Industrials", weight: 10 },
+      { sector: "Communication Services", weight: 8 },
+      { sector: "Consumer Staples", weight: 7 },
+      { sector: "Energy", weight: 5 },
+      { sector: "Materials", weight: 4 },
+      { sector: "Utilities", weight: 2 },
+      { sector: "Real Estate", weight: 2 },
+    ],
+    domicile: "IE",
+    withholdingTax: 15,
+  },
+  IS3N: {
+    currency: [
+      { currency: "USD", weight: 70 },
+      { currency: "EUR", weight: 12 },
+      { currency: "JPY", weight: 8 },
+      { currency: "GBP", weight: 4 },
+      { currency: "Other", weight: 6 },
+    ],
+    country: [
+      { country: "United States", weight: 70 },
+      { country: "Japan", weight: 8 },
+      { country: "United Kingdom", weight: 4 },
+      { country: "Canada", weight: 3 },
+      { country: "France", weight: 3 },
+      { country: "Germany", weight: 3 },
+      { country: "Other", weight: 9 },
+    ],
+    sector: [
+      { sector: "Technology", weight: 28 },
+      { sector: "Financials", weight: 13 },
+      { sector: "Healthcare", weight: 12 },
+      { sector: "Consumer Discretionary", weight: 11 },
+      { sector: "Industrials", weight: 9 },
+      { sector: "Communication Services", weight: 8 },
+      { sector: "Consumer Staples", weight: 6 },
+      { sector: "Energy", weight: 4 },
+      { sector: "Materials", weight: 4 },
+      { sector: "Utilities", weight: 3 },
+      { sector: "Real Estate", weight: 2 },
+    ],
+    domicile: "IE",
+    withholdingTax: 15,
+  },
+  IWDA: {
+    currency: [
+      { currency: "USD", weight: 70 },
+      { currency: "EUR", weight: 12 },
+      { currency: "JPY", weight: 8 },
+      { currency: "GBP", weight: 4 },
+      { currency: "Other", weight: 6 },
+    ],
+    country: [
+      { country: "United States", weight: 70 },
+      { country: "Japan", weight: 8 },
+      { country: "United Kingdom", weight: 4 },
+      { country: "Canada", weight: 3 },
+      { country: "France", weight: 3 },
+      { country: "Germany", weight: 3 },
+      { country: "Other", weight: 9 },
+    ],
+    sector: [
+      { sector: "Technology", weight: 28 },
+      { sector: "Financials", weight: 13 },
+      { sector: "Healthcare", weight: 12 },
+      { sector: "Consumer Discretionary", weight: 11 },
+      { sector: "Industrials", weight: 9 },
+      { sector: "Communication Services", weight: 8 },
+      { sector: "Consumer Staples", weight: 6 },
+      { sector: "Energy", weight: 4 },
+      { sector: "Materials", weight: 4 },
+      { sector: "Utilities", weight: 3 },
+      { sector: "Real Estate", weight: 2 },
+    ],
+    domicile: "IE",
+    withholdingTax: 15,
+  },
 }
 
 class APIService {
@@ -36,853 +220,365 @@ class APIService {
   private readonly RATE_LIMIT_DELAY = 200 // 200ms between requests
   private baseUrl = "/api/yahoo"
 
-  // European ETF symbol mapping for Yahoo Finance
-  private europeanETFMapping: Record<string, string[]> = {
-    // Vanguard ETFs
-    VWRL: ["VWRL.L", "VWRL.AS", "VWRL.DE", "VWRL.MI"],
-    VWCE: ["VWCE.DE", "VWCE.L", "VWCE.AS", "VWCE.MI"],
-    VUSA: ["VUSA.L", "VUSA.AS", "VUSA.DE", "VUSA.MI"],
-    VEUR: ["VEUR.L", "VEUR.AS", "VEUR.DE", "VEUR.MI"],
-    VFEM: ["VFEM.L", "VFEM.AS", "VFEM.DE", "VFEM.MI"],
-
-    // iShares ETFs
-    IS3N: ["IS3N.SW", "IS3N.DE", "IS3N.L", "IS3N.AS"],
-    IWDA: ["IWDA.L", "IWDA.AS", "IWDA.DE", "IWDA.MI"],
-    IUSA: ["IUSA.L", "IUSA.AS", "IUSA.DE", "IUSA.MI"],
-    IEUR: ["IEUR.L", "IEUR.AS", "IEUR.DE", "IEUR.MI"],
-    IEMG: ["IEMG.L", "IEMG.AS", "IEMG.DE", "IEMG.MI"],
-    EUNL: ["EUNL.DE", "EUNL.L", "EUNL.AS", "EUNL.MI"],
-
-    // SPDR ETFs
-    SPYY: ["SPYY.L", "SPYY.DE", "SPYY.AS", "SPYY.MI"],
-    SPDR: ["SPDR.L", "SPDR.DE", "SPDR.AS", "SPDR.MI"],
-
-    // Xtrackers ETFs
-    XMWO: ["XMWO.DE", "XMWO.L", "XMWO.AS", "XMWO.MI"],
-    XDEV: ["XDEV.DE", "XDEV.L", "XDEV.AS", "XDEV.MI"],
-
-    // Amundi ETFs
-    CW8: ["CW8.PA", "CW8.DE", "CW8.L", "CW8.MI"],
-    EWLD: ["EWLD.PA", "EWLD.DE", "EWLD.L", "EWLD.MI"],
-
-    // Swiss-specific listings
-    CHSPI: ["CHSPI.SW"],
-    CSSMI: ["CSSMI.SW"],
-  }
-
-  // Swiss stock symbol mapping
-  private swissStockMapping: Record<string, string> = {
-    NESN: "NESN.SW",
-    NOVN: "NOVN.SW",
-    ROG: "ROG.SW",
-    UHR: "UHR.SW",
-    ABBN: "ABBN.SW",
-    LONN: "LONN.SW",
-    GIVN: "GIVN.SW",
-    CFR: "CFR.SW",
-    SREN: "SREN.SW",
-    GEBN: "GEBN.SW",
-    SLHN: "SLHN.SW",
-    AMS: "AMS.SW",
-    SCMN: "SCMN.SW",
-    UBSG: "UBSG.SW",
-    CSGN: "CSGN.SW",
-    BAER: "BAER.SW",
-    ZURN: "ZURN.SW",
-    ADEN: "ADEN.SW",
-    HOLN: "HOLN.SW",
-    PGHN: "PGHN.SW",
-  }
-
-  private getYahooSymbol(originalSymbol: string): string[] {
-    const upperSymbol = originalSymbol.toUpperCase()
-
-    // Check European ETF mapping first
-    if (this.europeanETFMapping[upperSymbol]) {
-      return [originalSymbol, ...this.europeanETFMapping[upperSymbol]]
-    }
-
-    // Check Swiss stock mapping
-    if (this.swissStockMapping[upperSymbol]) {
-      return [originalSymbol, this.swissStockMapping[upperSymbol]]
-    }
-
-    // For other European symbols, try common suffixes
-    if (this.isLikelyEuropeanSymbol(upperSymbol)) {
-      return [
-        originalSymbol,
-        `${upperSymbol}.L`, // London
-        `${upperSymbol}.DE`, // Germany (Xetra)
-        `${upperSymbol}.AS`, // Amsterdam
-        `${upperSymbol}.PA`, // Paris
-        `${upperSymbol}.MI`, // Milan
-        `${upperSymbol}.SW`, // Switzerland
-        `${upperSymbol}.VI`, // Vienna
-        `${upperSymbol}.BR`, // Brussels
-        `${upperSymbol}.ST`, // Stockholm
-        `${upperSymbol}.HE`, // Helsinki
-        `${upperSymbol}.OL`, // Oslo
-        `${upperSymbol}.CO`, // Copenhagen
-      ]
-    }
-
-    // Default: return original symbol
-    return [originalSymbol]
-  }
-
-  private isLikelyEuropeanSymbol(symbol: string): boolean {
-    // Common European ETF prefixes
-    const europeanPrefixes = ["IS", "VWRL", "VWCE", "IWDA", "EUNL", "XMWO", "XDEV", "CW8", "EWLD"]
-
-    // Swiss stock patterns
-    const swissPatterns = [/N$/, /B$/, /G$/, /H$/, /R$/, /S$/] // Common Swiss stock suffixes
-
-    return (
-      europeanPrefixes.some((prefix) => symbol.startsWith(prefix)) ||
-      swissPatterns.some((pattern) => pattern.test(symbol)) ||
-      symbol.length === 4 // Many European stocks are 4 characters
-    )
-  }
-
-  private async rateLimit(key: string): Promise<void> {
-    const lastRequest = this.rateLimitMap.get(key) || 0
-    const now = Date.now()
-    const timeSinceLastRequest = now - lastRequest
-
-    if (timeSinceLastRequest < this.RATE_LIMIT_DELAY) {
-      await new Promise((resolve) => setTimeout(resolve, this.RATE_LIMIT_DELAY - timeSinceLastRequest))
-    }
-
-    this.rateLimitMap.set(key, Date.now())
-  }
-
-  private getCached<T>(key: string): T | null {
-    const cached = this.cache.get(key)
-    if (cached && Date.now() - cached.timestamp < cached.ttl) {
-      return cached.data as T
-    }
-    this.cache.delete(key)
-    return null
-  }
-
-  private setCache<T>(key: string, data: T, ttlMinutes: number): void {
-    this.cache.set(key, {
-      data,
-      timestamp: Date.now(),
-      ttl: ttlMinutes * 60 * 1000,
-    })
-  }
+  private baseURL = "/api/yahoo"
 
   async getStockPrice(symbol: string): Promise<StockPrice | null> {
-    const cacheKey = `price_${symbol}`
-    const cached = this.getCached<StockPrice>(cacheKey)
-    if (cached) return cached
+    console.log(`Fetching price for ${symbol}...`)
 
-    await this.rateLimit("yahoo_price")
+    // Try multiple symbol variations for European ETFs and Swiss stocks
+    const symbolVariations = this.getSymbolVariations(symbol)
 
-    // Try multiple Yahoo symbol variations
-    const symbolVariations = this.getYahooSymbol(symbol)
-
-    for (const yahooSymbol of symbolVariations) {
+    for (const symbolVariation of symbolVariations) {
       try {
-        console.log(`Fetching price for ${symbol} using Yahoo symbol: ${yahooSymbol}`)
-        const response = await fetch(`${this.baseUrl}/quote/${yahooSymbol}`)
+        console.log(`Trying symbol variation: ${symbolVariation}`)
+
+        const response = await fetch(`${this.baseURL}/quote/${symbolVariation}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
 
         if (response.ok) {
           const data = await response.json()
-          if (data && data.price) {
-            console.log(`Price data found for ${symbol} via ${yahooSymbol}:`, data)
-
-            // Normalize the response to use original symbol
-            const normalizedData = {
-              ...data,
-              symbol: symbol.toUpperCase(),
-            }
-
-            this.setCache(cacheKey, normalizedData, 5) // Cache for 5 minutes
-            return normalizedData
+          console.log(`✅ Successfully fetched price for ${symbolVariation}:`, data)
+          return {
+            symbol: symbol, // Return original symbol
+            price: data.price || data.regularMarketPrice || 0,
+            currency: data.currency || this.inferCurrency(symbolVariation),
+            change: data.change || data.regularMarketChange || 0,
+            changePercent: data.changePercent || data.regularMarketChangePercent || 0,
+            lastUpdated: new Date().toISOString(),
           }
         }
       } catch (error) {
-        console.warn(`Failed to fetch price for ${symbol} using ${yahooSymbol}:`, error)
-        continue // Try next symbol variation
+        console.log(`Failed to fetch ${symbolVariation}:`, error)
+        continue
       }
     }
 
-    console.error(`All symbol variations failed for ${symbol}`)
-
-    // Fallback with mock data
-    const fallback: StockPrice = {
-      symbol: symbol.toUpperCase(),
-      price: this.getEstimatedPrice(symbol),
-      change: (Math.random() - 0.5) * 10,
-      changePercent: (Math.random() - 0.5) * 5,
-      currency: this.guessCurrency(symbol),
-      marketState: "REGULAR",
-      timestamp: Date.now() / 1000,
-    }
-
-    this.setCache(cacheKey, fallback, 60) // Cache fallback for 1 hour
-    return fallback
+    console.log(`❌ All symbol variations failed for ${symbol}, using fallback`)
+    return this.getFallbackPrice(symbol)
   }
 
   async getAssetMetadata(symbol: string): Promise<AssetMetadata | null> {
-    const cacheKey = `metadata_${symbol}`
-    const cached = this.getCached<AssetMetadata>(cacheKey)
-    if (cached) return cached
+    console.log(`Fetching metadata for ${symbol}...`)
 
-    await this.rateLimit("yahoo_metadata")
+    const symbolVariations = this.getSymbolVariations(symbol)
 
-    // Try multiple Yahoo symbol variations
-    const symbolVariations = this.getYahooSymbol(symbol)
-
-    for (const yahooSymbol of symbolVariations) {
+    for (const symbolVariation of symbolVariations) {
       try {
-        console.log(`Fetching metadata for ${symbol} using Yahoo symbol: ${yahooSymbol}`)
-        const response = await fetch(`${this.baseUrl}/search/${yahooSymbol}`)
+        const response = await fetch(`${this.baseURL}/search/${symbolVariation}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
 
         if (response.ok) {
           const data = await response.json()
-          if (data && data.name) {
-            console.log(`Metadata found for ${symbol} via ${yahooSymbol}:`, data)
-
-            // Normalize the response to use original symbol
-            const normalizedData = {
-              ...data,
-              symbol: symbol.toUpperCase(),
-            }
-
-            this.setCache(cacheKey, normalizedData, 1440) // Cache for 24 hours
-            return normalizedData
+          console.log(`✅ Successfully fetched metadata for ${symbolVariation}:`, data)
+          return {
+            symbol: symbol, // Return original symbol
+            name: data.name || data.longName || symbol,
+            sector: data.sector || this.inferSector(symbol),
+            country: data.country || this.inferCountry(symbolVariation),
+            currency: data.currency || this.inferCurrency(symbolVariation),
+            type: data.type || this.inferAssetType(symbol),
           }
         }
       } catch (error) {
-        console.warn(`Failed to fetch metadata for ${symbol} using ${yahooSymbol}:`, error)
-        continue // Try next symbol variation
+        console.log(`Failed to fetch metadata for ${symbolVariation}:`, error)
+        continue
       }
     }
 
-    console.error(`All symbol variations failed for metadata ${symbol}`)
-
-    // Fallback with basic data
-    const fallback: AssetMetadata = {
-      symbol: symbol.toUpperCase(),
-      name: this.getKnownName(symbol) || symbol.toUpperCase(),
-      sector: this.guessSector(symbol),
-      industry: "Unknown",
-      country: this.guessCountry(symbol),
-      currency: this.guessCurrency(symbol),
-      exchange: this.guessExchange(symbol),
-      quoteType: this.guessQuoteType(symbol),
-    }
-
-    this.setCache(cacheKey, fallback, 1440)
-    return fallback
+    console.log(`❌ All metadata requests failed for ${symbol}, using fallback`)
+    return this.getFallbackMetadata(symbol)
   }
 
   async getETFComposition(symbol: string): Promise<ETFComposition | null> {
-    const cacheKey = `etf_${symbol}`
-    const cached = this.getCached<ETFComposition>(cacheKey)
-    if (cached) return cached
+    console.log(`Fetching ETF composition for ${symbol}...`)
 
-    await this.rateLimit("yahoo_etf")
-
-    // Try multiple Yahoo symbol variations
-    const symbolVariations = this.getYahooSymbol(symbol)
-
-    for (const yahooSymbol of symbolVariations) {
-      try {
-        console.log(`Fetching ETF composition for ${symbol} using Yahoo symbol: ${yahooSymbol}`)
-        const response = await fetch(`${this.baseUrl}/etf/${yahooSymbol}`)
-
-        if (response.ok) {
-          const data = await response.json()
-          if (data && (data.country || data.sector)) {
-            console.log(`ETF composition found for ${symbol} via ${yahooSymbol}:`, data)
-
-            // Normalize the response to use original symbol
-            const normalizedData = {
-              ...data,
-              symbol: symbol.toUpperCase(),
-            }
-
-            this.setCache(cacheKey, normalizedData, 1440) // Cache for 24 hours
-            return normalizedData
-          }
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch ETF composition for ${symbol} using ${yahooSymbol}:`, error)
-        continue // Try next symbol variation
+    // Check if we have fallback data first
+    if (FALLBACK_ETF_DATA[symbol]) {
+      console.log(`Using fallback ETF data for ${symbol}`)
+      const fallbackData = FALLBACK_ETF_DATA[symbol]
+      return {
+        symbol: symbol,
+        currency: fallbackData.currency || [],
+        country: fallbackData.country || [],
+        sector: fallbackData.sector || [],
+        holdings: [],
+        domicile: fallbackData.domicile || "Unknown",
+        withholdingTax: fallbackData.withholdingTax || 15,
+        lastUpdated: new Date().toISOString(),
       }
     }
 
-    console.error(`All symbol variations failed for ETF composition ${symbol}`)
+    const symbolVariations = this.getSymbolVariations(symbol)
 
-    // Fallback with estimated composition
-    const fallback = this.getEstimatedETFComposition(symbol)
-    this.setCache(cacheKey, fallback, 1440)
-    return fallback
-  }
+    for (const symbolVariation of symbolVariations) {
+      try {
+        const response = await fetch(`${this.baseURL}/etf/${symbolVariation}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
 
-  private getEstimatedPrice(symbol: string): number {
-    // Estimated prices for common symbols
-    const priceEstimates: Record<string, number> = {
-      // Swiss stocks (CHF)
-      NESN: 120,
-      NOVN: 85,
-      ROG: 280,
-      UHR: 450,
-      ABBN: 45,
-      LONN: 65,
-
-      // European ETFs (EUR/CHF)
-      VWRL: 90,
-      VWCE: 105,
-      IS3N: 75,
-      IWDA: 80,
-      EUNL: 85,
-
-      // US stocks (USD)
-      AAPL: 175,
-      MSFT: 350,
-      GOOGL: 140,
-      AMZN: 150,
-      NVDA: 450,
-      TSLA: 220,
-      META: 320,
+        if (response.ok) {
+          const data = await response.json()
+          console.log(`✅ Successfully fetched ETF composition for ${symbolVariation}:`, data)
+          return {
+            symbol: symbol, // Return original symbol
+            currency: data.currency || [],
+            country: data.country || [],
+            sector: data.sector || [],
+            holdings: data.holdings || [],
+            domicile: data.domicile || this.inferDomicile(symbol),
+            withholdingTax: data.withholdingTax || this.inferWithholdingTax(symbol),
+            lastUpdated: new Date().toISOString(),
+          }
+        }
+      } catch (error) {
+        console.log(`Failed to fetch ETF composition for ${symbolVariation}:`, error)
+        continue
+      }
     }
 
-    return priceEstimates[symbol.toUpperCase()] || 50 + Math.random() * 100
+    console.log(`❌ All ETF composition requests failed for ${symbol}, using generic fallback`)
+    return this.getFallbackETFComposition(symbol)
   }
 
-  private guessSector(symbol: string): string {
-    const sectorMap: Record<string, string> = {
-      // Technology
-      AAPL: "Technology",
-      MSFT: "Technology",
-      GOOGL: "Technology",
-      AMZN: "Technology",
-      NVDA: "Technology",
-      META: "Technology",
-      TSLA: "Technology",
-      ASML: "Technology",
-      SAP: "Technology",
+  private getSymbolVariations(symbol: string): string[] {
+    const variations = [symbol] // Start with original symbol
 
-      // Healthcare
-      NOVN: "Healthcare",
-      ROG: "Healthcare",
-      JNJ: "Healthcare",
-      PFE: "Healthcare",
-      UNH: "Healthcare",
-
-      // Consumer Staples
-      NESN: "Consumer Staples",
-      PG: "Consumer Staples",
-      KO: "Consumer Staples",
-
-      // Financial Services
-      JPM: "Financial Services",
-      BAC: "Financial Services",
-      WFC: "Financial Services",
-      UBSG: "Financial Services",
-      CSGN: "Financial Services",
-
-      // Industrials
-      ABBN: "Industrials",
-      GEBN: "Industrials",
-      SCMN: "Industrials",
-
-      // Consumer Discretionary
-      UHR: "Consumer Discretionary",
-      SREN: "Consumer Discretionary",
-
-      // Materials
-      GIVN: "Materials",
-      HOLN: "Materials",
-
-      // Insurance
-      ZURN: "Financial Services",
-      BAER: "Financial Services",
+    // Add European ETF variations
+    if (EUROPEAN_ETF_MAPPING[symbol]) {
+      variations.push(...EUROPEAN_ETF_MAPPING[symbol])
     }
 
-    return sectorMap[symbol.toUpperCase()] || "Unknown"
-  }
-
-  private guessCountry(symbol: string): string {
-    const countryMap: Record<string, string> = {
-      // Swiss symbols
-      NESN: "Switzerland",
-      NOVN: "Switzerland",
-      ROG: "Switzerland",
-      UHR: "Switzerland",
-      ABBN: "Switzerland",
-      LONN: "Switzerland",
-      GIVN: "Switzerland",
-      CFR: "Switzerland",
-      SREN: "Switzerland",
-      GEBN: "Switzerland",
-      SLHN: "Switzerland",
-      AMS: "Switzerland",
-      SCMN: "Switzerland",
-      UBSG: "Switzerland",
-      CSGN: "Switzerland",
-      BAER: "Switzerland",
-      ZURN: "Switzerland",
-      ADEN: "Switzerland",
-      HOLN: "Switzerland",
-      PGHN: "Switzerland",
-
-      // European ETFs (domiciled in Ireland/Luxembourg but traded in Europe)
-      VWRL: "Ireland",
-      VWCE: "Ireland",
-      IS3N: "Ireland",
-      IWDA: "Ireland",
-      EUNL: "Ireland",
-
-      // European symbols
-      ASML: "Netherlands",
-      SAP: "Germany",
-      SAN: "Spain",
-      INGA: "Netherlands",
-
-      // US symbols (most others)
-      AAPL: "United States",
-      MSFT: "United States",
-      GOOGL: "United States",
-      AMZN: "United States",
-      NVDA: "United States",
-      META: "United States",
-      TSLA: "United States",
+    // Add Swiss stock variations
+    if (SWISS_STOCK_MAPPING[symbol]) {
+      variations.push(SWISS_STOCK_MAPPING[symbol])
     }
 
-    return countryMap[symbol.toUpperCase()] || "United States"
-  }
-
-  private guessCurrency(symbol: string): string {
-    const currencyMap: Record<string, string> = {
-      // Swiss symbols
-      NESN: "CHF",
-      NOVN: "CHF",
-      ROG: "CHF",
-      UHR: "CHF",
-      ABBN: "CHF",
-      LONN: "CHF",
-      GIVN: "CHF",
-      CFR: "CHF",
-      SREN: "CHF",
-      GEBN: "CHF",
-      SLHN: "CHF",
-      AMS: "CHF",
-      SCMN: "CHF",
-      UBSG: "CHF",
-      CSGN: "CHF",
-      BAER: "CHF",
-      ZURN: "CHF",
-      ADEN: "CHF",
-      HOLN: "CHF",
-      PGHN: "CHF",
-
-      // European ETFs (often traded in local currency)
-      VWRL: "CHF", // When traded in Switzerland
-      VWCE: "EUR",
-      IS3N: "CHF", // When traded in Switzerland
-      IWDA: "EUR",
-      EUNL: "EUR",
-
-      // European symbols
-      ASML: "EUR",
-      SAP: "EUR",
-      SAN: "EUR",
-      INGA: "EUR",
+    // Auto-detect European symbols and add exchange suffixes
+    if (this.isEuropeanSymbol(symbol)) {
+      const exchanges = [".L", ".DE", ".AS", ".MI", ".PA", ".SW"]
+      exchanges.forEach((exchange) => {
+        if (!symbol.includes(".")) {
+          variations.push(`${symbol}${exchange}`)
+        }
+      })
     }
 
-    return currencyMap[symbol.toUpperCase()] || "USD"
+    // Remove duplicates and return
+    return [...new Set(variations)]
   }
 
-  private guessExchange(symbol: string): string {
-    const exchangeMap: Record<string, string> = {
-      // Swiss symbols
-      NESN: "SWX Swiss Exchange",
-      NOVN: "SWX Swiss Exchange",
-      ROG: "SWX Swiss Exchange",
-      UHR: "SWX Swiss Exchange",
-      ABBN: "SWX Swiss Exchange",
-      LONN: "SWX Swiss Exchange",
+  private isEuropeanSymbol(symbol: string): boolean {
+    // Common European ETF patterns
+    const europeanPatterns = [
+      /^V[A-Z]{3}$/, // Vanguard ETFs (VWRL, VWCE, etc.)
+      /^I[A-Z]{3}$/, // iShares ETFs (IWDA, IUSA, etc.)
+      /^IS[0-9][A-Z]$/, // iShares numbered ETFs (IS3N, etc.)
+      /^X[A-Z]{3}$/, // Xtrackers ETFs
+      /^SP[A-Z]{2}$/, // SPDR ETFs
+    ]
 
-      // European ETFs
-      VWRL: "London Stock Exchange",
-      VWCE: "Xetra",
-      IS3N: "SWX Swiss Exchange",
-      IWDA: "London Stock Exchange",
-      EUNL: "Xetra",
+    return (
+      europeanPatterns.some((pattern) => pattern.test(symbol)) || Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)
+    )
+  }
 
-      // European symbols
-      ASML: "Euronext Amsterdam",
-      SAP: "Xetra",
+  private inferCurrency(symbol: string): string {
+    if (symbol.endsWith(".L")) return "GBP" // London
+    if (symbol.endsWith(".DE")) return "EUR" // Germany
+    if (symbol.endsWith(".AS")) return "EUR" // Amsterdam
+    if (symbol.endsWith(".MI")) return "EUR" // Milan
+    if (symbol.endsWith(".PA")) return "EUR" // Paris
+    if (symbol.endsWith(".SW")) return "CHF" // Switzerland
+    return "USD" // Default
+  }
 
-      // US symbols
-      AAPL: "NASDAQ",
-      MSFT: "NASDAQ",
-      GOOGL: "NASDAQ",
-      AMZN: "NASDAQ",
-      NVDA: "NASDAQ",
-      META: "NASDAQ",
-      TSLA: "NASDAQ",
+  private inferCountry(symbol: string): string {
+    if (symbol.endsWith(".L")) return "United Kingdom"
+    if (symbol.endsWith(".DE")) return "Germany"
+    if (symbol.endsWith(".AS")) return "Netherlands"
+    if (symbol.endsWith(".MI")) return "Italy"
+    if (symbol.endsWith(".PA")) return "France"
+    if (symbol.endsWith(".SW")) return "Switzerland"
+    return "United States" // Default
+  }
+
+  private inferSector(symbol: string): string {
+    // ETFs are typically diversified
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol) || Object.keys(FALLBACK_ETF_DATA).includes(symbol)) {
+      return "Diversified"
     }
-
-    return exchangeMap[symbol.toUpperCase()] || "Unknown"
+    return "Unknown"
   }
 
-  private guessQuoteType(symbol: string): string {
-    // ETF symbols
-    const etfSymbols = ["VWRL", "VWCE", "IS3N", "IWDA", "EUNL", "VTI", "VXUS", "VEA", "VWO"]
-    if (etfSymbols.includes(symbol.toUpperCase())) {
+  private inferAssetType(symbol: string): string {
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol) || Object.keys(FALLBACK_ETF_DATA).includes(symbol)) {
       return "ETF"
     }
-
-    return "EQUITY"
+    return "Stock"
   }
 
-  private getKnownName(symbol: string): string | null {
-    const nameMap: Record<string, string> = {
-      // US stocks
-      AAPL: "Apple Inc.",
-      MSFT: "Microsoft Corporation",
-      GOOGL: "Alphabet Inc.",
-      AMZN: "Amazon.com Inc.",
-      NVDA: "NVIDIA Corporation",
-      META: "Meta Platforms Inc.",
-      TSLA: "Tesla Inc.",
+  private inferDomicile(symbol: string): string {
+    // Most European ETFs are domiciled in Ireland or Luxembourg for tax efficiency
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
+      return "IE" // Ireland is most common
+    }
+    return "Unknown"
+  }
 
-      // Swiss stocks
+  private inferWithholdingTax(symbol: string): number {
+    // Irish and Luxembourg ETFs typically have 15% withholding tax
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
+      return 15
+    }
+    return 30 // US default
+  }
+
+  private getFallbackPrice(symbol: string): StockPrice {
+    // Provide realistic fallback prices based on asset type
+    let price = 100 // Default price
+    let currency = "USD"
+
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
+      // European ETFs typically trade in 50-100 range
+      price = 75 + Math.random() * 50
+      currency = "EUR"
+    } else if (Object.keys(SWISS_STOCK_MAPPING).includes(symbol)) {
+      // Swiss stocks can be quite expensive
+      price = 50 + Math.random() * 200
+      currency = "CHF"
+    }
+
+    return {
+      symbol: symbol,
+      price: Math.round(price * 100) / 100,
+      currency: currency,
+      change: (Math.random() - 0.5) * 10,
+      changePercent: (Math.random() - 0.5) * 5,
+      lastUpdated: new Date().toISOString(),
+    }
+  }
+
+  private getFallbackMetadata(symbol: string): AssetMetadata {
+    let name = symbol
+    let sector = "Unknown"
+    let country = "Unknown"
+    let currency = "USD"
+    let type = "Stock"
+
+    if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
+      name = this.getETFName(symbol)
+      sector = "Diversified"
+      country = "Ireland"
+      currency = "EUR"
+      type = "ETF"
+    } else if (Object.keys(SWISS_STOCK_MAPPING).includes(symbol)) {
+      name = this.getSwissStockName(symbol)
+      country = "Switzerland"
+      currency = "CHF"
+      sector = this.getSwissStockSector(symbol)
+    }
+
+    return {
+      symbol: symbol,
+      name: name,
+      sector: sector,
+      country: country,
+      currency: currency,
+      type: type,
+    }
+  }
+
+  private getFallbackETFComposition(symbol: string): ETFComposition {
+    // Generic diversified portfolio allocation
+    return {
+      symbol: symbol,
+      currency: [
+        { currency: "USD", weight: 60 },
+        { currency: "EUR", weight: 20 },
+        { currency: "JPY", weight: 10 },
+        { currency: "Other", weight: 10 },
+      ],
+      country: [
+        { country: "United States", weight: 60 },
+        { country: "Europe", weight: 20 },
+        { country: "Japan", weight: 10 },
+        { country: "Other", weight: 10 },
+      ],
+      sector: [
+        { sector: "Technology", weight: 25 },
+        { sector: "Financials", weight: 15 },
+        { sector: "Healthcare", weight: 12 },
+        { sector: "Consumer Discretionary", weight: 10 },
+        { sector: "Industrials", weight: 10 },
+        { sector: "Other", weight: 28 },
+      ],
+      holdings: [],
+      domicile: "IE",
+      withholdingTax: 15,
+      lastUpdated: new Date().toISOString(),
+    }
+  }
+
+  private getETFName(symbol: string): string {
+    const names: Record<string, string> = {
+      VWRL: "Vanguard FTSE All-World UCITS ETF",
+      VWCE: "Vanguard FTSE All-World UCITS ETF (Acc)",
+      IS3N: "iShares Core MSCI World UCITS ETF",
+      IWDA: "iShares Core MSCI World UCITS ETF",
+      EUNL: "iShares Core MSCI Europe UCITS ETF",
+    }
+    return names[symbol] || `${symbol} ETF`
+  }
+
+  private getSwissStockName(symbol: string): string {
+    const names: Record<string, string> = {
       NESN: "Nestlé SA",
       NOVN: "Novartis AG",
       ROG: "Roche Holding AG",
       UHR: "The Swatch Group AG",
       ABBN: "ABB Ltd",
-      LONN: "Lonza Group AG",
-      GIVN: "Givaudan SA",
-      CFR: "Compagnie Financière Richemont SA",
-      SREN: "Swiss Re AG",
-      GEBN: "Geberit AG",
-      SLHN: "Sonova Holding AG",
-      AMS: "AMS AG",
-      SCMN: "Schindler Holding AG",
       UBSG: "UBS Group AG",
       CSGN: "Credit Suisse Group AG",
-      BAER: "Julius Baer Group Ltd",
       ZURN: "Zurich Insurance Group AG",
-      ADEN: "Adecco Group AG",
-      HOLN: "Holcim Ltd",
-      PGHN: "Partners Group Holding AG",
-
-      // European stocks
-      ASML: "ASML Holding NV",
-      SAP: "SAP SE",
-
-      // ETFs
-      VWRL: "Vanguard FTSE All-World UCITS ETF",
-      VWCE: "Vanguard FTSE All-World UCITS ETF Accumulating",
-      IS3N: "iShares Core MSCI World UCITS ETF",
-      IWDA: "iShares Core MSCI World UCITS ETF",
-      EUNL: "iShares Core MSCI World UCITS ETF EUR Hedged",
-      VTI: "Vanguard Total Stock Market ETF",
-      VXUS: "Vanguard Total International Stock ETF",
+      SLHN: "Swiss Life Holding AG",
+      LONN: "Lonza Group AG",
+      GIVN: "Givaudan SA",
+      SCMN: "Swisscom AG",
+      BAER: "Julius Baer Group Ltd",
+      CFR: "Compagnie Financière Richemont SA",
     }
-
-    return nameMap[symbol.toUpperCase()] || null
+    return names[symbol] || `${symbol} AG`
   }
 
-  private getEstimatedETFComposition(symbol: string): ETFComposition {
-    const knownCompositions: Record<string, ETFComposition> = {
-      VWRL: {
-        symbol: "VWRL",
-        name: "Vanguard FTSE All-World UCITS ETF",
-        domicile: "IE",
-        withholdingTax: 15,
-        expenseRatio: 0.22,
-        country: [
-          { country: "United States", weight: 65.0 },
-          { country: "Japan", weight: 8.0 },
-          { country: "United Kingdom", weight: 4.0 },
-          { country: "China", weight: 4.0 },
-          { country: "Canada", weight: 3.0 },
-          { country: "France", weight: 3.0 },
-          { country: "Switzerland", weight: 3.0 },
-          { country: "Germany", weight: 3.0 },
-          { country: "Other", weight: 7.0 },
-        ],
-        sector: [
-          { sector: "Technology", weight: 25.0 },
-          { sector: "Healthcare", weight: 13.0 },
-          { sector: "Financial Services", weight: 12.0 },
-          { sector: "Consumer Discretionary", weight: 10.0 },
-          { sector: "Communication Services", weight: 8.0 },
-          { sector: "Industrials", weight: 8.0 },
-          { sector: "Consumer Staples", weight: 6.0 },
-          { sector: "Energy", weight: 5.0 },
-          { sector: "Utilities", weight: 3.0 },
-          { sector: "Real Estate", weight: 3.0 },
-          { sector: "Materials", weight: 3.0 },
-          { sector: "Other", weight: 4.0 },
-        ],
-        currency: [
-          { currency: "USD", weight: 65.0 },
-          { currency: "JPY", weight: 8.0 },
-          { currency: "EUR", weight: 10.0 },
-          { currency: "GBP", weight: 4.0 },
-          { currency: "CHF", weight: 3.0 },
-          { currency: "CAD", weight: 3.0 },
-          { currency: "Other", weight: 7.0 },
-        ],
-      },
-      VWCE: {
-        symbol: "VWCE",
-        name: "Vanguard FTSE All-World UCITS ETF Accumulating",
-        domicile: "IE",
-        withholdingTax: 15,
-        expenseRatio: 0.22,
-        country: [
-          { country: "United States", weight: 65.0 },
-          { country: "Japan", weight: 8.0 },
-          { country: "United Kingdom", weight: 4.0 },
-          { country: "China", weight: 4.0 },
-          { country: "Canada", weight: 3.0 },
-          { country: "France", weight: 3.0 },
-          { country: "Switzerland", weight: 3.0 },
-          { country: "Germany", weight: 3.0 },
-          { country: "Other", weight: 7.0 },
-        ],
-        sector: [
-          { sector: "Technology", weight: 25.0 },
-          { sector: "Healthcare", weight: 13.0 },
-          { sector: "Financial Services", weight: 12.0 },
-          { sector: "Consumer Discretionary", weight: 10.0 },
-          { sector: "Communication Services", weight: 8.0 },
-          { sector: "Industrials", weight: 8.0 },
-          { sector: "Consumer Staples", weight: 6.0 },
-          { sector: "Energy", weight: 5.0 },
-          { sector: "Utilities", weight: 3.0 },
-          { sector: "Real Estate", weight: 3.0 },
-          { sector: "Materials", weight: 3.0 },
-          { sector: "Other", weight: 4.0 },
-        ],
-        currency: [
-          { currency: "USD", weight: 65.0 },
-          { currency: "JPY", weight: 8.0 },
-          { currency: "EUR", weight: 10.0 },
-          { currency: "GBP", weight: 4.0 },
-          { currency: "CHF", weight: 3.0 },
-          { currency: "CAD", weight: 3.0 },
-          { currency: "Other", weight: 7.0 },
-        ],
-      },
-      IS3N: {
-        symbol: "IS3N",
-        name: "iShares Core MSCI World UCITS ETF",
-        domicile: "IE",
-        withholdingTax: 15,
-        expenseRatio: 0.2,
-        country: [
-          { country: "United States", weight: 68.0 },
-          { country: "Japan", weight: 6.0 },
-          { country: "United Kingdom", weight: 4.0 },
-          { country: "France", weight: 3.5 },
-          { country: "Canada", weight: 3.0 },
-          { country: "Switzerland", weight: 3.0 },
-          { country: "Germany", weight: 2.5 },
-          { country: "Netherlands", weight: 1.5 },
-          { country: "Other", weight: 8.5 },
-        ],
-        sector: [
-          { sector: "Technology", weight: 24.0 },
-          { sector: "Healthcare", weight: 13.0 },
-          { sector: "Financial Services", weight: 13.0 },
-          { sector: "Consumer Discretionary", weight: 10.0 },
-          { sector: "Communication Services", weight: 8.0 },
-          { sector: "Industrials", weight: 10.0 },
-          { sector: "Consumer Staples", weight: 7.0 },
-          { sector: "Energy", weight: 4.0 },
-          { sector: "Materials", weight: 4.0 },
-          { sector: "Utilities", weight: 3.0 },
-          { sector: "Real Estate", weight: 2.0 },
-          { sector: "Other", weight: 2.0 },
-        ],
-        currency: [
-          { currency: "USD", weight: 68.0 },
-          { currency: "JPY", weight: 6.0 },
-          { currency: "EUR", weight: 12.0 },
-          { currency: "GBP", weight: 4.0 },
-          { currency: "CHF", weight: 3.0 },
-          { currency: "CAD", weight: 3.0 },
-          { currency: "Other", weight: 4.0 },
-        ],
-      },
-      IWDA: {
-        symbol: "IWDA",
-        name: "iShares Core MSCI World UCITS ETF",
-        domicile: "IE",
-        withholdingTax: 15,
-        expenseRatio: 0.2,
-        country: [
-          { country: "United States", weight: 68.0 },
-          { country: "Japan", weight: 6.0 },
-          { country: "United Kingdom", weight: 4.0 },
-          { country: "France", weight: 3.5 },
-          { country: "Canada", weight: 3.0 },
-          { country: "Switzerland", weight: 3.0 },
-          { country: "Germany", weight: 2.5 },
-          { country: "Netherlands", weight: 1.5 },
-          { country: "Other", weight: 8.5 },
-        ],
-        sector: [
-          { sector: "Technology", weight: 24.0 },
-          { sector: "Healthcare", weight: 13.0 },
-          { sector: "Financial Services", weight: 13.0 },
-          { sector: "Consumer Discretionary", weight: 10.0 },
-          { sector: "Communication Services", weight: 8.0 },
-          { sector: "Industrials", weight: 10.0 },
-          { sector: "Consumer Staples", weight: 7.0 },
-          { sector: "Energy", weight: 4.0 },
-          { sector: "Materials", weight: 4.0 },
-          { sector: "Utilities", weight: 3.0 },
-          { sector: "Real Estate", weight: 2.0 },
-          { sector: "Other", weight: 2.0 },
-        ],
-        currency: [
-          { currency: "USD", weight: 68.0 },
-          { currency: "JPY", weight: 6.0 },
-          { currency: "EUR", weight: 12.0 },
-          { currency: "GBP", weight: 4.0 },
-          { currency: "CHF", weight: 3.0 },
-          { currency: "CAD", weight: 3.0 },
-          { currency: "Other", weight: 4.0 },
-        ],
-      },
-      EUNL: {
-        symbol: "EUNL",
-        name: "iShares Core MSCI World UCITS ETF EUR Hedged",
-        domicile: "IE",
-        withholdingTax: 15,
-        expenseRatio: 0.3,
-        country: [
-          { country: "United States", weight: 68.0 },
-          { country: "Japan", weight: 6.0 },
-          { country: "United Kingdom", weight: 4.0 },
-          { country: "France", weight: 3.5 },
-          { country: "Canada", weight: 3.0 },
-          { country: "Switzerland", weight: 3.0 },
-          { country: "Germany", weight: 2.5 },
-          { country: "Netherlands", weight: 1.5 },
-          { country: "Other", weight: 8.5 },
-        ],
-        sector: [
-          { sector: "Technology", weight: 24.0 },
-          { sector: "Healthcare", weight: 13.0 },
-          { sector: "Financial Services", weight: 13.0 },
-          { sector: "Consumer Discretionary", weight: 10.0 },
-          { sector: "Communication Services", weight: 8.0 },
-          { sector: "Industrials", weight: 10.0 },
-          { sector: "Consumer Staples", weight: 7.0 },
-          { sector: "Energy", weight: 4.0 },
-          { sector: "Materials", weight: 4.0 },
-          { sector: "Utilities", weight: 3.0 },
-          { sector: "Real Estate", weight: 2.0 },
-          { sector: "Other", weight: 2.0 },
-        ],
-        currency: [
-          { currency: "EUR", weight: 100.0 }, // EUR hedged
-        ],
-      },
+  private getSwissStockSector(symbol: string): string {
+    const sectors: Record<string, string> = {
+      NESN: "Consumer Staples",
+      NOVN: "Healthcare",
+      ROG: "Healthcare",
+      UHR: "Consumer Discretionary",
+      ABBN: "Industrials",
+      UBSG: "Financials",
+      CSGN: "Financials",
+      ZURN: "Financials",
+      SLHN: "Financials",
+      LONN: "Healthcare",
+      GIVN: "Materials",
+      SCMN: "Communication Services",
+      BAER: "Financials",
+      CFR: "Consumer Discretionary",
     }
-
-    // Return known composition or generate estimated one
-    const known = knownCompositions[symbol.toUpperCase()]
-    if (known) return known
-
-    // Generate estimated composition based on symbol patterns
-    const isWorldETF = symbol.match(/^(VT|ACWI|FTSE|WORLD|VWRL|VWCE|IWDA|IS3N)/i)
-    const isUSETF = symbol.match(/^(VTI|SPY|QQQ|IVV|SPYY)/i)
-    const isEuropeanETF = symbol.match(/^(VEA|EFA|IEFA|VEUR|IEUR)/i)
-    const isEmergingETF = symbol.match(/^(VWO|EEM|IEMG|VFEM)/i)
-
-    let domicile = "US"
-    let withholdingTax = 30
-
-    // Guess domicile based on symbol
-    if (symbol.match(/^(VWCE|VWRL|IWDA|EUNL|IS3N)$/)) {
-      domicile = "IE"
-      withholdingTax = 15
-    } else if (symbol.includes("LU")) {
-      domicile = "LU"
-      withholdingTax = 15
-    }
-
-    return {
-      symbol: symbol.toUpperCase(),
-      name: `${symbol.toUpperCase()} ETF`,
-      domicile,
-      withholdingTax,
-      expenseRatio: 0.3,
-      country: isWorldETF
-        ? [
-            { country: "United States", weight: 60 },
-            { country: "Japan", weight: 8 },
-            { country: "United Kingdom", weight: 4 },
-            { country: "Other", weight: 28 },
-          ]
-        : isUSETF
-          ? [{ country: "United States", weight: 100 }]
-          : isEuropeanETF
-            ? [
-                { country: "United Kingdom", weight: 20 },
-                { country: "Switzerland", weight: 15 },
-                { country: "France", weight: 12 },
-                { country: "Germany", weight: 12 },
-                { country: "Other", weight: 41 },
-              ]
-            : isEmergingETF
-              ? [
-                  { country: "China", weight: 35 },
-                  { country: "India", weight: 15 },
-                  { country: "Taiwan", weight: 12 },
-                  { country: "South Korea", weight: 10 },
-                  { country: "Other", weight: 28 },
-                ]
-              : [
-                  { country: "United States", weight: 60 },
-                  { country: "Other", weight: 40 },
-                ],
-      sector: [
-        { sector: "Technology", weight: 25 },
-        { sector: "Healthcare", weight: 13 },
-        { sector: "Financial Services", weight: 12 },
-        { sector: "Consumer Discretionary", weight: 10 },
-        { sector: "Communication Services", weight: 8 },
-        { sector: "Industrials", weight: 8 },
-        { sector: "Consumer Staples", weight: 6 },
-        { sector: "Energy", weight: 5 },
-        { sector: "Utilities", weight: 3 },
-        { sector: "Real Estate", weight: 3 },
-        { sector: "Materials", weight: 3 },
-        { sector: "Other", weight: 4 },
-      ],
-      currency: isWorldETF
-        ? [
-            { currency: "USD", weight: 60 },
-            { currency: "EUR", weight: 15 },
-            { currency: "JPY", weight: 8 },
-            { currency: "GBP", weight: 4 },
-            { currency: "Other", weight: 13 },
-          ]
-        : isUSETF
-          ? [{ currency: "USD", weight: 100 }]
-          : [
-              { currency: "USD", weight: 50 },
-              { currency: "EUR", weight: 30 },
-              { currency: "Other", weight: 20 },
-            ],
-    }
+    return sectors[symbol] || "Unknown"
   }
 }
 
