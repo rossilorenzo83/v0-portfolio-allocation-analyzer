@@ -196,6 +196,32 @@ VWRL,Vanguard FTSE All-World,500,89.96,CHF,44980.00`
       expect(result).toBeDefined()
       expect(result.positions.length).toBe(2)
     })
+
+    test("should parse the provided real CSV file", async () => {
+      const csvUrl =
+        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Positions_775614_30072025_09_52-2pA6mub91t5KX9pPZHD5lGMTwk5gD6.csv"
+      const response = await fetch(csvUrl)
+      const csvText = await response.text()
+
+      const result = await parseSwissPortfolioPDF(csvText)
+
+      expect(result).toBeDefined()
+      expect(result.positions.length).toBeGreaterThan(0) // Expect at least one position
+      console.log("Real CSV parsing test: Positions found:", result.positions.length)
+      if (result.positions.length > 0) {
+        console.log("First position symbol:", result.positions[0].symbol)
+        console.log("First position name:", result.positions[0].name)
+        console.log("First position quantity:", result.positions[0].quantity)
+        console.log("First position price:", result.positions[0].price)
+        console.log("First position totalValueCHF:", result.positions[0].totalValueCHF)
+      }
+      // Add more specific assertions based on the expected content of the CSV
+      // For example, check for a known symbol and its parsed values
+      // const expectedSymbol = "SOME_SYMBOL_FROM_CSV";
+      // const position = result.positions.find(p => p.symbol === expectedSymbol);
+      // expect(position).toBeDefined();
+      // expect(position?.quantity).toBeGreaterThan(0);
+    })
   })
 
   describe("Number Parsing", () => {

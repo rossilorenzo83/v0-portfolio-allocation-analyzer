@@ -350,8 +350,8 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
 
     console.log(`Row ${i} header match count: ${matchCount}, content: ${rowText.substring(0, 100)}`)
 
-    if (matchCount >= 3) {
-      // Need at least 3 header indicators
+    // Lowered threshold for header detection to 2, as some CSVs might have fewer indicators
+    if (matchCount >= 2) {
       headerRowIndex = i
       headers = row.map((h) => h.toString().trim())
       console.log("Header found at row", i, ":", headers)
@@ -482,14 +482,21 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
   for (let i = headerRowIndex + 1; i < rows.length; i++) {
     const row = rows[i]
 
-    if (!row || row.length < Math.max(2, headers.length / 2)) continue
+    // Ensure row has enough columns to be considered valid data
+    if (!row || row.length < Math.max(2, Object.values(columnMap).filter((idx) => idx >= 0).length / 2)) {
+      console.log(`Skipping row ${i}: not enough columns or empty. Row length: ${row?.length || 0}`)
+      continue
+    }
 
     const firstCell = (row[0] || "").toString().trim()
     const secondCell = (row[1] || "").toString().trim()
     const fullRowText = row.join(" ").toLowerCase()
 
     // Skip empty rows
-    if (!firstCell && !secondCell) continue
+    if (!firstCell && !secondCell) {
+      console.log(`Skipping row ${i}: empty cells.`)
+      continue
+    }
 
     console.log(`Processing row ${i}: [${row.slice(0, 5).join(", ")}...]`)
 
@@ -500,7 +507,7 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
 
     if (categoryMatch) {
       currentCategory = CATEGORY_ALIASES[categoryMatch]
-      console.log(`Found category: ${currentCategory}`)
+      console.log(`Found category: ${currentCategory} at row ${i}`)
       continue
     }
 
@@ -518,7 +525,7 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
       const totalValue = extractLargestNumberFromRow(row)
       if (totalValue > totalPortfolioValue) {
         totalPortfolioValue = totalValue
-        console.log(`Found potential total value: ${totalValue}`)
+        console.log(`Found potential total value: ${totalValue} at row ${i}`)
       }
       continue
     }
@@ -528,7 +535,7 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
 
     // Skip if no valid symbol
     if (!symbol || symbol.length < 1) {
-      console.log(`Skipping row ${i}: no valid symbol`)
+      console.log(`Skipping row ${i}: no valid symbol found. Raw symbol cell: "${row[columnMap.symbol] || ""}"`)
       continue
     }
 
@@ -553,25 +560,25 @@ async function parseSwissquoteCSV(csv: string): Promise<SwissPortfolioData> {
     const dailyChange = parseSwissNumber(dailyChangeStr.replace("%", ""))
 
     console.log(
-      `Parsed values: symbol=${symbol}, qty=${quantity}, price=${price}, currency=${currencyStr}, total=${totalCHF}`,
+      `Parsed values for ${symbol}: qty=${quantity} (raw: "${quantityStr}"), price=${price} (raw: "${priceStr}"), currency=${currencyStr}, total=${totalCHF} (raw: "${totalCHFStr}")`,
     )
 
     // Skip if missing essential data
     if (isNaN(quantity) || quantity <= 0) {
-      console.log(`Skipping ${symbol}: invalid quantity (${quantity})`)
+      console.log(`Skipping ${symbol} at row ${i}: invalid quantity (${quantity}).`)
       continue
     }
 
     if (isNaN(price) || price <= 0) {
-      console.log(`Skipping ${symbol}: invalid price (${price})`)
+      console.log(`Skipping ${symbol} at row ${i}: invalid price (${price}).`)
       continue
     }
 
-    // Calculate total value if not provided
+    // Calculate total value if not provided or invalid
     let calculatedTotal = totalCHF
     if (isNaN(calculatedTotal) || calculatedTotal <= 0) {
       calculatedTotal = quantity * price * getCurrencyRate(currencyStr)
-      console.log(`Calculated total for ${symbol}: ${calculatedTotal}`)
+      console.log(`Calculated total for ${symbol}: ${calculatedTotal} (original total was invalid or missing).`)
     }
 
     console.log(`✅ Adding position: ${symbol} - ${quantity} @ ${price} ${currencyStr} = ${calculatedTotal} CHF`)
