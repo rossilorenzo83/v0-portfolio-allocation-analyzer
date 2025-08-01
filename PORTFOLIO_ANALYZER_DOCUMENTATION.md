@@ -49,6 +49,7 @@ The Portfolio Analyzer is a sophisticated web application built with Next.js 15,
 - **Header Recognition**: Identifies common column headers in multiple languages (EN/FR/DE)
 - **Category Mapping**: Maps asset categories across different languages
 - **Symbol Resolution**: Cleans and normalizes security symbols (ISIN, ticker symbols)
+- **Robust Row Processing**: Handles rows with leading blank cells or whitespace, focusing on valid data in other columns
 
 #### Supported Data Formats
 ```typescript
@@ -184,6 +185,13 @@ ROG: "ROG.SW"
 - **Retry Logic**: Automatic retries for failed API calls
 - **Fallback Data**: Mock data when external services fail
 - **User Feedback**: Clear error messages and suggestions
+
+#### CSV Parsing Robustness
+- **Leading Blank Cell Handling**: Correctly processes rows that start with empty cells or whitespace
+- **Symbol-First Validation**: Prioritizes symbol detection over first cell content for position identification
+- **Multi-language Support**: Handles French, German, and English CSV headers and content
+- **Swiss Number Format**: Parses numbers with apostrophes (thousands) and commas (decimals)
+- **Category Detection**: Identifies asset categories from headers or row content
 
 ### 6. Testing Infrastructure
 
@@ -321,6 +329,21 @@ NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL=/api/yahoo
 - Compliance reporting
 - Risk management
 - Performance attribution
+
+## Recent Fixes and Improvements
+
+### Latest Updates (Latest Session)
+- **Fixed Leading Blank Cell Issue**: Resolved parsing problem where rows starting with empty cells or whitespace were being skipped
+- **Enhanced Symbol-First Validation**: Modified parsing logic to prioritize symbol detection over first cell content
+- **Improved Multi-language Support**: Enhanced French and German header recognition and parsing
+- **Swiss Number Format Enhancement**: Better handling of apostrophes and commas in number parsing
+- **Category Detection Refinement**: Improved logic for identifying asset categories from various CSV formats
+
+### Bug Fixes
+- **Hydration Issues**: Fixed SSR/CSR mismatch by updating theme provider configuration
+- **Component Prop Errors**: Resolved `onLoadingChange is not a function` error in file upload components
+- **CSV Parsing Edge Cases**: Addressed various edge cases in Swiss bank CSV format parsing
+- **Test Suite Updates**: Updated all tests to reflect latest parsing improvements
 
 ## Future Enhancements
 

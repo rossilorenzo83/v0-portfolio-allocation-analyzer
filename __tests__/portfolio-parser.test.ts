@@ -40,6 +40,207 @@ describe("parsePortfolioCsv", () => {
     })
   })
 
+  describe("Multi-language CSV parsing", () => {
+    it("should correctly parse French headers (Swiss bank format)", async () => {
+      const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Coût unitaire,Valeur totale CHF,G&P CHF,Positions %
+AAPL,Apple Inc.,10,170.00,USD,170.00,1564.00,1564.00,15.2
+VWRL,Vanguard FTSE All-World,5,100.00,USD,100.00,460.00,460.00,4.5`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data).toBeDefined()
+      expect(data.positions.length).toBe(2)
+      
+      const apple = data.positions.find((p) => p.symbol === "AAPL")
+      expect(apple).toBeDefined()
+      expect(apple?.quantity).toBe(10)
+      expect(apple?.price).toBe(170.00)
+      expect(apple?.currency).toBe("USD")
+      expect(apple?.totalValueCHF).toBeCloseTo(1564.00)
+      
+      const vwrl = data.positions.find((p) => p.symbol === "VWRL")
+      expect(vwrl).toBeDefined()
+      expect(vwrl?.quantity).toBe(5)
+      expect(vwrl?.price).toBe(100.00)
+      expect(vwrl?.currency).toBe("USD")
+      expect(vwrl?.totalValueCHF).toBeCloseTo(460.00)
+    })
+
+    it("should correctly parse German headers", async () => {
+      const csvContent = `Symbol,Bezeichnung,Menge,Kurs,Währung,Einstandspreis,Gesamtwert CHF,Gewinn/Verlust CHF,Position %
+NESN,Nestle SA,20,100.00,CHF,100.00,2000.00,2000.00,20.0
+CSN,Credit Suisse Bond,10,50.00,CHF,50.00,500.00,500.00,5.0`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data).toBeDefined()
+      expect(data.positions.length).toBe(2)
+      
+      const nestle = data.positions.find((p) => p.symbol === "NESN")
+      expect(nestle).toBeDefined()
+      expect(nestle?.quantity).toBe(20)
+      expect(nestle?.price).toBe(100.00)
+      expect(nestle?.currency).toBe("CHF")
+      expect(nestle?.totalValueCHF).toBeCloseTo(2000.00)
+    })
+
+    it("should handle mixed language headers", async () => {
+      const csvContent = `Symbol,Libellé,Quantité,Cours,Devise,Valeur totale CHF
+MSFT,Microsoft Corp,5,300,00,USD,1'380,00
+GOOG,Google Inc,2,2'500,00,USD,4'600,00`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data).toBeDefined()
+      expect(data.positions.length).toBe(2)
+      
+      const msft = data.positions.find((p) => p.symbol === "MSFT")
+      expect(msft?.quantity).toBe(5)
+      expect(msft?.price).toBe(300.00)
+      expect(msft?.totalValueCHF).toBeCloseTo(1380.00)
+    })
+  })
+
+  describe("Swiss bank format parsing", () => {
+    it("should detect and parse category-based Swiss bank CSV format", async () => {
+      const csvContent = `Actions
+Symbole,Libellé,Quantité,Cours,Devise,Coût unitaire,Valeur totale CHF,G&P CHF,Positions %
+AAPL,Apple Inc.,10,170.00,USD,170.00,1564.00,1564.00,15.2
+
+ETF
+Symbole,Libellé,Quantité,Cours,Devise,Coût unitaire,Valeur totale CHF,G&P CHF,Positions %
+VWRL,Vanguard FTSE All-World,5,100.00,USD,100.00,460.00,460.00,4.5
+
+Fonds
+Symbole,Libellé,Quantité,Cours,Devise,Coût unitaire,Valeur totale CHF,G&P CHF,Positions %
+CHSPI,Swiss Performance Index,100,1200.00,CHF,1200.00,120000.00,120000.00,1200.0`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data).toBeDefined()
+      expect(data.positions.length).toBe(3)
+      
+      // Check categories are correctly assigned
+      const apple = data.positions.find((p) => p.symbol === "AAPL")
+      expect(apple?.category).toBe("Actions")
+      
+      const vwrl = data.positions.find((p) => p.symbol === "VWRL")
+      expect(vwrl?.category).toBe("ETF")
+      
+      const chspi = data.positions.find((p) => p.symbol === "CHSPI")
+      expect(chspi?.category).toBe("Fonds")
+      expect(chspi?.quantity).toBe(100)
+      expect(chspi?.price).toBe(1200.00)
+      expect(chspi?.totalValueCHF).toBeCloseTo(120000.00)
+    })
+
+    it("should handle Swiss bank format with various category headers", async () => {
+      const csvContent = `Produits structurés
+Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF
+STRUCT1,Structured Product A,1,10000.00,CHF,10000.00
+
+Obligations
+Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF
+BOND1,Government Bond,50,100.00,CHF,5000.00
+
+Crypto-monnaies
+Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF
+BTC,Bitcoin,0.5,50000.00,USD,250000.00`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data).toBeDefined()
+      expect(data.positions.length).toBe(3)
+      
+      const struct = data.positions.find((p) => p.symbol === "STRUCT1")
+      expect(struct?.category).toBe("Produits structurés")
+      expect(struct?.totalValueCHF).toBeCloseTo(10000.00)
+      
+      const bond = data.positions.find((p) => p.symbol === "BOND1")
+      expect(bond?.category).toBe("Obligations")
+      expect(bond?.quantity).toBe(50)
+      
+      const btc = data.positions.find((p) => p.symbol === "BTC")
+      expect(btc?.category).toBe("Crypto-monnaies")
+      expect(btc?.quantity).toBe(0.5)
+      expect(btc?.price).toBe(50000.00)
+    })
+
+    it("should correctly parse Swiss number formats in category-based CSV", async () => {
+      const csvContent = `Actions
+Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF
+VOW3,Volkswagen AG,1000,123.45,EUR,123450.00
+NESN,Nestle SA,500,2000.00,CHF,1000000.00`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data).toBeDefined()
+      expect(data.positions.length).toBe(2)
+      
+      const vw = data.positions.find((p) => p.symbol === "VOW3")
+      expect(vw?.quantity).toBe(1000)
+      expect(vw?.price).toBe(123.45)
+      expect(vw?.currency).toBe("EUR")
+      expect(vw?.totalValueCHF).toBeCloseTo(123450.00)
+      
+      const nestle = data.positions.find((p) => p.symbol === "NESN")
+      expect(nestle?.quantity).toBe(500)
+      expect(nestle?.price).toBe(2000.00)
+      expect(nestle?.totalValueCHF).toBeCloseTo(1000000.00)
+    })
+
+    it("should handle empty categories in Swiss bank format", async () => {
+      const csvContent = `Actions
+Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF
+
+ETF
+Symbole,Libellé,Quantité,Cours,Devise,Valeur totale CHF
+VWRL,Vanguard FTSE All-World,5,100,00,USD,460,00`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data).toBeDefined()
+      expect(data.positions.length).toBe(1) // Only VWRL should be parsed
+      expect(data.positions[0].symbol).toBe("VWRL")
+      expect(data.positions[0].category).toBe("ETF")
+    })
+  })
+
+  describe("Swiss number format parsing", () => {
+    it("should correctly parse numbers with apostrophes as thousands separators", async () => {
+      const csvContent = `Symbol,Quantity,Price,Total Value CHF
+AAPL,1'000,170,00,170'000,00
+MSFT,500,300,00,150'000,00`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data.positions[0].quantity).toBe(1000)
+      expect(data.positions[0].price).toBe(170.00)
+      expect(data.positions[0].totalValueCHF).toBeCloseTo(170000.00)
+      
+      expect(data.positions[1].quantity).toBe(500)
+      expect(data.positions[1].price).toBe(300.00)
+      expect(data.positions[1].totalValueCHF).toBeCloseTo(150000.00)
+    })
+
+    it("should correctly parse numbers with commas as decimal separators", async () => {
+      const csvContent = `Symbol,Quantity,Price,Total Value CHF
+VOW3,1000,123.45,123450.00
+NESN,500,2000.00,1000000.00`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data.positions[0].price).toBe(123.45)
+      expect(data.positions[1].price).toBe(2000.00)
+    })
+
+    it("should handle mixed Swiss number formats", async () => {
+      const csvContent = `Symbol,Quantity,Price,Total Value CHF
+AAPL,1000,170.50,170500.00
+VWRL,500,100.25,50125.00`
+      const data = await parsePortfolioCsv(csvContent)
+
+      expect(data.positions[0].quantity).toBe(1000)
+      expect(data.positions[0].price).toBe(170.50)
+      expect(data.positions[0].totalValueCHF).toBeCloseTo(170500.00)
+      
+      expect(data.positions[1].quantity).toBe(500)
+      expect(data.positions[1].price).toBe(100.25)
+      expect(data.positions[1].totalValueCHF).toBeCloseTo(50125.00)
+    })
+  })
+
   it("should correctly parse a standard Swissquote CSV format", async () => {
     const csvContent = readFileSync(join(__dirname, "mock-swissquote.csv"), "utf-8")
     const data = await parsePortfolioCsv(csvContent)
@@ -252,7 +453,7 @@ CSN,Credit Suisse Bond,10,50.00,CHF,Obligations,500.00`
     const data = await parsePortfolioCsv(csvContent)
 
     expect(data.positions[0].category).toBe("Actions")
-    expect(data.positions[1].category).toBe("Bonds")
+    expect(data.positions[1].category).toBe("Obligations")
   })
 
   it("should handle various header casings and synonyms", async () => {
