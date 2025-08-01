@@ -233,19 +233,17 @@ class ETFDataService {
           { currency: "GBP", weight: 10 },
         ],
         country: [
-          { country: "United States", weight: 55 },
+          { country: "United States", weight: 60 },
+          { country: "Switzerland", weight: 15 },
           { country: "Japan", weight: 10 },
-          { country: "United Kingdom", weight: 8 },
-          { country: "Switzerland", weight: 5 },
-          { country: "Other", weight: 22 },
+          { country: "Other", weight: 15 },
         ],
         sector: [
-          { sector: "Technology", weight: 25 },
-          { sector: "Financial Services", weight: 15 },
-          { sector: "Healthcare", weight: 12 },
-          { sector: "Consumer Discretionary", weight: 10 },
-          { sector: "Industrials", weight: 8 },
-          { sector: "Other", weight: 30 },
+          { sector: "Technology", weight: 40 },
+          { sector: "Financials", weight: 20 },
+          { sector: "Healthcare", weight: 15 },
+          { sector: "Consumer Discretionary", weight: 12 },
+          { sector: "Other", weight: 13 },
         ],
         holdings: [],
         domicile: "IE",
@@ -297,8 +295,20 @@ const FALLBACK_ETF_DATA: { [symbol: string]: EtfData } = {
     exchange: "LSE",
     domicile: "IE",
     composition: {
-      sectors: { "Information Technology": 0.22, Financials: 0.15, "Consumer Discretionary": 0.12, Other: 0.51 },
-      countries: { "United States": 0.6, Japan: 0.07, "United Kingdom": 0.04, Other: 0.29 },
+      sectors: { "Technology": 0.4, "Financials": 0.2, "Healthcare": 0.15, "Consumer Discretionary": 0.12, Other: 0.13 },
+      countries: { "United States": 0.6, "Switzerland": 0.15, "Japan": 0.1, Other: 0.15 },
+      currencies: { USD: 0.65, EUR: 0.15, JPY: 0.07, Other: 0.13 },
+    },
+  },
+  "VWRL": {
+    symbol: "VWRL",
+    name: "Vanguard FTSE All-World UCITS ETF",
+    currency: "USD",
+    exchange: "LSE",
+    domicile: "IE",
+    composition: {
+      sectors: { "Technology": 0.4, "Financials": 0.2, "Healthcare": 0.15, "Consumer Discretionary": 0.12, Other: 0.13 },
+      countries: { "United States": 0.6, "Switzerland": 0.15, "Japan": 0.1, Other: 0.15 },
       currencies: { USD: 0.65, EUR: 0.15, JPY: 0.07, Other: 0.13 },
     },
   },
@@ -320,6 +330,7 @@ const FALLBACK_ETF_DATA: { [symbol: string]: EtfData } = {
 const FALLBACK_QUOTE_DATA: { [symbol: string]: QuoteData } = {
   "VUSA.L": { price: 72.5, currency: "USD" },
   "VWRL.L": { price: 105.2, currency: "USD" },
+  "VWRL": { price: 105.2, currency: "USD" },
   SMH: { price: 260.15, currency: "USD" },
   // Add more common ETF quotes as needed
 }
@@ -385,8 +396,8 @@ export async function searchSymbol(query: string): Promise<SearchResult[]> {
 
 export async function getEtfDataWithFallback(symbol: string): Promise<EtfData | null> {
   let data = await getEtfData(symbol)
-  if (!data) {
-    console.warn(`No ETF data found for ${symbol} from API. Using fallback.`)
+  if (!data || (data.composition && Object.keys(data.composition.countries).length === 0)) {
+    console.warn(`No ETF data or empty composition found for ${symbol} from API. Using fallback.`)
     data = FALLBACK_ETF_DATA[symbol.toUpperCase()]
   }
   return data
@@ -420,7 +431,8 @@ export async function resolveSymbolAndFetchData(
   console.log(`Direct fetch failed for ${position.symbol}. Attempting search...`)
   const searchResults = await searchSymbol(position.symbol)
 
-  for (const result of searchResults) {
+  if (searchResults && Array.isArray(searchResults)) {
+    for (const result of searchResults) {
     // Prioritize results matching currency or exchange if available in position
     if (position.currency && result.currency !== position.currency) {
       continue
@@ -436,6 +448,7 @@ export async function resolveSymbolAndFetchData(
       console.log(`Search and fetch successful for ${position.symbol} (resolved to ${result.symbol})`)
       return { etfData, quoteData }
     }
+  }
   }
 
   console.warn(`Could not resolve and fetch data for ${position.symbol} after search. Using minimal fallback.`)

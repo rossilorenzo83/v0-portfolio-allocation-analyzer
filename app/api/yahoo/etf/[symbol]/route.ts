@@ -69,11 +69,8 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
     return NextResponse.json({ error: "Symbol is required" }, { status: 400 })
   }
 
-  const etfData = mockEtfCompositionData[symbol.toUpperCase()]
-
-  if (etfData) {
-    return NextResponse.json(etfData)
-  }
+  // First, try to get real data from Yahoo Finance API or web scraping
+  // Only fall back to mock data if all real attempts fail
 
   if (!apiKey) {
     return NextResponse.json({ error: "Yahoo Finance API key not configured." }, { status: 500 })
@@ -170,6 +167,14 @@ export async function GET(request: NextRequest, { params }: { params: { symbol: 
     }
   } catch (error) {
     console.error(`Error in ETF holdings route for ${symbol}:`, error)
+    
+    // If all real attempts fail, fall back to mock data
+    const etfData = mockEtfCompositionData[symbol.toUpperCase()]
+    if (etfData) {
+      console.log(`Using mock data fallback for ${symbol}`)
+      return NextResponse.json(etfData)
+    }
+    
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

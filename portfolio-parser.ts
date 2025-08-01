@@ -1,4 +1,5 @@
 import Papa from "papaparse"
+import { etfDataService, resolveSymbolAndFetchData } from "./etf-data-service"
 
 export interface SwissPortfolioData {
   accountOverview: {
@@ -36,6 +37,12 @@ export interface PortfolioPosition {
   dailyChangePercent: number
   isOTC: boolean
   platform?: string
+  // ETF composition data for true allocation calculations
+  etfComposition?: {
+    sectors: { [key: string]: number }
+    countries: { [key: string]: number }
+    currencies: { [key: string]: number }
+  }
 }
 
 export interface AllocationItem {
@@ -57,6 +64,8 @@ interface ParsedPosition {
   currency: string
   category: string
   domicile: string
+  geography?: string
+  sector?: string
   totalValue?: number
 }
 
@@ -97,6 +106,8 @@ const COMMON_HEADERS: { [key: string]: string[] } = {
   currency: ["currency", "ccy"],
   exchange: ["exchange", "market"],
   name: ["name", "description", "security name"],
+  geography: ["geography", "country", "region", "pays", "région"],
+  sector: ["sector", "industry", "secteur", "industrie"],
 }
 
 const detectColumnMapping = (headers: string[]): ColumnMapping => {
@@ -274,6 +285,8 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
     ]),
     currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy", "curr", "monnaie"]),
     category: findColumnIndex(headers, ["catégorie", "category", "type", "classe", "asset class", "instrument type"]),
+    geography: findColumnIndex(headers, ["geography", "country", "region", "pays", "région", "géographie"]),
+    sector: findColumnIndex(headers, ["sector", "industry", "secteur", "industrie"]),
     domicile: findColumnIndex(headers, ["domicile", "domicile country", "fund domicile", "incorporation"]),
     totalCHF: findColumnIndex(headers, [
       "valeur totale chf",
@@ -430,6 +443,8 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
     const dailyChangeStr = columnMap.dailyChange >= 0 ? row[columnMap.dailyChange]?.toString() : ""
     const categoryStr = columnMap.category >= 0 ? row[columnMap.category]?.toString().trim() : ""
     const domicileStr = columnMap.domicile >= 0 ? row[columnMap.domicile]?.toString().trim() : ""
+    const geographyStr = columnMap.geography >= 0 ? row[columnMap.geography]?.toString().trim() : ""
+    const sectorStr = columnMap.sector >= 0 ? row[columnMap.sector]?.toString().trim() : ""
 
     // Parse numbers with enhanced Swiss formatting
     const quantity = parseSwissNumber(quantityStr)
@@ -499,8 +514,8 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
       totalValueCHF: calculatedTotal,
       currency: currencyStr || "CHF",
       category: positionCategory,
-      sector: "Unknown",
-      geography: "Unknown",
+      sector: sectorStr || "Unknown",
+      geography: geographyStr || "Unknown",
       domicile: domicileStr || "Unknown",
       withholdingTax: 15,
       taxOptimized: false,
@@ -529,7 +544,7 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
   )
 
   // Enrich with API data
-  const enrichedPositions = enrichPositionsWithAPIData(
+  const enrichedPositions = await enrichPositionsWithAPIData(
     positions.map((p) => ({
       symbol: p.symbol,
       name: p.name,
@@ -537,7 +552,9 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
       price: p.price,
       currency: p.currency,
       category: p.category,
-      domicile: p.domicile,
+      domicile: p.domicile || "Unknown",
+      geography: p.geography || "Unknown",
+      sector: p.sector || "Unknown",
       totalValue: p.totalValueCHF,
     })),
   )
@@ -640,7 +657,7 @@ async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioD
       price: p.price,
       currency: p.currency,
       category: p.category,
-      domicile: p.domicile,
+      domicile: p.domicile || "Unknown",
       totalValue: p.totalValueCHF,
     })),
   )
@@ -797,85 +814,7 @@ function detectCSVDelimiter(csvText: string): string {
  * Convert ETF symbols to their proper Yahoo Finance ticker format
  * Many ETFs need exchange suffixes or different ticker formats for Yahoo Finance
  */
-function convertETFTicker(symbol: string, category: string): string {
-  if (category !== "ETF") {
-    return symbol
-  }
 
-  const upperSymbol = symbol.toUpperCase()
-  
-  // Common ETF ticker mappings for Yahoo Finance
-  const etfMappings: Record<string, string> = {
-    // Vanguard ETFs (London Stock Exchange)
-    "VWRL": "VWRL.L", // Vanguard FTSE All-World UCITS ETF
-    "VWRD": "VWRD.L", // Vanguard FTSE All-World UCITS ETF (USD)
-    "VUSA": "VUSA.L", // Vanguard S&P 500 UCITS ETF
-    "VEUR": "VEUR.L", // Vanguard FTSE Developed Europe UCITS ETF
-    "VJPN": "VJPN.L", // Vanguard FTSE Japan UCITS ETF
-    "VAPX": "VAPX.L", // Vanguard FTSE All-World ex-US UCITS ETF
-    
-    // iShares ETFs (London Stock Exchange)
-    "IS3N": "IS3N.L", // iShares MSCI World UCITS ETF
-    "IWDA": "IWDA.L", // iShares Core MSCI World UCITS ETF
-    "EMIM": "EMIM.L", // iShares Core MSCI EM IMI UCITS ETF
-    "EIMI": "EIMI.L", // iShares Core MSCI EM IMI UCITS ETF (USD)
-    "IUSQ": "IUSQ.L", // iShares MSCI ACWI UCITS ETF
-    "SWDA": "SWDA.L", // iShares Core MSCI World UCITS ETF (USD)
-    
-    // Swiss ETFs (SIX Swiss Exchange)
-    "CHSPI": "CHSPI.SW", // Swiss Performance Index ETF
-    
-    // SPDR ETFs (London Stock Exchange)
-    "SPY5": "SPY5.L", // SPDR S&P 500 UCITS ETF
-    "SPYI": "SPYI.L", // SPDR MSCI World UCITS ETF
-    
-    // Invesco ETFs (London Stock Exchange)
-    "IWDP": "IWDP.L", // Invesco MSCI World UCITS ETF
-    "IWDE": "IWDE.L", // Invesco MSCI World UCITS ETF (USD)
-    
-    // Amundi ETFs (Euronext Paris)
-    "CW8": "CW8.PA", // Amundi MSCI World UCITS ETF
-    
-    // Lyxor ETFs (Euronext Paris)
-    "LYXOR": "LYXOR.PA", // Lyxor ETFs (generic)
-    
-    // Xtrackers ETFs (Deutsche Börse)
-    "XGLE": "XGLE.DE", // Xtrackers MSCI World UCITS ETF
-    
-    // WisdomTree ETFs (London Stock Exchange)
-    "WTEM": "WTEM.L", // WisdomTree Emerging Markets UCITS ETF
-  }
-
-  // Check if we have a direct mapping
-  if (etfMappings[upperSymbol]) {
-    console.log(`Converting ETF ticker: ${symbol} → ${etfMappings[upperSymbol]}`)
-    return etfMappings[upperSymbol]
-  }
-
-  // If no direct mapping, try to infer based on common patterns
-  if (upperSymbol.endsWith('.L') || upperSymbol.endsWith('.PA') || upperSymbol.endsWith('.DE') || upperSymbol.endsWith('.SW')) {
-    // Already has exchange suffix
-    return upperSymbol
-  }
-
-  // For Swiss ETFs, try adding .SW suffix
-  if (upperSymbol.includes('CH') || upperSymbol.includes('SWISS')) {
-    const swissTicker = `${upperSymbol}.SW`
-    console.log(`Inferring Swiss ETF ticker: ${symbol} → ${swissTicker}`)
-    return swissTicker
-  }
-
-  // For European ETFs, try adding .L suffix (most common for UCITS ETFs)
-  if (upperSymbol.length <= 5 && !upperSymbol.includes('.')) {
-    const londonTicker = `${upperSymbol}.L`
-    console.log(`Inferring London ETF ticker: ${symbol} → ${londonTicker}`)
-    return londonTicker
-  }
-
-  // Return original symbol if no conversion found
-  console.log(`No ETF ticker conversion found for: ${symbol}, using original`)
-  return symbol
-}
 
 async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Promise<PortfolioPosition[]> {
   const enrichedPositions: PortfolioPosition[] = []
@@ -884,62 +823,58 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
     console.log(`Enriching ${parsed.symbol}...`)
 
     try {
-      // Convert ETF ticker to proper Yahoo Finance format
-      const yahooSymbol = convertETFTicker(parsed.symbol, parsed.category)
-      console.log(`Using Yahoo Finance symbol: ${yahooSymbol} for ${parsed.symbol}`)
-
-      // Real API calls to Yahoo Finance
-      let priceData = null
-      let metadata = null
-      let etfComposition = null
-
-      // Get current price and market data
-      try {
-        const quoteResponse = await fetch(`/api/yahoo/quote/${yahooSymbol}`)
-        if (quoteResponse.ok) {
-          priceData = await quoteResponse.json()
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch quote for ${yahooSymbol}:`, error)
+      // Use centralized ETF data service for all enrichment
+      // This handles symbol resolution, API calls, caching, and fallbacks
+      const position = {
+        symbol: parsed.symbol,
+        name: parsed.name,
+        currency: parsed.currency,
+        exchange: "UNKNOWN", // Will be resolved by the service
+        averagePrice: parsed.price,
+        category: parsed.category
       }
 
-      // Get asset metadata (name, sector, country, etc.)
-      try {
-        const searchResponse = await fetch(`/api/yahoo/search/${yahooSymbol}`)
-        if (searchResponse.ok) {
-          metadata = await searchResponse.json()
-        }
-      } catch (error) {
-        console.warn(`Failed to fetch metadata for ${yahooSymbol}:`, error)
-      }
+      const { etfData, quoteData } = await resolveSymbolAndFetchData(position)
+      
+      console.log(`Enrichment results for ${parsed.symbol}:`, {
+        etfData: etfData ? 'Found' : 'Not found',
+        quoteData: quoteData ? 'Found' : 'Not found'
+      })
 
-      // Get ETF composition if it's an ETF
-      if (parsed.category === "ETF") {
-        try {
-          const etfResponse = await fetch(`/api/yahoo/etf/${yahooSymbol}`)
-          if (etfResponse.ok) {
-            etfComposition = await etfResponse.json()
-          }
-        } catch (error) {
-          console.warn(`Failed to fetch ETF composition for ${yahooSymbol}:`, error)
-        }
-      }
-
-      const currentPrice = priceData?.price || parsed.price
+      const currentPrice = quoteData?.price || parsed.price
       const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
 
       // Determine tax optimization for Swiss investors
       // Use original domicile from CSV if available, otherwise use enriched data
-      const domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown"))
+      const domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfData?.domicile || "Unknown")
 
       // For Swiss investors: US domiciled ETFs are tax-optimized (15% withholding tax)
       // Irish/Luxembourg ETFs are also good (15% withholding tax)
       // Other domiciles have higher withholding taxes
       const taxOptimized = domicile === "US" || domicile === "IE" || domicile === "LU"
 
+      // Extract sector and geography from ETF composition if available
+      let sector = parsed.sector || "Unknown"
+      let geography = parsed.geography || "Unknown"
+      
+      if (etfData?.composition && (parsed.category === "ETF" || parsed.category === "Funds")) {
+        // For ETFs, use ETF composition data for sector and geography
+        const sectors = etfData.composition.sectors
+        if (Object.keys(sectors).length > 0) {
+          const largestSector = Object.entries(sectors).reduce((a, b) => sectors[a[0]] > sectors[b[0]] ? a : b)
+          sector = largestSector[0]
+        }
+        
+        const countries = etfData.composition.countries
+        if (Object.keys(countries).length > 0) {
+          const largestCountry = Object.entries(countries).reduce((a, b) => countries[a[0]] > countries[b[0]] ? a : b)
+          geography = largestCountry[0]
+        }
+      }
+
       const enrichedPosition: PortfolioPosition = {
         symbol: parsed.symbol,
-        name: metadata?.name || parsed.name,
+        name: etfData?.name || parsed.name,
         quantity: parsed.quantity,
         unitCost: parsed.price,
         price: parsed.price,
@@ -947,18 +882,19 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         totalValueCHF,
         currency: parsed.currency,
         category: parsed.category,
-        sector: metadata?.sector || "Unknown",
-        geography: metadata?.country || "Unknown",
+        sector: sector,
+        geography: parsed.geography || geography,
         domicile: domicile,
-        withholdingTax:
-          etfComposition?.withholdingTax || (domicile === "US" ? 15 : domicile === "IE" || domicile === "LU" ? 15 : 30),
+        withholdingTax: etfData?.composition ? 15 : (domicile === "US" ? 15 : domicile === "IE" || domicile === "LU" ? 15 : 30),
         taxOptimized: taxOptimized,
         gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
         unrealizedGainLoss: (currentPrice - parsed.price) * parsed.quantity,
         unrealizedGainLossPercent: ((currentPrice - parsed.price) / parsed.price) * 100,
         positionPercent: 0, // Will be calculated later
-        dailyChangePercent: priceData?.changePercent || 0,
+        dailyChangePercent: 0, // Not available from current service, could be enhanced
         isOTC: false,
+        // Store ETF composition data for true allocation calculations
+        etfComposition: etfData?.composition || undefined,
       }
 
       enrichedPositions.push(enrichedPosition)
@@ -1069,29 +1005,16 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
 
   for (const position of positions) {
     if (position.category === "ETF" || position.category === "Funds") {
-      // Get ETF composition for true country exposure
-      try {
-        // Mock ETF composition data
-        const composition = {
-          country: [
-            { country: "United States", weight: 60 },
-            { country: "Switzerland", weight: 15 },
-            { country: "Japan", weight: 10 },
-          ],
-        }
-        if (composition && composition.country.length > 0) {
-          composition.country.forEach((country) => {
-            const value = (country.weight / 100) * position.totalValueCHF
-            const current = allocation.get(country.country) || 0
-            allocation.set(country.country, current + value)
-          })
-        } else {
-          // Fallback to geography
-          const current = allocation.get(position.geography || "Unknown") || 0
-          allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
-        }
-      } catch (error) {
-        // Fallback to geography on API error
+      // Use ETF composition data for true country exposure
+      if (position.etfComposition && position.etfComposition.countries) {
+        const countries = position.etfComposition.countries
+        Object.entries(countries).forEach(([country, weight]) => {
+          const value = weight * position.totalValueCHF
+          const current = allocation.get(country) || 0
+          allocation.set(country, current + value)
+        })
+      } else {
+        // Fallback to geography if no ETF composition data
         const current = allocation.get(position.geography || "Unknown") || 0
         allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
       }
@@ -1115,29 +1038,16 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
 
   for (const position of positions) {
     if (position.category === "ETF" || position.category === "Funds") {
-      // Get ETF composition for true sector exposure
-      try {
-        // Mock ETF composition data
-        const composition = {
-          sector: [
-            { sector: "Technology", weight: 40 },
-            { sector: "Financials", weight: 20 },
-            { sector: "Healthcare", weight: 15 },
-          ],
-        }
-        if (composition && composition.sector.length > 0) {
-          composition.sector.forEach((sector) => {
-            const value = (sector.weight / 100) * position.totalValueCHF
-            const current = allocation.get(sector.sector) || 0
-            allocation.set(sector.sector, current + value)
-          })
-        } else {
-          // Fallback to mixed
-          const current = allocation.get("Mixed") || 0
-          allocation.set("Mixed", current + position.totalValueCHF)
-        }
-      } catch (error) {
-        // Fallback to mixed on API error
+      // Use ETF composition data for true sector exposure
+      if (position.etfComposition && position.etfComposition.sectors) {
+        const sectors = position.etfComposition.sectors
+        Object.entries(sectors).forEach(([sector, weight]) => {
+          const value = weight * position.totalValueCHF
+          const current = allocation.get(sector) || 0
+          allocation.set(sector, current + value)
+        })
+      } else {
+        // Fallback to mixed if no ETF composition data
         const current = allocation.get("Mixed") || 0
         allocation.set("Mixed", current + position.totalValueCHF)
       }

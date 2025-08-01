@@ -2,10 +2,47 @@ import { parsePortfolioCsv } from "../portfolio-parser" // Corrected import
 import { readFileSync } from "fs"
 import { join } from "path"
 
+// Mock fetch for API calls
+global.fetch = jest.fn()
+
 describe("parsePortfolioCsv", () => {
-  it("should correctly parse a standard Swissquote CSV format", () => {
+  beforeEach(() => {
+    // Reset fetch mock before each test
+    jest.clearAllMocks()
+    
+    // Mock successful API responses
+    ;(global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/yahoo/quote/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ price: 100, changePercent: 1.5 })
+        })
+      }
+      if (url.includes('/api/yahoo/search/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ name: "Test Asset", sector: "Technology", country: "United States" })
+        })
+      }
+      if (url.includes('/api/yahoo/etf/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ 
+            domicile: "IE", 
+            withholdingTax: 15,
+            country: [{ country: "US", weight: 70 }],
+            sector: [{ sector: "Technology", weight: 50 }],
+            currency: [{ currency: "USD", weight: 80 }]
+          })
+        })
+      }
+      return Promise.resolve({ ok: false })
+    })
+  })
+
+  it("should correctly parse a standard Swissquote CSV format", async () => {
     const csvContent = readFileSync(join(__dirname, "mock-swissquote.csv"), "utf-8")
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
     expect(data.positions.length).toBeGreaterThan(0)
@@ -22,11 +59,11 @@ describe("parsePortfolioCsv", () => {
     expect(apple?.category).toBe("Actions")
   })
 
-  it("should handle CSVs with different delimiters (e.g., semicolon)", () => {
+  it("should handle CSVs with different delimiters (e.g., semicolon)", async () => {
     const csvContent = `Symbol;Name;Quantity;Price;Currency;Total Value CHF
 MSFT;Microsoft Corp;5;300.00;USD;1500.00
 NESN;Nestle SA;20;100.00;CHF;2000.00`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
     expect(data.positions.length).toBe(2)
@@ -34,10 +71,10 @@ NESN;Nestle SA;20;100.00;CHF;2000.00`
     expect(data.positions[1].symbol).toBe("NESN")
   })
 
-  it("should correctly parse numbers with Swiss formatting (apostrophe and comma decimal)", () => {
+  it("should correctly parse numbers with Swiss formatting (apostrophe and comma decimal)", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF
 VOW3,Volkswagen AG,1'000,123,45,EUR,123'450.00`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
     expect(data.positions.length).toBe(1)
@@ -47,10 +84,10 @@ VOW3,Volkswagen AG,1'000,123,45,EUR,123'450.00`
     expect(vw?.currency).toBe("EUR")
   })
 
-  it("should infer headers if not explicitly found but common terms exist", () => {
+  it("should infer headers if not explicitly found but common terms exist", async () => {
     const csvContent = `Some Random Header,Another Field,Ticker,Number of Shares,Unit Price,Currency Type,Total Value
 junk,data,GOOG,5,1500.00,USD,7500.00`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
     expect(data.positions.length).toBe(1)
@@ -59,10 +96,10 @@ junk,data,GOOG,5,1500.00,USD,7500.00`
     expect(data.positions[0].price).toBe(1500)
   })
 
-  it("should calculate totalValueCHF if not provided in CSV", () => {
+  it("should calculate totalValueCHF if not provided in CSV", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency
 TSLA,Tesla Inc,2,250.00,USD`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
     expect(data.positions.length).toBe(1)
@@ -70,10 +107,10 @@ TSLA,Tesla Inc,2,250.00,USD`
     expect(tesla?.totalValueCHF).toBeCloseTo(2 * 250 * 0.92) // 500 USD * 0.92 USD/CHF
   })
 
-  it("should handle missing optional fields gracefully", () => {
+  it("should handle missing optional fields gracefully", async () => {
     const csvContent = `Symbol,Quantity,Price,Currency
 AMZN,10,100.00,USD`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
     expect(data.positions.length).toBe(1)
@@ -82,40 +119,40 @@ AMZN,10,100.00,USD`
     expect(amazon?.category).toBe("Unknown") // Category defaults to Unknown
   })
 
-  it("should filter out rows with invalid or missing required data", () => {
+  it("should filter out rows with invalid or missing required data", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency
 AAPL,Apple Inc.,10,170.00,USD
 INVALID,,0,,CHF
 MSFT,Microsoft Corp,5,300.00,USD`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
     expect(data.positions.length).toBe(2) // Invalid row should be skipped
     expect(data.positions.some((p) => p.symbol === "INVALID")).toBeFalsy()
   })
 
-  it("should return empty data for empty CSV content", () => {
+  it("should return empty data for empty CSV content", async () => {
     const csvContent = ""
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.positions).toEqual([])
     expect(data.accountOverview.totalValue).toBe(0)
   })
 
-  it("should return empty data for CSV with only headers and no data", () => {
+  it("should return empty data for CSV with only headers and no data", async () => {
     const csvContent = "Symbol,Name,Quantity,Price,Currency"
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.positions).toEqual([])
     expect(data.accountOverview.totalValue).toBe(0)
   })
 
-  it("should correctly calculate asset allocation", () => {
+  it("should correctly calculate asset allocation", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Category,Total Value CHF
 AAPL,Apple Inc.,10,170.00,USD,Actions,1564.00
 VTI,Vanguard Total Stock,5,200.00,USD,ETF,920.00
 GOOG,Google,2,2500.00,USD,Actions,4600.00`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.assetAllocation).toBeDefined()
     expect(data.assetAllocation.length).toBe(2) // Actions, ETF
@@ -126,11 +163,11 @@ GOOG,Google,2,2500.00,USD,Actions,4600.00`
     expect(etf?.value).toBeCloseTo(920)
   })
 
-  it("should correctly calculate currency allocation (mocked ETF look-through)", () => {
+  it("should correctly calculate currency allocation (mocked ETF look-through)", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Category,Total Value CHF
 AAPL,Apple Inc.,10,170.00,USD,Actions,1564.00
 VWRL,Vanguard FTSE All-World,5,100.00,USD,ETF,460.00` // VWRL is an ETF, mock composition has USD/EUR/CHF
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.currencyAllocation).toBeDefined()
     // Expect USD from AAPL + USD/EUR/CHF from VWRL (mocked 70/20/10 split)
@@ -149,11 +186,11 @@ VWRL,Vanguard FTSE All-World,5,100.00,USD,ETF,460.00` // VWRL is an ETF, mock co
     expect(chfAllocation?.value).toBeCloseTo(expectedCHFFromVWRL)
   })
 
-  it("should correctly calculate true country allocation (mocked ETF look-through)", () => {
+  it("should correctly calculate true country allocation (mocked ETF look-through)", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Category,Geography,Total Value CHF
 AAPL,Apple Inc.,10,170.00,USD,Actions,United States,1564.00
 VWRL,Vanguard FTSE All-World,5,100.00,USD,ETF,Unknown,460.00` // VWRL is an ETF, mock composition has US/CH/JP
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.trueCountryAllocation).toBeDefined()
     const totalValueAAPL = 1564
@@ -171,11 +208,11 @@ VWRL,Vanguard FTSE All-World,5,100.00,USD,ETF,Unknown,460.00` // VWRL is an ETF,
     expect(jpAllocation?.value).toBeCloseTo(expectedJPFromVWRL)
   })
 
-  it("should correctly calculate true sector allocation (mocked ETF look-through)", () => {
+  it("should correctly calculate true sector allocation (mocked ETF look-through)", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Category,Sector,Total Value CHF
 AAPL,Apple Inc.,10,170.00,USD,Actions,Technology,1564.00
 VWRL,Vanguard FTSE All-World,5,100.00,USD,ETF,Unknown,460.00` // VWRL is an ETF, mock composition has Tech/Fin/Health
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.trueSectorAllocation).toBeDefined()
     const totalValueAAPL = 1564
@@ -193,11 +230,11 @@ VWRL,Vanguard FTSE All-World,5,100.00,USD,ETF,Unknown,460.00` // VWRL is an ETF,
     expect(healthAllocation?.value).toBeCloseTo(expectedHealthFromVWRL)
   })
 
-  it("should correctly calculate domicile allocation", () => {
+  it("should correctly calculate domicile allocation", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Domicile,Total Value CHF
 SPY,SPDR S&P 500,10,400.00,USD,US,3680.00
 IEMG,iShares Core MSCI EM IMI,5,60.00,USD,IE,276.00`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.domicileAllocation).toBeDefined()
     expect(data.domicileAllocation.length).toBe(2)
@@ -208,42 +245,42 @@ IEMG,iShares Core MSCI EM IMI,5,60.00,USD,IE,276.00`
     expect(ieDomicile?.value).toBeCloseTo(276)
   })
 
-  it("should correctly identify categories from headers", () => {
+  it("should correctly identify categories from headers", async () => {
     const csvContent = `Symbole,Libellé,Quantité,Cours,Devise,Catégorie,Valeur totale CHF
 NESN,Nestle SA,20,100.00,CHF,Actions,2000.00
 CSN,Credit Suisse Bond,10,50.00,CHF,Obligations,500.00`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.positions[0].category).toBe("Actions")
     expect(data.positions[1].category).toBe("Bonds")
   })
 
-  it("should handle various header casings and synonyms", () => {
+  it("should handle various header casings and synonyms", async () => {
     const csvContent = `SYMBOL,NAME,QTY,PRICE,CCY,TOTAL
 TSLA,Tesla,1,100,USD,92`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
     expect(data.positions[0].symbol).toBe("TSLA")
     expect(data.positions[0].quantity).toBe(1)
     expect(data.positions[0].price).toBe(100)
     expect(data.positions[0].currency).toBe("USD")
   })
 
-  it("should correctly parse a CSV with a total row at the end", () => {
+  it("should correctly parse a CSV with a total row at the end", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF
 AAPL,Apple Inc.,10,170.00,USD,1564.00
 MSFT,Microsoft Corp,5,300.00,USD,1380.00
 Total Portfolio Value,,,2944.00`
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.positions.length).toBe(2)
     expect(data.accountOverview.totalValue).toBeCloseTo(2944.0)
   })
 
-  it("should prioritize explicit total value over calculated if present and larger", () => {
+  it("should prioritize explicit total value over calculated if present and larger", async () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF
 AAPL,Apple Inc.,10,170.00,USD,1564.00
 Total Portfolio Value,,,5000.00` // Explicit total is much higher
-    const data = parsePortfolioCsv(csvContent)
+    const data = await parsePortfolioCsv(csvContent)
 
     expect(data.positions.length).toBe(1)
     expect(data.accountOverview.totalValue).toBeCloseTo(5000.0)
