@@ -135,7 +135,7 @@ const parseValue = (value: string, key: string): any => {
   }
 }
 
-export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
+export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfolioData> => {
   console.log("Starting enhanced CSV parsing...")
   
   // Handle empty content
@@ -224,7 +224,7 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
   // If no clear header found, try to infer structure
   if (headerRowIndex === -1) {
     console.log("No clear header found, attempting structure inference...")
-    return parseCSVWithoutHeaders(rows)
+    return await parseCSVWithoutHeaders(rows)
   }
 
   // Map column indices with more flexible matching
@@ -558,7 +558,7 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
   }
 }
 
-function parseCSVWithoutHeaders(rows: string[][]): SwissPortfolioData {
+async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioData> {
   console.log("Attempting to parse CSV without clear headers...")
 
   const positions: PortfolioPosition[] = []
@@ -633,7 +633,7 @@ function parseCSVWithoutHeaders(rows: string[][]): SwissPortfolioData {
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
 
   // Enrich with API data
-  const enrichedPositions = enrichPositionsWithAPIData(
+  const enrichedPositions = await enrichPositionsWithAPIData(
     positions.map((p) => ({
       symbol: p.symbol,
       name: p.name,
@@ -794,26 +794,49 @@ function detectCSVDelimiter(csvText: string): string {
   return bestDelimiter
 }
 
-function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): PortfolioPosition[] {
+async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Promise<PortfolioPosition[]> {
   const enrichedPositions: PortfolioPosition[] = []
 
   for (const parsed of parsedPositions) {
     console.log(`Enriching ${parsed.symbol}...`)
 
     try {
-      // Mock API service calls
-      const priceData = { price: parsed.price * (1 + Math.random() * 0.1 - 0.05), changePercent: Math.random() * 4 - 2 } // Simulate price fluctuation
-      const metadata = { name: parsed.name, sector: "Technology", country: "United States" } // Mock metadata
-      const etfComposition =
-        parsed.category === "ETF"
-          ? {
-              domicile: "IE",
-              withholdingTax: 15,
-              country: [{ country: "US", weight: 70 }],
-              sector: [{ sector: "Technology", weight: 50 }],
-              currency: [{ currency: "USD", weight: 80 }],
-            }
-          : null // Mock ETF composition
+      // Real API calls to Yahoo Finance
+      let priceData = null
+      let metadata = null
+      let etfComposition = null
+
+      // Get current price and market data
+      try {
+        const quoteResponse = await fetch(`/api/yahoo/quote/${parsed.symbol}`)
+        if (quoteResponse.ok) {
+          priceData = await quoteResponse.json()
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch quote for ${parsed.symbol}:`, error)
+      }
+
+      // Get asset metadata (name, sector, country, etc.)
+      try {
+        const searchResponse = await fetch(`/api/yahoo/search/${parsed.symbol}`)
+        if (searchResponse.ok) {
+          metadata = await searchResponse.json()
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch metadata for ${parsed.symbol}:`, error)
+      }
+
+      // Get ETF composition if it's an ETF
+      if (parsed.category === "ETF") {
+        try {
+          const etfResponse = await fetch(`/api/yahoo/etf/${parsed.symbol}`)
+          if (etfResponse.ok) {
+            etfComposition = await etfResponse.json()
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch ETF composition for ${parsed.symbol}:`, error)
+        }
+      }
 
       const currentPrice = priceData?.price || parsed.price
       const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
@@ -822,7 +845,10 @@ function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Portfoli
       // Use original domicile from CSV if available, otherwise use enriched data
       const domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown"))
 
-      const taxOptimized = domicile === "US" // US domiciled is better for Swiss investors
+      // For Swiss investors: US domiciled ETFs are tax-optimized (15% withholding tax)
+      // Irish/Luxembourg ETFs are also good (15% withholding tax)
+      // Other domiciles have higher withholding taxes
+      const taxOptimized = domicile === "US" || domicile === "IE" || domicile === "LU"
 
       const enrichedPosition: PortfolioPosition = {
         symbol: parsed.symbol,

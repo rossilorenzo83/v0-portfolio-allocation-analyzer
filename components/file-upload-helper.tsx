@@ -51,7 +51,7 @@ export function FileUploadHelper({ onFileUpload, onLoadingChange, onError }: Fil
 
     try {
       const fileContent = await file.text()
-      const parsedData = parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
+      const parsedData = await parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
       onFileUpload(parsedData)
     } catch (e: any) {
       console.error("Error parsing file:", e)
