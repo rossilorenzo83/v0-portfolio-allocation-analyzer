@@ -127,14 +127,14 @@ export default function SwissPortfolioAnalyzer() {
           <CardDescription>Breakdown of your portfolio by {title.toLowerCase()}.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center p-4">
-          <ChartContainer
-            config={data.reduce((acc, item, idx) => {
-              acc[item.name.toLowerCase().replace(/\s/g, "-")] = {
-                label: item.name,
-                color: COLORS[idx % COLORS.length],
-              }
-              return acc
-            }, {})}
+                     <ChartContainer
+             config={data.reduce((acc: any, item, idx) => {
+               acc[item.name.toLowerCase().replace(/\s/g, "-")] = {
+                 label: item.name,
+                 color: COLORS[idx % COLORS.length],
+               }
+               return acc
+             }, {})}
             className="h-[300px] w-full"
           >
             <ResponsiveContainer width="100%" height="100%">
@@ -240,7 +240,11 @@ export default function SwissPortfolioAnalyzer() {
               <TabsTrigger value="paste">Paste Text</TabsTrigger>
             </TabsList>
             <TabsContent value="upload" className="space-y-4">
-              <FileUploadHelper onFileChange={handleFileChange} />
+              <FileUploadHelper 
+                onFileUpload={setPortfolioData}
+                onLoadingChange={setLoading}
+                onError={setError}
+              />
               {fileInput && <p className="text-sm text-gray-600 dark:text-gray-400">Selected file: {fileInput.name}</p>}
             </TabsContent>
             <TabsContent value="paste" className="space-y-4">
