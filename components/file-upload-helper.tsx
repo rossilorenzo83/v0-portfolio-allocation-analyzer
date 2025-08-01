@@ -4,18 +4,15 @@ import { useState, useCallback } from "react"
 import { useDropzone } from "react-dropzone"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, UploadCloud, FileText, XCircle } from "lucide-react"
-import { parsePortfolioCsv, type SwissPortfolioData } from "@/portfolio-parser" // Corrected import
+import { UploadCloud, FileText, XCircle } from "lucide-react"
+
 
 interface FileUploadHelperProps {
-  onFileUpload: (data: SwissPortfolioData) => void
-  onLoadingChange: (isLoading: boolean) => void
-  onError: (message: string) => void
+  onFileChange: (file: File | null) => void
 }
 
-export function FileUploadHelper({ onFileUpload, onLoadingChange, onError }: FileUploadHelperProps) {
+export function FileUploadHelper({ onFileChange }: FileUploadHelperProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -24,12 +21,14 @@ export function FileUploadHelper({ onFileUpload, onLoadingChange, onError }: Fil
       if (uploadedFile.type === "text/csv" || uploadedFile.name.endsWith(".csv")) {
         setFile(uploadedFile)
         setError(null)
+        onFileChange(uploadedFile)
       } else {
         setError("Invalid file type. Please upload a CSV file.")
         setFile(null)
+        onFileChange(null)
       }
     }
-  }, [])
+  }, [onFileChange])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -39,34 +38,12 @@ export function FileUploadHelper({ onFileUpload, onLoadingChange, onError }: Fil
     multiple: false,
   })
 
-  const handleParseFile = async () => {
-    if (!file) {
-      setError("Please select a CSV file to upload.")
-      return
-    }
 
-    setLoading(true)
-    onLoadingChange(true)
-    setError(null)
-
-    try {
-      const fileContent = await file.text()
-      const parsedData = await parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
-      onFileUpload(parsedData)
-    } catch (e: any) {
-      console.error("Error parsing file:", e)
-      const errorMessage = e.message || "Failed to parse file. Please check the format."
-      setError(errorMessage)
-      onError(errorMessage)
-    } finally {
-      setLoading(false)
-      onLoadingChange(false)
-    }
-  }
 
   const handleRemoveFile = () => {
     setFile(null)
     setError(null)
+    onFileChange(null)
   }
 
   return (
@@ -107,11 +84,6 @@ export function FileUploadHelper({ onFileUpload, onLoadingChange, onError }: Fil
         )}
 
         {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-
-        <Button onClick={handleParseFile} disabled={!file || loading} className="w-full">
-          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {loading ? "Parsing..." : "Analyze Portfolio"}
-        </Button>
 
         <div className="text-center text-sm text-gray-500 mt-4">
           <p>Supported formats: CSV (.csv)</p>

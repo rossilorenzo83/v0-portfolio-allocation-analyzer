@@ -8,7 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
       <TooltipProvider>{children}</TooltipProvider>
       <Toaster />
     </ThemeProvider>
