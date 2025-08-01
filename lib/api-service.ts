@@ -145,7 +145,7 @@ class APIService {
     this.rateLimitMap.set("global", Date.now())
   }
 
-  private async resolveSymbol(originalSymbol: string): Promise<string> {
+  async resolveSymbol(originalSymbol: string): Promise<string> {
     // Check if we already resolved this symbol
     if (this.symbolCache.has(originalSymbol)) {
       return this.symbolCache.get(originalSymbol)!

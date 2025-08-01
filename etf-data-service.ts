@@ -1,7 +1,16 @@
 // Real ETF composition data service
 
 import { apiService } from "./lib/api-service"
-import type { Position } from "./portfolio-parser"
+
+// Interface for the position object passed to resolveSymbolAndFetchData
+interface Position {
+  symbol: string
+  name: string
+  currency: string
+  exchange: string
+  averagePrice: number
+  category: string
+}
 
 export interface ETFHolding {
   symbol: string
@@ -418,7 +427,28 @@ export async function resolveSymbolAndFetchData(
   let etfData: EtfData | null = null
   let quoteData: QuoteData | null = null
 
-  // Try fetching directly with the provided symbol
+  // Use the sophisticated symbol resolution from apiService for European ETFs
+  console.log(`🔍 Resolving symbol for ${position.symbol} using apiService...`)
+  
+  try {
+    // Use apiService to resolve the symbol (this handles European ETF mapping)
+    const resolvedSymbol = await apiService.resolveSymbol(position.symbol)
+    console.log(`✅ Symbol resolved: ${position.symbol} -> ${resolvedSymbol}`)
+    
+    // Try fetching with the resolved symbol
+    etfData = await getEtfDataWithFallback(resolvedSymbol)
+    quoteData = await getQuoteWithFallback(resolvedSymbol)
+    
+    if (etfData && quoteData) {
+      console.log(`Direct fetch successful for ${position.symbol} (resolved to ${resolvedSymbol})`)
+      return { etfData, quoteData }
+    }
+  } catch (error) {
+    console.warn(`Symbol resolution failed for ${position.symbol}:`, error)
+  }
+
+  // Fallback: Try fetching directly with the provided symbol
+  console.log(`Falling back to direct fetch for ${position.symbol}...`)
   etfData = await getEtfDataWithFallback(position.symbol)
   quoteData = await getQuoteWithFallback(position.symbol)
 
@@ -433,22 +463,22 @@ export async function resolveSymbolAndFetchData(
 
   if (searchResults && Array.isArray(searchResults)) {
     for (const result of searchResults) {
-    // Prioritize results matching currency or exchange if available in position
-    if (position.currency && result.currency !== position.currency) {
-      continue
-    }
-    if (position.exchange && result.exchange && result.exchange.toLowerCase() !== position.exchange.toLowerCase()) {
-      continue
-    }
+      // Prioritize results matching currency or exchange if available in position
+      if (position.currency && result.currency !== position.currency) {
+        continue
+      }
+      if (position.exchange && result.exchange && result.exchange.toLowerCase() !== position.exchange.toLowerCase()) {
+        continue
+      }
 
-    etfData = await getEtfDataWithFallback(result.symbol)
-    quoteData = await getQuoteWithFallback(result.symbol)
+      etfData = await getEtfDataWithFallback(result.symbol)
+      quoteData = await getQuoteWithFallback(result.symbol)
 
-    if (etfData && quoteData) {
-      console.log(`Search and fetch successful for ${position.symbol} (resolved to ${result.symbol})`)
-      return { etfData, quoteData }
+      if (etfData && quoteData) {
+        console.log(`Search and fetch successful for ${position.symbol} (resolved to ${result.symbol})`)
+        return { etfData, quoteData }
+      }
     }
-  }
   }
 
   console.warn(`Could not resolve and fetch data for ${position.symbol} after search. Using minimal fallback.`)

@@ -83,6 +83,34 @@ interface PortfolioPosition {
 - **Caching System**: Multi-tier caching (24h for ETF data, 5min for quotes)
 - **Rate Limiting**: Built-in delays to prevent API throttling
 
+#### European ETF Symbol Resolution
+- **Automatic Ticker Mapping**: Converts European ETF symbols to Yahoo Finance compatible tickers
+- **Exchange Suffix Handling**: Maps symbols like `VWRL` to `VWRL.L`, `VWRL.DE`, `VWRL.AS`, etc.
+- **Swiss Stock Mapping**: Converts Swiss stock symbols (e.g., `NESN` to `NESN.SW`)
+- **Fallback Logic**: Tries multiple exchange variations until a working symbol is found
+
+#### Supported European ETF Mappings
+```typescript
+// Vanguard ETFs
+VWRL: ["VWRL.L", "VWRL.AS", "VWRL.DE", "VWRL.MI"]
+VWCE: ["VWCE.DE", "VWCE.L", "VWCE.AS", "VWCE.MI"]
+VUSA: ["VUSA.L", "VUSA.AS", "VUSA.DE", "VUSA.MI"]
+
+// iShares ETFs
+IS3N: ["IS3N.SW", "IS3N.DE", "IS3N.L", "IS3N.AS"]
+IWDA: ["IWDA.L", "IWDA.AS", "IWDA.DE", "IWDA.MI"]
+
+// Swiss Stocks
+NESN: "NESN.SW"
+NOVN: "NOVN.SW"
+ROG: "ROG.SW"
+```
+
+#### Data Fetching Priority
+1. **Real Yahoo Finance API**: Attempts to fetch real-time data from Yahoo Finance API
+2. **Web Scraping Fallback**: If API fails, attempts to scrape Yahoo Finance website
+3. **Mock Data Last Resort**: Only uses mock data when all real attempts fail
+
 #### Mock Data Fallbacks
 - Provides estimated data when API is unavailable
 - Maintains application functionality during development
@@ -139,10 +167,17 @@ interface PortfolioPosition {
 
 #### Multi-stage Processing
 1. **CSV Parsing**: Raw data extraction and validation
-2. **Symbol Resolution**: Cleaning and standardization
+2. **Symbol Resolution**: Cleaning and standardization with European ETF mapping
 3. **API Enrichment**: Real-time price and metadata fetching
 4. **Composition Analysis**: ETF breakdown and weighting
 5. **Allocation Calculation**: Portfolio-level aggregations
+
+#### Symbol Resolution Process
+1. **European ETF Detection**: Identifies European ETF patterns (VWRL, IWDA, etc.)
+2. **Exchange Variation Testing**: Tries multiple exchange suffixes (.L, .DE, .AS, .MI, .SW)
+3. **API Validation**: Tests each variation against Yahoo Finance API
+4. **Caching**: Stores successful symbol resolutions for future use
+5. **Fallback**: Uses original symbol if no variations work
 
 #### Error Handling and Resilience
 - **Graceful Degradation**: Continues processing with partial data
@@ -193,9 +228,10 @@ interface PortfolioPosition {
 ### Data Flow
 1. User uploads CSV or pastes data
 2. CSV parser extracts positions
-3. API enrichment fetches real-time data
-4. Allocation calculations performed
-5. Results displayed in interactive UI
+3. Symbol resolution converts European ETFs to Yahoo-compatible tickers
+4. API enrichment fetches real-time data
+5. Allocation calculations performed
+6. Results displayed in interactive UI
 
 ## Configuration
 
@@ -235,6 +271,7 @@ NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL=/api/yahoo
 - **API Responses**: 24-hour cache for ETF data
 - **Quote Data**: 5-minute cache for price data
 - **Search Results**: 1-hour cache for symbol lookups
+- **Symbol Resolution**: Persistent cache for resolved symbols
 
 ### Processing Efficiency
 - **Batch Processing**: Parallel API calls where possible
@@ -300,4 +337,4 @@ NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL=/api/yahoo
 - **Database Integration**: Optional data persistence
 - **API Rate Limiting**: More sophisticated throttling
 
-This comprehensive documentation provides a complete overview of the Portfolio Analyzer's capabilities, architecture, and usage patterns. The application represents a sophisticated solution for portfolio analysis with particular strengths in Swiss market integration and tax optimization.
+This comprehensive documentation provides a complete overview of the Portfolio Analyzer's capabilities, architecture, and usage patterns. The application represents a sophisticated solution for portfolio analysis with particular strengths in Swiss market integration, European ETF handling, and tax optimization.
