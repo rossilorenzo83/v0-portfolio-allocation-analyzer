@@ -204,12 +204,14 @@ class APIService {
         const data = await response.json()
         console.log(`✅ Price data for ${symbol}:`, data)
 
+        // Extract price from nested structure if present
+        const quoteData = data.quoteResponse?.result?.[0] || data
         const result: StockPrice = {
           symbol: symbol, // Always return original symbol
-          price: data.price || data.regularMarketPrice || 0,
-          currency: data.currency || this.inferCurrency(resolvedSymbol),
-          change: data.change || data.regularMarketChange || 0,
-          changePercent: data.changePercent || data.regularMarketChangePercent || 0,
+          price: quoteData.price || quoteData.regularMarketPrice || 0,
+          currency: quoteData.currency || this.inferCurrency(resolvedSymbol),
+          change: quoteData.change || quoteData.regularMarketChange || 0,
+          changePercent: quoteData.changePercent || quoteData.regularMarketChangePercent || 0,
           lastUpdated: new Date().toISOString(),
         }
 
@@ -316,7 +318,13 @@ class APIService {
       if (data.ok) {
         const result = await data.json()
         console.log(`✅ Search results for ${query}:`, result)
-        return result ? [result] : []
+        if (result) {
+          return [{
+            symbol: result.symbol || query.toUpperCase(),
+            name: result.name || result.longName || `${query} Company`
+          }]
+        }
+        return []
       }
     } catch (error) {
       console.error(`Error searching for symbol ${query}:`, error)

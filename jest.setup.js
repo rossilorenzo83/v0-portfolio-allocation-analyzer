@@ -3,8 +3,7 @@
 
 // Used for __tests__/testing-library.js
 // Learn more: https://github.com/testing-library/jest-dom
-import "@testing-library/jest-dom/extend-expect"
-import jest from "jest"
+import "@testing-library/jest-dom"
 
 // Mock fetch for all tests
 global.fetch = jest.fn((url) => {
@@ -19,9 +18,10 @@ global.fetch = jest.fn((url) => {
             result: [
               {
                 symbol: symbol.toUpperCase(),
-                regularMarketPrice: 100 + Math.random() * 50, // Random price
+                regularMarketPrice: 100.0,
                 currency: "USD",
-                regularMarketChangePercent: (Math.random() - 0.5) * 5, // Random change
+                regularMarketChange: 2.5,
+                regularMarketChangePercent: 2.5,
               },
             ],
           },
@@ -56,17 +56,13 @@ global.fetch = jest.fn((url) => {
       ok: true,
       json: () =>
         Promise.resolve({
-          quotes: [
-            {
-              symbol: query.toUpperCase(),
-              longname: `${query} Company`,
-              exchange: "NASDAQ",
-              currency: "USD",
-              sector: "Technology",
-              country: "United States",
-              quoteType: "EQUITY",
-            },
-          ],
+          name: `${query} Company`,
+          longName: `${query} Company`,
+          sector: "Technology",
+          country: "United States",
+          currency: "USD",
+          type: "EQUITY",
+          exchange: "NASDAQ",
         }),
     })
   }

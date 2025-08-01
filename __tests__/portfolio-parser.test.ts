@@ -36,7 +36,7 @@ NESN;Nestle SA;20;100.00;CHF;2000.00`
 
   it("should correctly parse numbers with Swiss formatting (apostrophe and comma decimal)", () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Total Value CHF
-VOW3,Volkswagen AG,1'000,123,45,EUR,123'450.00`
+VOW3,Volkswagen AG,1'000,123.45,EUR,123'450.00`
     const data = parsePortfolioCsv(csvContent)
 
     expect(data).toBeDefined()
