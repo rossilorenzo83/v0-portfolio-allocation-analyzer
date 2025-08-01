@@ -196,7 +196,7 @@ VWRL,Vanguard FTSE All-World,5,100.00,USD,ETF,Unknown,460.00` // VWRL is an ETF,
   it("should correctly calculate domicile allocation", () => {
     const csvContent = `Symbol,Name,Quantity,Price,Currency,Domicile,Total Value CHF
 SPY,SPDR S&P 500,10,400.00,USD,US,3680.00
-IEMG,iShares Core MSCI EM IMI,5,60.00,IE,IE,276.00`
+IEMG,iShares Core MSCI EM IMI,5,60.00,USD,IE,276.00`
     const data = parsePortfolioCsv(csvContent)
 
     expect(data.domicileAllocation).toBeDefined()

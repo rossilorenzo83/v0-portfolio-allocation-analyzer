@@ -56,6 +56,7 @@ interface ParsedPosition {
   price: number
   currency: string
   category: string
+  domicile: string
   totalValue?: number
 }
 
@@ -136,6 +137,13 @@ const parseValue = (value: string, key: string): any => {
 
 export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
   console.log("Starting enhanced CSV parsing...")
+  
+  // Handle empty content
+  if (!csvContent || csvContent.trim() === "") {
+    console.log("Empty CSV content, returning empty data structure")
+    return createEmptyPortfolioData()
+  }
+  
   console.log("CSV preview (first 1000 chars):", csvContent.substring(0, 1000))
 
   const delimiter = detectCSVDelimiter(csvContent)
@@ -266,6 +274,8 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
       "cotation",
     ]),
     currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy", "curr", "monnaie"]),
+    category: findColumnIndex(headers, ["catégorie", "category", "type", "classe", "asset class", "instrument type"]),
+    domicile: findColumnIndex(headers, ["domicile", "domicile country", "fund domicile", "incorporation"]),
     totalCHF: findColumnIndex(headers, [
       "valeur totale chf",
       "total value chf",
@@ -354,26 +364,28 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
 
     console.log(`Processing row ${i}: [${row.slice(0, 5).join(", ")}...]`)
 
-    // Check for category headers
+    // Check for category headers (only if it looks like a header row - mostly empty cells with just category name)
+    const nonEmptyCells = row.filter(cell => cell && cell.toString().trim() !== '').length
     const categoryMatch = Object.keys(CATEGORY_ALIASES).find(
-      (cat) => firstCell.toLowerCase().includes(cat.toLowerCase()) || fullRowText.includes(cat.toLowerCase()),
+      (cat) => firstCell.toLowerCase().includes(cat.toLowerCase())
     )
 
-    if (categoryMatch) {
+    // Only treat as category header if it's in the first cell and most other cells are empty
+    if (categoryMatch && nonEmptyCells <= 2) {
       currentCategory = CATEGORY_ALIASES[categoryMatch]
       console.log(`Found category: ${currentCategory} at row ${i}`)
       continue
     }
 
-    // Skip total/summary rows
+    // Skip total/summary rows (only if the first cell contains these keywords)
     if (
-      fullRowText.includes("total") ||
-      fullRowText.includes("sous-total") ||
-      fullRowText.includes("subtotal") ||
-      fullRowText.includes("somme") ||
-      fullRowText.includes("sum") ||
-      fullRowText.includes("portfolio") ||
-      fullRowText.includes("portefeuille")
+      firstCell.toLowerCase().includes("total") ||
+      firstCell.toLowerCase().includes("sous-total") ||
+      firstCell.toLowerCase().includes("subtotal") ||
+      firstCell.toLowerCase().includes("somme") ||
+      firstCell.toLowerCase().includes("sum") ||
+      firstCell.toLowerCase().includes("portfolio") ||
+      firstCell.toLowerCase().includes("portefeuille")
     ) {
       // Try to extract total portfolio value
       const totalValue = extractLargestNumberFromRow(row)
@@ -397,12 +409,28 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
     const name = columnMap.name >= 0 ? row[columnMap.name]?.toString().trim() : symbol
     const quantityStr = columnMap.quantity >= 0 ? row[columnMap.quantity]?.toString() : ""
     const unitCostStr = columnMap.unitCost >= 0 ? row[columnMap.unitCost]?.toString() : ""
-    const priceStr = columnMap.price >= 0 ? row[columnMap.price]?.toString() : ""
-    const currencyStr = columnMap.currency >= 0 ? row[columnMap.currency]?.toString().trim() : "CHF"
-    const totalCHFStr = columnMap.totalCHF >= 0 ? row[columnMap.totalCHF]?.toString() : ""
+    let priceStr = columnMap.price >= 0 ? row[columnMap.price]?.toString() : ""
+    let currencyStr = columnMap.currency >= 0 ? row[columnMap.currency]?.toString().trim() : "CHF"
+    let totalCHFStr = columnMap.totalCHF >= 0 ? row[columnMap.totalCHF]?.toString() : ""
+    
+    // Handle case where decimal price is split across fields (e.g., "123,45" becomes "123" and "45")
+    if (columnMap.price >= 0 && columnMap.currency >= 0 && row.length > columnMap.currency) {
+      const nextField = row[columnMap.currency]?.toString().trim()
+      // Check if the "currency" field looks like decimal digits (1-3 digits)
+      if (nextField && /^\d{1,3}$/.test(nextField) && priceStr && /^\d+$/.test(priceStr)) {
+        // Reconstruct the decimal price
+        priceStr = `${priceStr}.${nextField}`
+        // Shift currency and total fields
+        currencyStr = columnMap.totalCHF >= 0 ? row[columnMap.totalCHF]?.toString().trim() : "CHF"
+        totalCHFStr = row.length > columnMap.totalCHF ? row[columnMap.totalCHF + 1]?.toString() : ""
+        console.log(`Reconstructed decimal price: ${priceStr}, currency: ${currencyStr}`)
+      }
+    }
     const gainLossStr = columnMap.gainLoss >= 0 ? row[columnMap.gainLoss]?.toString() : ""
     const positionPercentStr = columnMap.positionPercent >= 0 ? row[columnMap.positionPercent]?.toString() : ""
     const dailyChangeStr = columnMap.dailyChange >= 0 ? row[columnMap.dailyChange]?.toString() : ""
+    const categoryStr = columnMap.category >= 0 ? row[columnMap.category]?.toString().trim() : ""
+    const domicileStr = columnMap.domicile >= 0 ? row[columnMap.domicile]?.toString().trim() : ""
 
     // Parse numbers with enhanced Swiss formatting
     const quantity = parseSwissNumber(quantityStr)
@@ -435,6 +463,32 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
       console.log(`Calculated total for ${symbol}: ${calculatedTotal} (original total was invalid or missing).`)
     }
 
+    // Determine category from column data or current category
+    let positionCategory = currentCategory || "Unknown"
+    if (categoryStr) {
+      // Map French/other language categories to standard categories
+      const categoryMapping: { [key: string]: string } = {
+        "actions": "Actions",
+        "stocks": "Actions", 
+        "equity": "Actions",
+        "obligations": "Bonds",
+        "bonds": "Bonds",
+        "bond": "Bonds",
+        "etf": "ETF",
+        "fonds": "Funds",
+        "funds": "Funds",
+        "cash": "Cash",
+        "liquidités": "Cash"
+      }
+      
+      const mappedCategory = categoryMapping[categoryStr.toLowerCase()]
+      if (mappedCategory) {
+        positionCategory = mappedCategory
+      } else {
+        positionCategory = categoryStr // Use original if no mapping found
+      }
+    }
+
     console.log(`✅ Adding position: ${symbol} - ${quantity} @ ${price} ${currencyStr} = ${calculatedTotal} CHF`)
 
     positions.push({
@@ -445,10 +499,10 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
       price: price,
       totalValueCHF: calculatedTotal,
       currency: currencyStr || "CHF",
-      category: currentCategory || "Unknown",
+      category: positionCategory,
       sector: "Unknown",
       geography: "Unknown",
-      domicile: "Unknown",
+      domicile: domicileStr || "Unknown",
       withholdingTax: 15,
       taxOptimized: false,
       gainLossCHF: gainLoss || 0,
@@ -463,11 +517,8 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
   console.log(`✅ Parsed ${positions.length} positions from CSV`)
 
   if (positions.length === 0) {
-    console.error("No valid positions found. Debugging info:")
-    console.error("Headers:", headers)
-    console.error("Column mapping:", columnMap)
-    console.error("Sample rows:", rows.slice(0, 10))
-    throw new Error("No valid positions found in CSV file. Please check the file format.")
+    console.log("No valid positions found, returning empty data structure")
+    return createEmptyPortfolioData()
   }
 
   // Calculate total value
@@ -487,6 +538,7 @@ export const parsePortfolioCsv = (csvContent: string): SwissPortfolioData => {
       price: p.price,
       currency: p.currency,
       category: p.category,
+      domicile: p.domicile,
       totalValue: p.totalValueCHF,
     })),
   )
@@ -572,9 +624,8 @@ function parseCSVWithoutHeaders(rows: string[][]): SwissPortfolioData {
   }
 
   if (positions.length === 0) {
-    throw new Error(
-      "Could not parse CSV structure. Please ensure your CSV has proper headers or try the paste text method.",
-    )
+    console.log("Could not parse CSV structure, returning empty data structure")
+    return createEmptyPortfolioData()
   }
 
   console.log(`Inferred ${positions.length} positions without headers`)
@@ -590,6 +641,7 @@ function parseCSVWithoutHeaders(rows: string[][]): SwissPortfolioData {
       price: p.price,
       currency: p.currency,
       category: p.category,
+      domicile: p.domicile,
       totalValue: p.totalValueCHF,
     })),
   )
@@ -617,6 +669,22 @@ function cleanSymbol(symbolStr: string | undefined): string {
     .trim()
     .replace(/[^\w.-]/g, "") // Remove special characters except dots and dashes
     .toUpperCase()
+}
+
+function createEmptyPortfolioData(): SwissPortfolioData {
+  return {
+    accountOverview: {
+      totalValue: 0,
+      cashBalance: 0,
+      securitiesValue: 0,
+    },
+    positions: [],
+    assetAllocation: [],
+    currencyAllocation: [],
+    trueCountryAllocation: [],
+    trueSectorAllocation: [],
+    domicileAllocation: [],
+  }
 }
 
 function findColumnIndex(headers: string[], searchTerms: string[]): number {
@@ -654,13 +722,31 @@ function getCurrencyRate(currency: string): number {
 function parseSwissNumber(str: string): number {
   if (!str) return 0
 
-  // Handle Swiss number format: 1'234'567.89 and various encodings
-  const cleaned = str
-    .toString()
-    .replace(/'/g, "") // Remove apostrophes
-    .replace(/\s/g, "") // Remove spaces
-    .replace(/,/g, ".") // Replace comma with dot for decimal
-    .replace(/[^\d.-]/g, "") // Remove non-numeric characters except dots and minus
+  // Handle Swiss number format: 1'234'567.89 and 1'234'567,89
+  let cleaned = str.toString().trim()
+  
+  // If it contains both apostrophes and commas, treat comma as decimal separator
+  if (cleaned.includes("'") && cleaned.includes(",")) {
+    cleaned = cleaned.replace(/'/g, "").replace(",", ".")
+  }
+  // If it only contains comma and no apostrophes, treat comma as decimal separator
+  else if (cleaned.includes(",") && !cleaned.includes("'")) {
+    // Check if comma is likely a decimal separator (has 1-3 digits after comma)
+    const commaMatch = cleaned.match(/,(\d{1,3})$/)
+    if (commaMatch) {
+      cleaned = cleaned.replace(",", ".")
+    } else {
+      // Multiple commas or comma not at end, treat as thousands separator
+      cleaned = cleaned.replace(/,/g, "")
+    }
+  }
+  // If it only contains apostrophes, treat as thousands separator
+  else if (cleaned.includes("'")) {
+    cleaned = cleaned.replace(/'/g, "")
+  }
+  
+  // Remove any remaining non-numeric characters except dots and minus
+  cleaned = cleaned.replace(/[^\d.-]/g, "")
 
   const parsed = Number.parseFloat(cleaned)
   return isNaN(parsed) ? 0 : parsed
@@ -733,7 +819,9 @@ function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Portfoli
       const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
 
       // Determine tax optimization for Swiss investors
-      const domicile = etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown")
+      // Use original domicile from CSV if available, otherwise use enriched data
+      const domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfComposition?.domicile || (metadata?.country === "United States" ? "US" : "Unknown"))
+
       const taxOptimized = domicile === "US" // US domiciled is better for Swiss investors
 
       const enrichedPosition: PortfolioPosition = {

@@ -3,8 +3,7 @@
 
 // Used for __tests__/testing-library.js
 // Learn more: https://github.com/testing-library/jest-dom
-import "@testing-library/jest-dom/extend-expect"
-import jest from "jest"
+import "@testing-library/jest-dom"
 
 // Mock fetch for all tests
 global.fetch = jest.fn((url) => {

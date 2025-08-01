@@ -155,6 +155,23 @@ class APIService {
 
     // Get all possible variations
     const variations = this.getSymbolVariations(originalSymbol)
+    
+    // If there's only one variation (the original symbol) and it looks like a simple US stock,
+    // skip the resolution process and assume it's correct
+    if (variations.length === 1 && variations[0] === originalSymbol && 
+        !this.isEuropeanSymbol(originalSymbol) && !originalSymbol.includes('.')) {
+      console.log(`  📍 Assuming ${originalSymbol} is a valid US symbol, skipping resolution`)
+      this.symbolCache.set(originalSymbol, originalSymbol)
+      return originalSymbol
+    }
+
+    // For Swiss stocks, prefer the Swiss exchange version
+    if (SWISS_STOCK_MAPPING[originalSymbol]) {
+      const swissSymbol = SWISS_STOCK_MAPPING[originalSymbol]
+      console.log(`  📍 Preferring Swiss exchange symbol: ${swissSymbol}`)
+      this.symbolCache.set(originalSymbol, swissSymbol)
+      return swissSymbol
+    }
 
     // Try each variation until we find one that works
     for (const variation of variations) {
@@ -166,7 +183,9 @@ class APIService {
 
         if (response.ok) {
           const data = await response.json()
-          if (data && (data.price || data.regularMarketPrice)) {
+          // Handle nested Yahoo Finance API response structure
+          const quote = data.quoteResponse?.result?.[0] || data
+          if (data && (quote.price || quote.regularMarketPrice || data.price || data.regularMarketPrice)) {
             console.log(`  ✅ Found working symbol: ${variation}`)
             this.symbolCache.set(originalSymbol, variation)
             return variation
@@ -204,12 +223,15 @@ class APIService {
         const data = await response.json()
         console.log(`✅ Price data for ${symbol}:`, data)
 
+        // Handle nested Yahoo Finance API response structure
+        const quote = data.quoteResponse?.result?.[0] || data
+        
         const result: StockPrice = {
           symbol: symbol, // Always return original symbol
-          price: data.price || data.regularMarketPrice || 0,
-          currency: data.currency || this.inferCurrency(resolvedSymbol),
-          change: data.change || data.regularMarketChange || 0,
-          changePercent: data.changePercent || data.regularMarketChangePercent || 0,
+          price: quote.price || quote.regularMarketPrice || data.price || data.regularMarketPrice || 0,
+          currency: quote.currency || data.currency || this.inferCurrency(resolvedSymbol),
+          change: quote.change || quote.regularMarketChange || data.change || data.regularMarketChange || 0,
+          changePercent: quote.changePercent || quote.regularMarketChangePercent || data.changePercent || data.regularMarketChangePercent || 0,
           lastUpdated: new Date().toISOString(),
         }
 
@@ -244,14 +266,17 @@ class APIService {
         const data = await response.json()
         console.log(`✅ Metadata for ${symbol}:`, data)
 
+        // Handle nested search response structure
+        const quote = data.quotes?.[0] || data
+        
         const result: AssetMetadata = {
           symbol: symbol, // Always return original symbol
-          name: data.name || data.longName || this.getKnownName(symbol) || symbol,
-          sector: data.sector || this.inferSector(symbol),
-          country: data.country || this.inferCountry(resolvedSymbol),
-          currency: data.currency || this.inferCurrency(resolvedSymbol),
-          type: data.type || this.inferAssetType(symbol),
-          exchange: data.exchange || this.inferExchange(symbol),
+          name: quote.name || quote.longname || quote.longName || data.name || data.longName || this.getKnownName(symbol) || symbol,
+          sector: quote.sector || data.sector || this.inferSector(symbol),
+          country: quote.country || data.country || this.inferCountry(resolvedSymbol),
+          currency: quote.currency || data.currency || this.inferCurrency(resolvedSymbol),
+          type: quote.type || quote.quoteType || data.type || this.inferAssetType(symbol),
+          exchange: quote.exchange || data.exchange || this.inferExchange(symbol),
         }
 
         this.setCache(cacheKey, result, 1440) // Cache for 24 hours
@@ -316,7 +341,8 @@ class APIService {
       if (data.ok) {
         const result = await data.json()
         console.log(`✅ Search results for ${query}:`, result)
-        return result ? [result] : []
+        // Handle nested quotes structure
+        return result.quotes || (result ? [result] : [])
       }
     } catch (error) {
       console.error(`Error searching for symbol ${query}:`, error)

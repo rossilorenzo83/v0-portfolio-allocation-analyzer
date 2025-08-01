@@ -19,14 +19,7 @@ const customJestConfig = {
     "^@/portfolio-parser$": "<rootDir>/portfolio-parser.ts",
   },
   testEnvironment: "jest-environment-jsdom",
-  transform: {
-    "^.+\\.(ts|tsx)$": "ts-jest",
-  },
-  globals: {
-    "ts-jest": {
-      tsconfig: "tsconfig.json",
-    },
-  },
+  // Remove custom transform since Next.js Jest handles TypeScript/JSX automatically
   testPathIgnorePatterns: [
     "<rootDir>/.next/",
     "<rootDir>/node_modules/",
