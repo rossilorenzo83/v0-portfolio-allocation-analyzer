@@ -73,23 +73,39 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
           description: `Analyzing ${fileInput.name}...`,
         })
         const fileContent = await fileInput.text() // Read file content as text
+        console.log("Starting CSV parsing...")
         data = await parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
+        console.log("CSV parsing completed, data:", data)
       } else if (textInput) {
         toast({
           title: "Processing Text",
           description: "Analyzing pasted text...",
         })
+        console.log("Starting CSV parsing...")
         data = await parsePortfolioCsv(textInput) // Use parsePortfolioCsv
+        console.log("CSV parsing completed, data:", data)
       } else {
         throw new Error("Please upload a file or paste text to analyze.")
       }
 
-      setPortfolioData(data)
-      toast({
-        title: "Analysis Complete",
-        description: "Your portfolio has been successfully analyzed.",
-        variant: "success",
-      })
+      // Only set portfolio data after all processing is complete
+      if (data && data.positions && data.positions.length > 0) {
+        console.log("Setting portfolio data with", data.positions.length, "positions")
+        setPortfolioData(data)
+        toast({
+          title: "Analysis Complete",
+          description: `Your portfolio has been successfully analyzed with ${data.positions.length} positions.`,
+          variant: "success",
+        })
+      } else {
+        console.log("No valid positions found in data:", data)
+        setError("No valid positions found in the uploaded data. Please check your file format.")
+        toast({
+          title: "Analysis Failed",
+          description: "No valid positions found. Please check your file format.",
+          variant: "destructive",
+        })
+      }
     } catch (err: any) {
       console.error("Analysis error:", err)
       setError(err.message || "An unknown error occurred during analysis.")

@@ -652,6 +652,7 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
   const positionPercentIndex = headerRow.findIndex(h => h.toLowerCase().includes("positions %") || h.toLowerCase().includes("position %"))
   const categoryIndex = headerRow.findIndex(h => h.toLowerCase().includes("catégorie") || h.toLowerCase().includes("category") || h.toLowerCase().includes("type"))
   
+  console.log("Header row:", headerRow)
   console.log("Column indices:", {
     symbol: symbolIndex,
     quantity: quantityIndex,
@@ -661,6 +662,61 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     gainLoss: gainLossIndex,
     positionPercent: positionPercentIndex
   })
+
+  // If we couldn't find the expected columns, try to infer them from the data
+  if (symbolIndex === -1 || quantityIndex === -1) {
+    console.log("Could not find expected columns, attempting to infer from data...")
+    
+    // Look at the first few data rows to infer column structure
+    for (let i = headerRowIndex + 1; i < Math.min(rows.length, headerRowIndex + 5); i++) {
+      const row = rows[i]
+      if (!row || row.length === 0) continue
+      
+      console.log(`Analyzing row ${i} for column inference:`, row)
+      
+      // Try to find symbol column (usually contains stock symbols like OXY, AAPL, etc.)
+      if (symbolIndex === -1) {
+        for (let j = 0; j < row.length; j++) {
+          const cell = row[j]?.toString().trim()
+          if (cell && cell.length >= 2 && cell.length <= 5 && /^[A-Z]+$/.test(cell)) {
+            console.log(`Found potential symbol column at index ${j}: "${cell}"`)
+            // Don't set symbolIndex yet, just log for debugging
+          }
+        }
+      }
+      
+      // Try to find quantity column (usually contains whole numbers)
+      if (quantityIndex === -1) {
+        for (let j = 0; j < row.length; j++) {
+          const cell = row[j]?.toString().trim()
+          if (cell && /^\d+$/.test(cell) && parseInt(cell) > 0) {
+            console.log(`Found potential quantity column at index ${j}: "${cell}"`)
+            // Don't set quantityIndex yet, just log for debugging
+          }
+        }
+      }
+    }
+    
+    // Fallback: If we still can't find columns, try common patterns
+    // Based on the sample row: [ " ", "OXY", "200", "54.84", "9150.00", "480.00", "5.54%", "45.75", "USD", "-2118.00", "-22.53%", "7281.11", "0.80%", "" ]
+    // Pattern: empty, symbol, quantity, price, total_value, ?, ?, ?, currency, ?, ?, ?, ?, empty
+    
+    if (symbolIndex === -1) {
+      // Try to find symbol in common positions (usually index 1 or 2)
+      for (let i = headerRowIndex + 1; i < Math.min(rows.length, headerRowIndex + 3); i++) {
+        const row = rows[i]
+        if (!row || row.length < 3) continue
+        
+        // Check if first cell is empty and second cell looks like a symbol
+        if ((!row[0] || row[0].toString().trim() === "") && 
+            row[1] && row[1].toString().trim().length >= 2 && 
+            /^[A-Z]+$/.test(row[1].toString().trim())) {
+          console.log(`Fallback: Found symbol pattern at index 1: "${row[1]}"`)
+          // We'll use this pattern in the processing loop
+        }
+      }
+    }
+  }
   
   // Process data rows
   for (let i = headerRowIndex + 1; i < rows.length; i++) {
@@ -668,15 +724,33 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     if (!row || row.length === 0) continue
 
     // Parse position data first to check if this is a valid position row
-    const symbol = symbolIndex >= 0 ? cleanSymbol(row[symbolIndex]?.toString()) : ""
+    let symbol = symbolIndex >= 0 ? cleanSymbol(row[symbolIndex]?.toString()) : ""
+    
+    // Fallback: If symbol index is -1, try common patterns
+    if (!symbol && symbolIndex === -1) {
+      // Try index 1 if first cell is empty (common pattern in Swiss bank CSVs)
+      if ((!row[0] || row[0].toString().trim() === "") && 
+          row[1] && row[1].toString().trim().length >= 2) {
+        symbol = cleanSymbol(row[1]?.toString())
+        console.log(`Fallback: Using symbol from index 1: "${symbol}"`)
+      }
+    }
+    
+    console.log(`Row ${i}:`, row)
+    console.log(`Row ${i} symbol: "${symbol}", symbolIndex: ${symbolIndex}`)
     
     // If we have a valid symbol, this is likely a position row regardless of first cell
     if (symbol && symbol.length >= 1) {
+      console.log(`Row ${i}: Valid symbol found, processing as position row`)
       // This is a position row, continue with parsing
     } else {
+      console.log(`Row ${i}: No valid symbol, checking if category/summary row`)
       // No valid symbol found, check if this is a category or summary row
       const firstCell = row[0]?.toString().trim()
-      if (!firstCell) continue
+      if (!firstCell) {
+        console.log(`Row ${i}: Empty first cell, skipping`)
+        continue
+      }
 
       // Check if this is a category header
       if (categoryPositions[i]) {
@@ -718,16 +792,52 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
       }
       
       // If we get here, it's not a valid position row and not a category/summary row
+      console.log(`Row ${i}: Not a valid position, category, or summary row, skipping`)
       continue
     }
 
-    const name = symbol // Use symbol as name if no name column
-    const quantity = quantityIndex >= 0 ? parseSwissNumber(row[quantityIndex]?.toString()) : 0
-    const price = costIndex >= 0 ? parseSwissNumber(row[costIndex]?.toString()) : 0
-    const currency = currencyIndex >= 0 ? row[currencyIndex]?.toString().trim() : "CHF"
-    const totalValue = totalValueIndex >= 0 ? parseSwissNumber(row[totalValueIndex]?.toString()) : 0
+    // Determine column indices for this row (with fallbacks)
+    let actualQuantityIndex = quantityIndex
+    let actualCostIndex = costIndex
+    let actualTotalValueIndex = totalValueIndex
+    let actualCurrencyIndex = currencyIndex
+    
+    // If we're using fallback symbol detection, adjust other indices
+    if (symbolIndex === -1 && symbol === cleanSymbol(row[1]?.toString())) {
+      // Pattern: empty, symbol, quantity, price, total_value, ?, ?, ?, currency, ?, ?, ?, ?, empty
+      actualQuantityIndex = 2
+      actualCostIndex = 3
+      actualTotalValueIndex = 4
+      actualCurrencyIndex = 8
+      console.log(`Using fallback column indices: quantity=${actualQuantityIndex}, cost=${actualCostIndex}, totalValue=${actualTotalValueIndex}, currency=${actualCurrencyIndex}`)
+    }
 
-    if (quantity <= 0) continue
+    const name = symbol // Use symbol as name if no name column
+    const quantity = actualQuantityIndex >= 0 ? parseSwissNumber(row[actualQuantityIndex]?.toString()) : 0
+    const price = actualCostIndex >= 0 ? parseSwissNumber(row[actualCostIndex]?.toString()) : 0
+    const currency = actualCurrencyIndex >= 0 ? row[actualCurrencyIndex]?.toString().trim() : "CHF"
+    const totalValue = actualTotalValueIndex >= 0 ? parseSwissNumber(row[actualTotalValueIndex]?.toString()) : 0
+
+    console.log(`Row ${i} parsed values:`, {
+      symbol,
+      quantity,
+      price,
+      currency,
+      totalValue,
+      actualQuantityIndex,
+      actualCostIndex,
+      actualTotalValueIndex,
+      actualCurrencyIndex,
+      rawQuantity: row[actualQuantityIndex],
+      rawPrice: row[actualCostIndex],
+      rawTotalValue: row[actualTotalValueIndex],
+      rawCurrency: row[actualCurrencyIndex]
+    })
+
+    if (quantity <= 0) {
+      console.log(`Row ${i}: Quantity <= 0, skipping`)
+      continue
+    }
 
     // Determine the category for this position
     // If we have a currentCategory, use it. Otherwise, try to find the category from previous rows
@@ -953,12 +1063,17 @@ function getCurrencyRate(currency: string): number {
 function parseSwissNumber(str: string): number {
   if (!str) return 0
 
+  console.log(`parseSwissNumber input: "${str}"`)
+
   // Handle Swiss number format: 1'234'567.89 and 1'234'567,89
   let cleaned = str.toString().trim()
+  
+  console.log(`parseSwissNumber after trim: "${cleaned}"`)
   
   // If it contains both apostrophes and commas, treat comma as decimal separator
   if (cleaned.includes("'") && cleaned.includes(",")) {
     cleaned = cleaned.replace(/'/g, "").replace(",", ".")
+    console.log(`parseSwissNumber after apostrophe+comma handling: "${cleaned}"`)
   }
   // If it only contains comma and no apostrophes, analyze the pattern
   else if (cleaned.includes(",") && !cleaned.includes("'")) {
@@ -970,27 +1085,34 @@ function parseSwissNumber(str: string): number {
       const afterComma = parts[1]
       if (afterComma.length <= 3 && /^\d+$/.test(afterComma)) {
         cleaned = cleaned.replace(",", ".")
+        console.log(`parseSwissNumber after decimal comma handling: "${cleaned}"`)
       } else {
         // Multiple digits after comma, likely thousands separator
         cleaned = cleaned.replace(/,/g, "")
+        console.log(`parseSwissNumber after thousands comma handling: "${cleaned}"`)
       }
     } else if (parts.length > 2) {
       // Multiple commas = thousands separators
       cleaned = cleaned.replace(/,/g, "")
+      console.log(`parseSwissNumber after multiple commas handling: "${cleaned}"`)
     } else {
       // Single comma at end or beginning, treat as decimal
       cleaned = cleaned.replace(",", ".")
+      console.log(`parseSwissNumber after single comma handling: "${cleaned}"`)
     }
   }
   // If it only contains apostrophes, treat as thousands separator
   else if (cleaned.includes("'")) {
     cleaned = cleaned.replace(/'/g, "")
+    console.log(`parseSwissNumber after apostrophe handling: "${cleaned}"`)
   }
   
   // Remove any remaining non-numeric characters except dots and minus
   cleaned = cleaned.replace(/[^\d.-]/g, "")
+  console.log(`parseSwissNumber after final cleaning: "${cleaned}"`)
 
   const parsed = Number.parseFloat(cleaned)
+  console.log(`parseSwissNumber final result: ${parsed}`)
   return isNaN(parsed) ? 0 : parsed
 }
 
