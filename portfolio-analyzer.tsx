@@ -32,8 +32,12 @@ const COLORS = [
   "#8dd1e1",
 ]
 
-export default function PortfolioAnalyzer() {
-  const [portfolioData, setPortfolioData] = useState<SwissPortfolioData | null>(null)
+interface PortfolioAnalyzerProps {
+  defaultData?: SwissPortfolioData | null
+}
+
+export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnalyzerProps = {}) {
+  const [portfolioData, setPortfolioData] = useState<SwissPortfolioData | null>(defaultData)
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -269,6 +273,14 @@ export default function PortfolioAnalyzer() {
 
           {portfolioData && (
             <div className="space-y-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Portfolio Analysis</CardTitle>
+                  <CardDescription>
+                    Analysis of your portfolio with {portfolioData.positions.length} positions
+                  </CardDescription>
+                </CardHeader>
+              </Card>
               <Card>
                 <CardHeader>
                   <CardTitle>Account Overview</CardTitle>

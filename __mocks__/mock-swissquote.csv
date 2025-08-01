@@ -1,0 +1,7 @@
+Symbol,Name,Quantity,Price,Currency,Category,Total Value CHF
+AAPL,Apple Inc.,10,170.00,USD,Actions,1564.00
+MSFT,Microsoft Corp,5,300.00,USD,Actions,1380.00
+NESN,Nestle SA,20,100.00,CHF,Actions,2000.00
+VWRL,Vanguard FTSE All-World UCITS ETF,50,85.50,USD,ETF,3935.25
+CSN,Credit Suisse Bond,100,50.00,CHF,Obligations,5000.00
+Total Portfolio Value,,,,,13879.25
