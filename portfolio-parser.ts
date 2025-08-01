@@ -83,7 +83,6 @@ const CATEGORY_ALIASES: Record<string, string> = {
 
   // German → canonical
   Aktien: "Actions",
-  Fonds: "Funds",
   Anleihen: "Bonds",
 }
 
@@ -794,6 +793,90 @@ function detectCSVDelimiter(csvText: string): string {
   return bestDelimiter
 }
 
+/**
+ * Convert ETF symbols to their proper Yahoo Finance ticker format
+ * Many ETFs need exchange suffixes or different ticker formats for Yahoo Finance
+ */
+function convertETFTicker(symbol: string, category: string): string {
+  if (category !== "ETF") {
+    return symbol
+  }
+
+  const upperSymbol = symbol.toUpperCase()
+  
+  // Common ETF ticker mappings for Yahoo Finance
+  const etfMappings: Record<string, string> = {
+    // Vanguard ETFs (London Stock Exchange)
+    "VWRL": "VWRL.L", // Vanguard FTSE All-World UCITS ETF
+    "VWRD": "VWRD.L", // Vanguard FTSE All-World UCITS ETF (USD)
+    "VUSA": "VUSA.L", // Vanguard S&P 500 UCITS ETF
+    "VEUR": "VEUR.L", // Vanguard FTSE Developed Europe UCITS ETF
+    "VJPN": "VJPN.L", // Vanguard FTSE Japan UCITS ETF
+    "VAPX": "VAPX.L", // Vanguard FTSE All-World ex-US UCITS ETF
+    
+    // iShares ETFs (London Stock Exchange)
+    "IS3N": "IS3N.L", // iShares MSCI World UCITS ETF
+    "IWDA": "IWDA.L", // iShares Core MSCI World UCITS ETF
+    "EMIM": "EMIM.L", // iShares Core MSCI EM IMI UCITS ETF
+    "EIMI": "EIMI.L", // iShares Core MSCI EM IMI UCITS ETF (USD)
+    "IUSQ": "IUSQ.L", // iShares MSCI ACWI UCITS ETF
+    "SWDA": "SWDA.L", // iShares Core MSCI World UCITS ETF (USD)
+    
+    // Swiss ETFs (SIX Swiss Exchange)
+    "CHSPI": "CHSPI.SW", // Swiss Performance Index ETF
+    
+    // SPDR ETFs (London Stock Exchange)
+    "SPY5": "SPY5.L", // SPDR S&P 500 UCITS ETF
+    "SPYI": "SPYI.L", // SPDR MSCI World UCITS ETF
+    
+    // Invesco ETFs (London Stock Exchange)
+    "IWDP": "IWDP.L", // Invesco MSCI World UCITS ETF
+    "IWDE": "IWDE.L", // Invesco MSCI World UCITS ETF (USD)
+    
+    // Amundi ETFs (Euronext Paris)
+    "CW8": "CW8.PA", // Amundi MSCI World UCITS ETF
+    
+    // Lyxor ETFs (Euronext Paris)
+    "LYXOR": "LYXOR.PA", // Lyxor ETFs (generic)
+    
+    // Xtrackers ETFs (Deutsche Börse)
+    "XGLE": "XGLE.DE", // Xtrackers MSCI World UCITS ETF
+    
+    // WisdomTree ETFs (London Stock Exchange)
+    "WTEM": "WTEM.L", // WisdomTree Emerging Markets UCITS ETF
+  }
+
+  // Check if we have a direct mapping
+  if (etfMappings[upperSymbol]) {
+    console.log(`Converting ETF ticker: ${symbol} → ${etfMappings[upperSymbol]}`)
+    return etfMappings[upperSymbol]
+  }
+
+  // If no direct mapping, try to infer based on common patterns
+  if (upperSymbol.endsWith('.L') || upperSymbol.endsWith('.PA') || upperSymbol.endsWith('.DE') || upperSymbol.endsWith('.SW')) {
+    // Already has exchange suffix
+    return upperSymbol
+  }
+
+  // For Swiss ETFs, try adding .SW suffix
+  if (upperSymbol.includes('CH') || upperSymbol.includes('SWISS')) {
+    const swissTicker = `${upperSymbol}.SW`
+    console.log(`Inferring Swiss ETF ticker: ${symbol} → ${swissTicker}`)
+    return swissTicker
+  }
+
+  // For European ETFs, try adding .L suffix (most common for UCITS ETFs)
+  if (upperSymbol.length <= 5 && !upperSymbol.includes('.')) {
+    const londonTicker = `${upperSymbol}.L`
+    console.log(`Inferring London ETF ticker: ${symbol} → ${londonTicker}`)
+    return londonTicker
+  }
+
+  // Return original symbol if no conversion found
+  console.log(`No ETF ticker conversion found for: ${symbol}, using original`)
+  return symbol
+}
+
 async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Promise<PortfolioPosition[]> {
   const enrichedPositions: PortfolioPosition[] = []
 
@@ -801,6 +884,10 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
     console.log(`Enriching ${parsed.symbol}...`)
 
     try {
+      // Convert ETF ticker to proper Yahoo Finance format
+      const yahooSymbol = convertETFTicker(parsed.symbol, parsed.category)
+      console.log(`Using Yahoo Finance symbol: ${yahooSymbol} for ${parsed.symbol}`)
+
       // Real API calls to Yahoo Finance
       let priceData = null
       let metadata = null
@@ -808,33 +895,33 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
 
       // Get current price and market data
       try {
-        const quoteResponse = await fetch(`/api/yahoo/quote/${parsed.symbol}`)
+        const quoteResponse = await fetch(`/api/yahoo/quote/${yahooSymbol}`)
         if (quoteResponse.ok) {
           priceData = await quoteResponse.json()
         }
       } catch (error) {
-        console.warn(`Failed to fetch quote for ${parsed.symbol}:`, error)
+        console.warn(`Failed to fetch quote for ${yahooSymbol}:`, error)
       }
 
       // Get asset metadata (name, sector, country, etc.)
       try {
-        const searchResponse = await fetch(`/api/yahoo/search/${parsed.symbol}`)
+        const searchResponse = await fetch(`/api/yahoo/search/${yahooSymbol}`)
         if (searchResponse.ok) {
           metadata = await searchResponse.json()
         }
       } catch (error) {
-        console.warn(`Failed to fetch metadata for ${parsed.symbol}:`, error)
+        console.warn(`Failed to fetch metadata for ${yahooSymbol}:`, error)
       }
 
       // Get ETF composition if it's an ETF
       if (parsed.category === "ETF") {
         try {
-          const etfResponse = await fetch(`/api/yahoo/etf/${parsed.symbol}`)
+          const etfResponse = await fetch(`/api/yahoo/etf/${yahooSymbol}`)
           if (etfResponse.ok) {
             etfComposition = await etfResponse.json()
           }
         } catch (error) {
-          console.warn(`Failed to fetch ETF composition for ${parsed.symbol}:`, error)
+          console.warn(`Failed to fetch ETF composition for ${yahooSymbol}:`, error)
         }
       }
 
