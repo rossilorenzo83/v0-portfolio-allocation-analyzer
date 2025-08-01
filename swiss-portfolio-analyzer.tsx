@@ -69,13 +69,13 @@ export default function SwissPortfolioAnalyzer() {
           description: `Analyzing ${fileInput.name}...`,
         })
         const fileContent = await fileInput.text() // Read file content as text
-        data = await parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
+        data = parsePortfolioCsv(fileContent) // Use parsePortfolioCsv
       } else if (textInput) {
         toast({
           title: "Processing Text",
           description: "Analyzing pasted text...",
         })
-        data = await parsePortfolioCsv(textInput) // Use parsePortfolioCsv
+        data = parsePortfolioCsv(textInput) // Use parsePortfolioCsv
       } else {
         throw new Error("Please upload a file or paste text to analyze.")
       }

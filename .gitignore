@@ -24,3 +24,9 @@ coverage/
 
 # Docker
 .dockerignore
+
+# Test files and personal data
+test-*.csv
+test-*.js
+*-portfolio.csv
+personal-*.csv
