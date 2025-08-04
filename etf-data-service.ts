@@ -514,12 +514,22 @@ export async function getEtfDataWithFallback(symbol: string): Promise<EtfData | 
   
   // Step 1: Try API first (now using the consolidated etf-composition route)
   let data = await getEtfData(symbol)
+  console.log(`📊 Raw API data for ${symbol}:`, JSON.stringify(data, null, 2))
   
   // Check if we got real data (not fallback) by looking for rich composition data
   if (data && data.composition) {
+    console.log(`📋 Composition data for ${symbol}:`, JSON.stringify(data.composition, null, 2))
+    
     const hasRealData = data.composition.sectors && 
                        Object.keys(data.composition.sectors).length > 0 &&
                        Object.values(data.composition.sectors).some((weight: any) => weight > 0 && weight < 100)
+    
+    console.log(`🔍 Real data check for ${symbol}:`, {
+      hasSectors: !!data.composition.sectors,
+      sectorKeys: data.composition.sectors ? Object.keys(data.composition.sectors) : [],
+      sectorValues: data.composition.sectors ? Object.values(data.composition.sectors) : [],
+      hasRealData
+    })
     
     if (hasRealData) {
       console.log(`✅ Real API data found for ${symbol}`)

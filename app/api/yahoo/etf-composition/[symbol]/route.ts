@@ -67,13 +67,22 @@ export async function GET(
 
     if (response.ok) {
       const data = await response.json()
+      console.log(`📊 API Response for ${symbol}:`, JSON.stringify(data, null, 2))
+      
       const result = data.quoteSummary?.result?.[0]
       if (result) {
+        console.log(`📋 Result structure for ${symbol}:`, JSON.stringify(result, null, 2))
+        
         const fundProfile = result.fundProfile
         const summaryProfile = result.summaryProfile
 
+        console.log(`🏦 Fund Profile for ${symbol}:`, JSON.stringify(fundProfile, null, 2))
+        console.log(`📈 Summary Profile for ${symbol}:`, JSON.stringify(summaryProfile, null, 2))
+
         // Process sector breakdown
         const sectorWeightings = fundProfile?.sectorWeightings || {}
+        console.log(`🏭 Sector Weightings for ${symbol}:`, JSON.stringify(sectorWeightings, null, 2))
+        
         const sectors = Object.entries(sectorWeightings)
           .map(([sector, weight]) => ({
             sector: normalizeSectorName(sector),
@@ -81,17 +90,23 @@ export async function GET(
           }))
           .filter((s) => s.weight > 0 && s.sector !== 'Unknown' && s.sector !== 'unknown')
 
+        console.log(`✅ Processed sectors for ${symbol}:`, sectors)
+
         // Process country breakdown
         const countries = []
         if (summaryProfile?.country && summaryProfile.country !== 'Unknown' && summaryProfile.country !== 'unknown') {
           countries.push({ country: normalizeCountryName(summaryProfile.country), weight: 100 })
         }
 
+        console.log(`🌍 Countries for ${symbol}:`, countries)
+
         // Process currency
         const currencies = []
         if (summaryProfile?.currency && summaryProfile.currency !== 'Unknown' && summaryProfile.currency !== 'unknown') {
           currencies.push({ currency: summaryProfile.currency.toUpperCase(), weight: 100 })
         }
+
+        console.log(`💰 Currencies for ${symbol}:`, currencies)
 
         const etfComposition: ETFComposition = {
           symbol: symbol, // Always return original symbol
@@ -108,10 +123,19 @@ export async function GET(
         return NextResponse.json(etfComposition)
       } else {
         console.warn(`⚠️ No result found in response for ${symbol}`)
+        console.warn(`⚠️ Full response data:`, JSON.stringify(data, null, 2))
       }
     } else {
       console.warn(`⚠️ External API request failed for ${symbol}: ${response.status} - ${response.statusText}`)
       console.warn(`⚠️ Response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`)
+      
+      // Try to get response body for debugging
+      try {
+        const errorBody = await response.text()
+        console.warn(`⚠️ Error response body:`, errorBody)
+      } catch (e) {
+        console.warn(`⚠️ Could not read error response body:`, e)
+      }
     }
 
     // Try web scraping as fallback
