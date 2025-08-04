@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { yahooFinanceService } from '@/lib/yahoo-finance-service'
+import { getEtfHoldings } from '@/lib/api-service';
 
 interface ETFComposition {
   symbol: string
@@ -108,19 +109,37 @@ export async function GET(
 
         console.log(`💰 Currencies for ${symbol}:`, currencies)
 
-        const etfComposition: ETFComposition = {
-          symbol: symbol, // Always return original symbol
-          currency: currencies.length > 0 ? currencies : processCurrencyData([]),
-          country: countries.length > 0 ? countries : processCountryData([]),
-          sector: sectors.length > 0 ? sectors : processSectorData([]),
-          holdings: [],
-          domicile: summaryProfile?.domicile || inferDomicile(symbol),
-          withholdingTax: inferWithholdingTax(symbol),
-          lastUpdated: new Date().toISOString(),
-        }
+        // Check if we have rich data (not just fallback data)
+        const hasRichData = sectors.length > 0 && 
+                           !sectors.every(s => s.sector === 'Other') &&
+                           countries.length > 0 &&
+                           !countries.every(c => c.country === 'United States')
 
-        console.log(`✅ Real ETF composition found for ${symbol} with session:`, etfComposition)
-        return NextResponse.json(etfComposition)
+        console.log(`🔍 Rich data check for ${symbol}:`, {
+          hasSectors: sectors.length > 0,
+          hasNonOtherSectors: !sectors.every(s => s.sector === 'Other'),
+          hasCountries: countries.length > 0,
+          hasNonUSDCountries: !countries.every(c => c.country === 'United States'),
+          hasRichData
+        })
+
+        if (hasRichData) {
+          const etfComposition: ETFComposition = {
+            symbol: symbol, // Always return original symbol
+            currency: currencies,
+            country: countries,
+            sector: sectors,
+            holdings: [],
+            domicile: summaryProfile?.domicile || inferDomicile(symbol),
+            withholdingTax: inferWithholdingTax(symbol),
+            lastUpdated: new Date().toISOString(),
+          }
+
+          console.log(`✅ Real ETF composition found for ${symbol} with session:`, etfComposition)
+          return NextResponse.json(etfComposition)
+        } else {
+          console.log(`🔄 API returned poor quality data for ${symbol}, trying web scraping...`)
+        }
       } else {
         console.warn(`⚠️ No result found in response for ${symbol}`)
         console.warn(`⚠️ Full response data:`, JSON.stringify(data, null, 2))
@@ -138,8 +157,8 @@ export async function GET(
       }
     }
 
-    // Try web scraping as fallback
-    console.log(`🔄 API failed for ${symbol}, trying web scraping...`)
+    // Try web scraping as fallback (when API fails OR returns poor quality data)
+    console.log(`🔄 Trying web scraping fallback for ${symbol}...`)
     const scrapedData = await scrapeETFDataFromWeb(symbol)
     if (scrapedData) {
       console.log(`✅ Web scraping successful for ${symbol}:`, scrapedData)

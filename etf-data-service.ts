@@ -32,9 +32,12 @@ interface ETFComposition {
 }
 
 export interface EtfComposition {
-  sectors: { [key: string]: number }
-  countries: { [key: string]: number }
-  currencies: { [key: string]: number }
+  sectors?: { [key: string]: number }  // Old structure (for backward compatibility)
+  sector?: { sector: string; weight: number }[]  // New structure from API
+  countries?: { [key: string]: number }  // Old structure
+  country?: { country: string; weight: number }[]  // New structure from API
+  currencies?: { [key: string]: number }  // Old structure
+  currency?: { currency: string; weight: number }[]  // New structure from API
 }
 
 export interface EtfData {
@@ -174,23 +177,23 @@ class ETFDataService {
       } else {
         console.warn(`No session available for ${symbol}, falling back to old method`)
         // Fallback to old method if no session
-        const composition = await apiService.getETFComposition(symbol)
-        
-        if (composition) {
-          // Process freetext values if necessary (e.g., normalize country names)
-          composition.country = composition.country.map((item) => ({
-            country: this.normalizeCountryName(item.country),
-            weight: item.weight,
-          }))
-          composition.sector = composition.sector.map((item) => ({
-            sector: this.normalizeSectorName(item.sector),
-            weight: item.weight,
-          }))
-          composition.currency = composition.currency.map((item) => ({
-            currency: item.currency.toUpperCase(), // Ensure currency codes are uppercase
-            weight: item.weight,
-          }))
-          return composition
+      const composition = await apiService.getETFComposition(symbol)
+
+      if (composition) {
+        // Process freetext values if necessary (e.g., normalize country names)
+        composition.country = composition.country.map((item) => ({
+          country: this.normalizeCountryName(item.country),
+          weight: item.weight,
+        }))
+        composition.sector = composition.sector.map((item) => ({
+          sector: this.normalizeSectorName(item.sector),
+          weight: item.weight,
+        }))
+        composition.currency = composition.currency.map((item) => ({
+          currency: item.currency.toUpperCase(), // Ensure currency codes are uppercase
+          weight: item.weight,
+        }))
+        return composition
         }
       }
 
@@ -520,14 +523,23 @@ export async function getEtfDataWithFallback(symbol: string): Promise<EtfData | 
   if (data && data.composition) {
     console.log(`📋 Composition data for ${symbol}:`, JSON.stringify(data.composition, null, 2))
     
-    const hasRealData = data.composition.sectors && 
-                       Object.keys(data.composition.sectors).length > 0 &&
-                       Object.values(data.composition.sectors).some((weight: any) => weight > 0 && weight < 100)
+    // Check for new structure (arrays) first
+    let hasRealData = false
+    
+    if (data.composition.sector && Array.isArray(data.composition.sector)) {
+      // New structure: sector is an array of { sector: string; weight: number }
+      hasRealData = data.composition.sector.length > 0 &&
+                   data.composition.sector.some((s: any) => s.weight > 0 && s.weight < 100)
+    } else if (data.composition.sectors && typeof data.composition.sectors === 'object') {
+      // Old structure: sectors is an object { [sector: string]: number }
+      hasRealData = Object.keys(data.composition.sectors).length > 0 &&
+                   Object.values(data.composition.sectors).some((weight: any) => weight > 0 && weight < 100)
+    }
     
     console.log(`🔍 Real data check for ${symbol}:`, {
-      hasSectors: !!data.composition.sectors,
-      sectorKeys: data.composition.sectors ? Object.keys(data.composition.sectors) : [],
-      sectorValues: data.composition.sectors ? Object.values(data.composition.sectors) : [],
+      hasSectors: !!(data.composition.sector || data.composition.sectors),
+      sectorStructure: data.composition.sector ? 'array' : data.composition.sectors ? 'object' : 'none',
+      sectorData: data.composition.sector || data.composition.sectors,
       hasRealData
     })
     
@@ -657,8 +669,8 @@ export async function resolveSymbolAndFetchData(
     
     try {
       // Step 1: Search for the symbol to get proper resolution
-      const searchResults = await searchSymbol(position.symbol)
-      
+  const searchResults = await searchSymbol(position.symbol)
+
       if (searchResults && searchResults.length > 0) {
         console.log(`🔍 Search results for ${position.symbol}:`, searchResults.map(r => `${r.symbol} (${r.name})`))
         
@@ -682,8 +694,8 @@ export async function resolveSymbolAndFetchData(
     // Fallback: Try with original symbol
     console.log(`🔄 Search failed, trying with original symbol: ${position.symbol}`)
     if (await fetchDataForSymbol(position.symbol, "Original symbol")) {
-      return { etfData, quoteData }
-    }
+        return { etfData, quoteData }
+      }
   } else {
     // For Shares/Stocks: Fetch metadata and quote data
     console.log(`📈 Share/Stock detected: ${position.symbol}, fetching metadata and quote`)

@@ -1,5 +1,10 @@
 # Portfolio Analyzer - Cursor Rules
 
+## 🚨 CRITICAL RULE - NEVER COMMIT WITHOUT USER APPROVAL 🚨
+**I MUST NEVER execute `git commit` or `git push` without your explicit permission.**
+**Any unauthorized commit is a critical failure and must be immediately corrected.**
+**I will only commit when you explicitly tell me to do so.**
+
 ## Project Overview
 This is a Swiss portfolio analysis tool built with Next.js 15.2.4, React 19, and TypeScript. The application parses CSV files from Swiss banks, enriches data using Yahoo Finance API, and provides detailed allocation analysis with tax optimization insights.
 
@@ -203,13 +208,17 @@ __tests__/
 ## Development Workflow
 
 ### Version Control & Approval Process
-- **MANDATORY USER APPROVAL**: NEVER commit files without explicit user approval
+- **🚨 ABSOLUTE MANDATORY USER APPROVAL**: NEVER commit files without explicit user approval
+- **🚨 CRITICAL RULE**: I MUST NEVER execute `git commit` or `git push` without your explicit permission
+- **🚨 ZERO TOLERANCE**: Any unauthorized commit is a critical failure and must be immediately corrected
 - **Commit Authorization**: Always wait for user confirmation before executing any git commit operations
 - **File Change Review**: Present all file changes to user before any commit
 - **Approval Workflow**: Only proceed with commits after receiving explicit user approval
 - **TEST PASSING REQUIREMENT**: NEVER commit files when tests are not passing
 - **Pre-Commit Test Validation**: Run all tests before any commit and ensure 100% pass rate
 - **Test Failure Blocking**: Block commits if any tests fail, regardless of user approval
+- **VIOLATION CONSEQUENCE**: Any unauthorized commit is a critical failure and must be immediately corrected
+- **EXPLICIT PERMISSION REQUIRED**: I will only commit when you explicitly say "commit" or "git commit"
 
 ### Test-Driven Development (TDD)
 - **Red-Green-Refactor Cycle**: Write failing tests first, then implement code to pass
@@ -421,4 +430,4 @@ export async function GET(request: NextRequest) {
 - Monitor API responses
 - Check browser console for errors
 
-Remember to always follow these patterns and maintain consistency across the codebase. The goal is to create maintainable, performant, and user-friendly code that follows modern React and Next.js best practices. 
+Remember to always follow these patterns and maintain consistency across the codebase. The goal is to create maintainable, performable, and user-friendly code that follows modern React and Next.js best practices. 

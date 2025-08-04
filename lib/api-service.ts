@@ -164,14 +164,14 @@ class APIService {
         // Server-side: Use free Yahoo Finance API
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
         const response = await fetch(url, {
-          headers: {
+        headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "application/json",
-          },
-        })
+        },
+      })
 
-        if (response.ok) {
-          const data = await response.json()
+      if (response.ok) {
+        const data = await response.json()
           const result = data.chart?.result?.[0]
           if (result) {
             const meta = result.meta
@@ -200,19 +200,19 @@ class APIService {
         if (response.ok) {
           const data = await response.json()
           console.log(`✅ Price data for ${symbol}:`, data)
-          
-          const result: StockPrice = {
-            symbol: symbol, // Always return original symbol
+        
+        const result: StockPrice = {
+          symbol: symbol, // Always return original symbol
             price: data.price || 0,
             currency: data.currency || this.inferCurrency(symbol),
             change: data.change || 0,
             changePercent: data.changePercent || 0,
-            lastUpdated: new Date().toISOString(),
-          }
+          lastUpdated: new Date().toISOString(),
+        }
 
-          this.setCache(cacheKey, result, 5) // Cache for 5 minutes
-          return result
-        } else {
+        this.setCache(cacheKey, result, 5) // Cache for 5 minutes
+        return result
+      } else {
           console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
         }
       }
@@ -273,7 +273,7 @@ class APIService {
         console.log(`🔄 quoteSummary failed for ${symbol}, trying search API...`)
         const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}`
         const searchResponse = await fetch(searchUrl, {
-          headers: {
+        headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "application/json",
           },
@@ -302,12 +302,12 @@ class APIService {
         // Client-side: Use Next.js API route
         const response = await fetch(`${this.baseUrl}/search/${encodeURIComponent(symbol)}`)
 
-        if (response.ok) {
-          const data = await response.json()
-          console.log(`✅ Metadata for ${symbol}:`, data)
-          
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ Metadata for ${symbol}:`, data)
+
           const metadata: AssetMetadata = {
-            symbol: symbol, // Always return original symbol
+          symbol: symbol, // Always return original symbol
             name: data.name || symbol,
             sector: data.sector || this.inferSector(symbol),
             country: data.country || this.inferCountry(symbol),
@@ -318,7 +318,7 @@ class APIService {
 
           this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
           return metadata
-        } else {
+      } else {
           console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
         }
       }
@@ -348,7 +348,7 @@ class APIService {
         // Try Yahoo Finance ETF holdings API directly
         const holdingsUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=topHoldings,fundProfile,summaryProfile`
         const response = await fetch(holdingsUrl, {
-          headers: {
+        headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             Accept: "application/json",
           },
@@ -401,25 +401,25 @@ class APIService {
         // Client-side: Use Next.js API route
         const response = await fetch(`${this.baseUrl}/etf/${encodeURIComponent(symbol)}`)
 
-        if (response.ok) {
-          const data = await response.json()
-          console.log(`✅ ETF composition for ${symbol}:`, data)
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ ETF composition for ${symbol}:`, data)
 
           // Process the ETF data
-          const result: ETFComposition = {
-            symbol: symbol, // Always return original symbol
-            currency: this.processCurrencyData(data.currency || []),
-            country: this.processCountryData(data.country || []),
-            sector: this.processSectorData(data.sector || []),
-            holdings: data.holdings || [],
-            domicile: data.domicile || this.inferDomicile(symbol),
-            withholdingTax: data.withholdingTax || this.inferWithholdingTax(symbol),
-            lastUpdated: new Date().toISOString(),
-          }
+        const result: ETFComposition = {
+          symbol: symbol, // Always return original symbol
+          currency: this.processCurrencyData(data.currency || []),
+          country: this.processCountryData(data.country || []),
+          sector: this.processSectorData(data.sector || []),
+          holdings: data.holdings || [],
+          domicile: data.domicile || this.inferDomicile(symbol),
+          withholdingTax: data.withholdingTax || this.inferWithholdingTax(symbol),
+          lastUpdated: new Date().toISOString(),
+        }
 
-          this.setCache(cacheKey, result, 1440) // Cache for 24 hours
-          return result
-        } else {
+        this.setCache(cacheKey, result, 1440) // Cache for 24 hours
+        return result
+      } else {
           console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
         }
       }
@@ -770,30 +770,30 @@ class APIService {
       console.log(`📊 Trying holdings page: ${holdingsUrl}`)
       
       const holdingsResponse = await fetch(holdingsUrl, {
-        headers: {
+              headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
           'Sec-Fetch-Dest': 'document',
           'Sec-Fetch-Mode': 'navigate',
           'Sec-Fetch-Site': 'none',
           'Cache-Control': 'max-age=0'
-        }
-      })
+              }
+            })
 
       if (holdingsResponse.ok) {
         const holdingsHtml = await holdingsResponse.text()
         console.log(`📄 Retrieved holdings HTML for ${symbol} (${holdingsHtml.length} characters)`)
-        
+            
         // Extract ETF composition data from holdings page HTML
         const composition = this.parseETFDataFromHTML(holdingsHtml, symbol)
-        if (composition) {
+            if (composition) {
           console.log(`✅ Successfully scraped ETF data from holdings page for ${symbol}`)
-          return composition
-        }
+              return composition
+            }
       } else {
         console.warn(`⚠️ Holdings page not accessible for ${symbol}: HTTP ${holdingsResponse.status}`)
       }
@@ -995,46 +995,46 @@ class APIService {
       // Fallback: Try to extract from other JSON patterns in the HTML
       if (sectors.length === 0) {
         const sectorMatches = html.match(/"sectorWeightings":\s*({[^}]+})/g)
-        if (sectorMatches) {
-          for (const match of sectorMatches) {
-            try {
-              const sectorData = JSON.parse(match.replace(/"sectorWeightings":\s*/, ''))
-              Object.entries(sectorData).forEach(([sector, weight]) => {
+      if (sectorMatches) {
+        for (const match of sectorMatches) {
+          try {
+            const sectorData = JSON.parse(match.replace(/"sectorWeightings":\s*/, ''))
+            Object.entries(sectorData).forEach(([sector, weight]) => {
                 if (typeof weight === 'number' && weight > 0 && sector !== 'Unknown' && sector !== 'unknown') {
-                  sectors.push({
-                    sector: this.normalizeSectorName(sector),
-                    weight: weight * 100
-                  })
-                }
-              })
-            } catch (e) {
-              // Continue parsing other matches
+                sectors.push({
+                  sector: this.normalizeSectorName(sector),
+                  weight: weight * 100
+                })
+              }
+            })
+          } catch (e) {
+            // Continue parsing other matches
             }
           }
         }
       }
-      
+
       // Fallback: Try to extract country and currency from other patterns
       if (countries.length === 0) {
-        const countryMatch = html.match(/"country":\s*"([^"]+)"/)
+      const countryMatch = html.match(/"country":\s*"([^"]+)"/)
         if (countryMatch && countryMatch[1] !== 'Unknown' && countryMatch[1] !== 'unknown') {
-          countries.push({
-            country: this.normalizeCountryName(countryMatch[1]),
-            weight: 100
-          })
+        countries.push({
+          country: this.normalizeCountryName(countryMatch[1]),
+          weight: 100
+        })
         }
       }
-      
+
       if (currencies.length === 0) {
-        const currencyMatch = html.match(/"currency":\s*"([^"]+)"/)
+      const currencyMatch = html.match(/"currency":\s*"([^"]+)"/)
         if (currencyMatch && currencyMatch[1] !== 'Unknown' && currencyMatch[1] !== 'unknown') {
-          currencies.push({
-            currency: currencyMatch[1].toUpperCase(),
-            weight: 100
-          })
+        currencies.push({
+          currency: currencyMatch[1].toUpperCase(),
+          weight: 100
+        })
         }
       }
-      
+
       // Extract domicile
       const domicileMatch = html.match(/"domicile":\s*"([^"]+)"/)
       const domicile = domicileMatch ? domicileMatch[1] : this.inferDomicile(symbol)
