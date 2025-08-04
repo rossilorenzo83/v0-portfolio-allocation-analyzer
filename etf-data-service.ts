@@ -1,6 +1,8 @@
 // Real ETF composition data service
 
-import { apiService } from "./lib/api-service"
+import { yahooFinanceService } from "@/lib/yahoo-finance-service"
+import { apiService } from "@/lib/api-service"
+import { shareMetadataService } from "@/lib/share-metadata-service"
 
 // Interface for the position object passed to resolveSymbolAndFetchData
 interface Position {
@@ -146,23 +148,50 @@ class ETFDataService {
     await new Promise((resolve) => setTimeout(resolve, API_DELAY_MS)) // Delay
     const cacheKey = `etf-composition-${symbol}`
     return this.fetchWithCache(cacheKey, async () => {
-      const composition = await apiService.getETFComposition(symbol)
-
-      if (composition) {
-        // Process freetext values if necessary (e.g., normalize country names)
-        composition.country = composition.country.map((item) => ({
-          country: this.normalizeCountryName(item.country),
-          weight: item.weight,
-        }))
-        composition.sector = composition.sector.map((item) => ({
-          sector: this.normalizeSectorName(item.sector),
-          weight: item.weight,
-        }))
-        composition.currency = composition.currency.map((item) => ({
-          currency: item.currency.toUpperCase(), // Ensure currency codes are uppercase
-          weight: item.weight,
-        }))
-        return composition
+      // Get a valid session from the sophisticated service
+      const session = await yahooFinanceService.getCurrentSession()
+      
+      if (session) {
+        // Use the new method with session
+        const composition = await apiService.getETFCompositionWithSession(symbol, session)
+        
+        if (composition) {
+          // Process freetext values if necessary (e.g., normalize country names)
+          composition.country = composition.country.map((item) => ({
+            country: this.normalizeCountryName(item.country),
+            weight: item.weight,
+          }))
+          composition.sector = composition.sector.map((item) => ({
+            sector: this.normalizeSectorName(item.sector),
+            weight: item.weight,
+          }))
+          composition.currency = composition.currency.map((item) => ({
+            currency: item.currency.toUpperCase(), // Ensure currency codes are uppercase
+            weight: item.weight,
+          }))
+          return composition
+        }
+      } else {
+        console.warn(`No session available for ${symbol}, falling back to old method`)
+        // Fallback to old method if no session
+        const composition = await apiService.getETFComposition(symbol)
+        
+        if (composition) {
+          // Process freetext values if necessary (e.g., normalize country names)
+          composition.country = composition.country.map((item) => ({
+            country: this.normalizeCountryName(item.country),
+            weight: item.weight,
+          }))
+          composition.sector = composition.sector.map((item) => ({
+            sector: this.normalizeSectorName(item.sector),
+            weight: item.weight,
+          }))
+          composition.currency = composition.currency.map((item) => ({
+            currency: item.currency.toUpperCase(), // Ensure currency codes are uppercase
+            weight: item.weight,
+          }))
+          return composition
+        }
       }
 
       // Fallback for common ETFs if API fails or returns empty
@@ -383,7 +412,7 @@ async function fetchFromApi<T>(
 }
 
 export async function getEtfData(symbol: string): Promise<EtfData | null> {
-  const data = await fetchFromApi<EtfData>(`etf/${symbol}`, etfDataCache, CACHE_DURATION_MS)
+  const data = await fetchFromApi<EtfData>(`etf-composition/${symbol}`, etfDataCache, CACHE_DURATION_MS)
   if (data) {
     // Ensure composition fields are present, even if empty
     data.composition = data.composition || { sectors: {}, countries: {}, currencies: {} }
@@ -399,17 +428,52 @@ export async function getQuote(symbol: string): Promise<QuoteData | null> {
 }
 
 export async function searchSymbol(query: string): Promise<SearchResult[]> {
-  const results = await fetchFromApi<SearchResult[]>(`search/${query}`, searchCache, SEARCH_CACHE_DURATION_MS)
-  return results || []
+  const result = await fetchFromApi<any>(`search/${query}`, searchCache, SEARCH_CACHE_DURATION_MS)
+  
+  if (result) {
+    // The search route returns a single object, convert it to SearchResult format
+    const searchResult: SearchResult = {
+      symbol: result.symbol,
+      name: result.name,
+      exchange: result.exchange,
+      currency: result.currency
+    }
+    return [searchResult]
+  }
+  
+  return []
 }
 
 export async function getEtfDataWithFallback(symbol: string): Promise<EtfData | null> {
+  console.log(`🔍 Fetching ETF data with fallback for ${symbol}`)
+  
+  // Step 1: Try API first (now using the consolidated etf-composition route)
   let data = await getEtfData(symbol)
-  if (!data || (data.composition && Object.keys(data.composition.countries).length === 0)) {
-    console.warn(`No ETF data or empty composition found for ${symbol} from API. Using fallback.`)
-    data = FALLBACK_ETF_DATA[symbol.toUpperCase()]
+  
+  // Check if we got real data (not fallback) by looking for rich composition data
+  if (data && data.composition) {
+    const hasRealData = data.composition.sectors && 
+                       Object.keys(data.composition.sectors).length > 0 &&
+                       Object.values(data.composition.sectors).some((weight: any) => weight > 0 && weight < 100)
+    
+    if (hasRealData) {
+      console.log(`✅ Real API data found for ${symbol}`)
+      return data
+    } else {
+      console.log(`🔄 API returned fallback data for ${symbol}, will try other sources`)
+    }
   }
-  return data
+
+  // Step 2: Use static fallback data if API failed
+  console.log(`🔄 API failed for ${symbol}, using static fallback data`)
+  data = FALLBACK_ETF_DATA[symbol.toUpperCase()]
+  if (data) {
+    console.log(`✅ Static fallback data found for ${symbol}`)
+    return data
+  }
+
+  console.warn(`❌ No data available for ${symbol} from any source`)
+  return null
 }
 
 export async function getQuoteWithFallback(symbol: string): Promise<QuoteData | null> {
@@ -427,69 +491,132 @@ export async function resolveSymbolAndFetchData(
   let etfData: EtfData | null = null
   let quoteData: QuoteData | null = null
 
-  // Use the sophisticated symbol resolution from apiService for European ETFs
-  console.log(`🔍 Resolving symbol for ${position.symbol} using apiService...`)
-  
-  try {
-    // Use apiService to resolve the symbol (this handles European ETF mapping)
-    const resolvedSymbol = await apiService.resolveSymbol(position.symbol)
-    console.log(`✅ Symbol resolved: ${position.symbol} -> ${resolvedSymbol}`)
+  // Determine if this position should fetch ETF data
+  let shouldFetchETFData = position.category === "ETF" || position.category === "Funds"
+
+  console.log(`🔍 Processing ${position.symbol} (category: ${position.category}, shouldFetchETF: ${shouldFetchETFData})`)
+
+  // Helper function to fetch data for a given symbol
+  const fetchDataForSymbol = async (symbol: string, stepName: string, forceETF?: boolean): Promise<boolean> => {
+    console.log(`📊 Fetching data for ${symbol} (${stepName})...`)
     
-    // Try fetching with the resolved symbol
-    etfData = await getEtfDataWithFallback(resolvedSymbol)
-    quoteData = await getQuoteWithFallback(resolvedSymbol)
+    // For ETFs/Funds: Fetch ETF composition
+    if (shouldFetchETFData || forceETF) {
+      etfData = await getEtfDataWithFallback(symbol)
+    } else {
+      // For Shares/Stocks: Fetch asset metadata and convert to ETF-like format
+      console.log(`📈 Fetching asset metadata for share: ${symbol}`)
+      
+             // Use the Next.js API route for share metadata (handles session management server-side)
+       const assetMetadata = await shareMetadataService.getShareMetadataWithSession(symbol, {} as any)
+       
+       if (assetMetadata) {
+         console.log(`✅ Asset metadata found for ${symbol}:`, assetMetadata)
+         
+         // Convert asset metadata to ETF-like format for consistent analysis
+         etfData = {
+           symbol: assetMetadata.symbol,
+           name: assetMetadata.name,
+           currency: assetMetadata.currency,
+           exchange: assetMetadata.type || "UNKNOWN",
+           domicile: assetMetadata.country || "UNKNOWN",
+           composition: {
+             sectors: { [assetMetadata.sector || "Unknown"]: 1.0 },
+             countries: { [assetMetadata.country || "Unknown"]: 1.0 },
+             currencies: { [assetMetadata.currency || "USD"]: 1.0 },
+           },
+         }
+         console.log(`✅ Converted asset metadata to ETF format for ${symbol}`)
+       } else {
+         console.warn(`⚠️ No asset metadata found for ${symbol}`)
+         // Fallback to basic method if API route fails
+         const fallbackMetadata = await apiService.getAssetMetadata(symbol)
+         
+                   if (fallbackMetadata) {
+            console.log(`✅ Asset metadata found for ${symbol} (fallback):`, fallbackMetadata)
+            
+            // Convert asset metadata to ETF-like format for consistent analysis
+            etfData = {
+              symbol: fallbackMetadata.symbol,
+              name: fallbackMetadata.name,
+              currency: fallbackMetadata.currency,
+              exchange: fallbackMetadata.type || "UNKNOWN",
+              domicile: fallbackMetadata.country || "UNKNOWN",
+              composition: {
+                sectors: { [fallbackMetadata.sector || "Unknown"]: 1.0 },
+                countries: { [fallbackMetadata.country || "Unknown"]: 1.0 },
+                currencies: { [fallbackMetadata.currency || "USD"]: 1.0 },
+              },
+            }
+            console.log(`✅ Converted asset metadata to ETF format for ${symbol} (fallback)`)
+          } else {
+            console.warn(`⚠️ No asset metadata found for ${symbol}`)
+          }
+      }
+    }
     
-    if (etfData && quoteData) {
-      console.log(`Direct fetch successful for ${position.symbol} (resolved to ${resolvedSymbol})`)
+    // Always fetch quote data
+    quoteData = await getQuoteWithFallback(symbol)
+    
+    if (etfData || quoteData) {
+      console.log(`✅ ${stepName} successful for ${position.symbol} (resolved to ${symbol})`)
+      return true
+    }
+    return false
+  }
+
+  // For ETFs and Funds: Use search-based symbol resolution
+  if (shouldFetchETFData) {
+    console.log(`🌍 ETF/Fund detected: ${position.symbol}, using search-based resolution`)
+    
+    try {
+      // Step 1: Search for the symbol to get proper resolution
+      const searchResults = await searchSymbol(position.symbol)
+      
+      if (searchResults && searchResults.length > 0) {
+        console.log(`🔍 Search results for ${position.symbol}:`, searchResults.map(r => `${r.symbol} (${r.name})`))
+        
+        // Use the first search result (most relevant)
+        const resolvedSymbol = searchResults[0].symbol
+        console.log(`✅ Search resolution: ${position.symbol} -> ${resolvedSymbol}`)
+        
+        // Step 2: Fetch data using the resolved symbol
+        if (await fetchDataForSymbol(resolvedSymbol, "Search-based resolution")) {
+          return { etfData, quoteData }
+        } else {
+          console.warn(`⚠️ Failed to fetch data with resolved symbol ${resolvedSymbol}`)
+        }
+      } else {
+        console.warn(`⚠️ No search results found for ${position.symbol}`)
+      }
+    } catch (error) {
+      console.warn(`Search-based resolution failed for ${position.symbol}:`, error)
+    }
+
+    // Fallback: Try with original symbol
+    console.log(`🔄 Search failed, trying with original symbol: ${position.symbol}`)
+    if (await fetchDataForSymbol(position.symbol, "Original symbol")) {
       return { etfData, quoteData }
     }
-  } catch (error) {
-    console.warn(`Symbol resolution failed for ${position.symbol}:`, error)
-  }
-
-  // Fallback: Try fetching directly with the provided symbol
-  console.log(`Falling back to direct fetch for ${position.symbol}...`)
-  etfData = await getEtfDataWithFallback(position.symbol)
-  quoteData = await getQuoteWithFallback(position.symbol)
-
-  if (etfData && quoteData) {
-    console.log(`Direct fetch successful for ${position.symbol}`)
-    return { etfData, quoteData }
-  }
-
-  // If direct fetch fails, try searching for the symbol
-  console.log(`Direct fetch failed for ${position.symbol}. Attempting search...`)
-  const searchResults = await searchSymbol(position.symbol)
-
-  if (searchResults && Array.isArray(searchResults)) {
-    for (const result of searchResults) {
-      // Prioritize results matching currency or exchange if available in position
-      if (position.currency && result.currency !== position.currency) {
-        continue
-      }
-      if (position.exchange && result.exchange && result.exchange.toLowerCase() !== position.exchange.toLowerCase()) {
-        continue
-      }
-
-      etfData = await getEtfDataWithFallback(result.symbol)
-      quoteData = await getQuoteWithFallback(result.symbol)
-
-      if (etfData && quoteData) {
-        console.log(`Search and fetch successful for ${position.symbol} (resolved to ${result.symbol})`)
-        return { etfData, quoteData }
-      }
+  } else {
+    // For Shares/Stocks: Fetch metadata and quote data
+    console.log(`📈 Share/Stock detected: ${position.symbol}, fetching metadata and quote`)
+    
+    if (await fetchDataForSymbol(position.symbol, "Direct metadata and quote fetch")) {
+      return { etfData, quoteData }
     }
   }
 
-  console.warn(`Could not resolve and fetch data for ${position.symbol} after search. Using minimal fallback.`)
-  // If all attempts fail, provide minimal fallback data based on the original position
+  console.warn(`❌ Could not resolve and fetch data for ${position.symbol} after all attempts. Using minimal fallback.`)
+  
+  // Final fallback: provide minimal data based on the original position
   return {
     etfData: {
       symbol: position.symbol,
       name: position.name || position.symbol,
       currency: position.currency,
       exchange: position.exchange || "UNKNOWN",
-      domicile: "UNKNOWN", // Default to unknown if not found
+      domicile: "UNKNOWN",
       composition: {
         sectors: { Unknown: 1.0 },
         countries: { Unknown: 1.0 },

@@ -1,0 +1,424 @@
+# Portfolio Analyzer - Cursor Rules
+
+## Project Overview
+This is a Swiss portfolio analysis tool built with Next.js 15.2.4, React 19, and TypeScript. The application parses CSV files from Swiss banks, enriches data using Yahoo Finance API, and provides detailed allocation analysis with tax optimization insights.
+
+## Technology Stack
+
+### Core Framework
+- **Next.js**: 15.2.4 with App Router
+- **React**: 19 (latest with concurrent features)
+- **TypeScript**: 5.3.3 with strict mode enabled
+- **Node.js**: 18.x, 20.x, 22.x (CI/CD matrix)
+
+### Development Environment
+- **Operating System**: Windows 10/11
+- **Shell**: PowerShell (use Windows commands: `dir`, `findstr`, `netstat`, etc.)
+- **Package Manager**: npm/pnpm
+- **IDE**: Cursor with Windows-specific configurations
+- **Command Requirements**: Always use Windows-compatible commands (no Linux commands like `ls`, `grep`, `head`, etc.)
+
+### UI & Styling
+- **Tailwind CSS**: 3.4.17 with utility-first approach
+- **shadcn/ui**: Modern component library built on Radix UI
+- **Radix UI**: Latest versions for all components
+- **Lucide React**: 0.454.0 for icons
+- **Recharts**: Latest for data visualization
+- **Sonner**: Latest for toast notifications
+
+### Development Tools
+- **ESLint**: 8.56.0 with Next.js config
+- **Jest**: 29.7.0 for testing
+- **Testing Library**: Latest for React testing
+- **PostCSS**: 8.5 with Autoprefixer
+- **ts-jest**: 29.1.1 for TypeScript testing
+
+### Data Processing
+- **Papa Parse**: Latest for CSV parsing
+- **React Dropzone**: 14.3.8 for file uploads
+- **React Hook Form**: Latest for form handling
+
+## Architecture Patterns
+
+### File Structure
+```
+├── app/                    # Next.js App Router
+│   ├── api/               # API routes
+│   │   └── yahoo/         # Yahoo Finance API endpoints
+│   ├── globals.css        # Global styles
+│   ├── layout.tsx         # Root layout
+│   └── page.tsx           # Home page
+├── components/            # React components
+│   ├── ui/               # shadcn/ui components
+│   └── *.tsx            # Custom components
+├── lib/                  # Utility libraries
+├── hooks/                # Custom React hooks
+├── __tests__/            # Test files
+├── scripts/              # Utility scripts
+└── public/               # Static assets
+```
+
+### Import Paths
+Use the configured path aliases:
+- `@/*` → `./*`
+- `@/components/*` → `./components/*`
+- `@/lib/*` → `./lib/*`
+- `@/hooks/*` → `./hooks/*`
+- `@/app/*` → `./app/*`
+- `@/scripts/*` → `./scripts/*`
+
+## Coding Standards
+
+### TypeScript
+- Use strict mode (already enabled)
+- Prefer interfaces over types for object shapes
+- Use proper type annotations for all functions
+- Leverage TypeScript's path mapping for imports
+- Use generic types where appropriate
+
+### React 19 Best Practices
+- Use functional components with hooks
+- Leverage React 19's concurrent features
+- Use proper dependency arrays in useEffect
+- Implement proper error boundaries
+- Use React.memo for performance optimization when needed
+
+### Next.js 15 App Router
+- Use Server Components by default
+- Use Client Components only when necessary (interactivity, hooks, browser APIs)
+- Implement proper loading and error states
+- Use Next.js Image component for optimization
+- Leverage App Router's built-in caching
+
+### Component Architecture
+- Follow atomic design principles
+- Use composition over inheritance
+- Implement proper prop interfaces
+- Use forwardRef when needed
+- Implement proper accessibility (ARIA labels, keyboard navigation)
+
+### Styling Guidelines
+- Use Tailwind CSS utility classes
+- Follow mobile-first responsive design
+- Use CSS custom properties for theming
+- Implement dark mode support
+- Use consistent spacing and typography scales
+
+## API Integration
+
+### Yahoo Finance API
+- Use authenticated API calls with API key
+- Implement proper error handling and fallbacks
+- Use caching to minimize API calls
+- Handle rate limiting gracefully
+- Provide mock data for development/testing
+
+### Error Handling
+- Implement comprehensive error boundaries
+- Use proper HTTP status codes
+- Provide user-friendly error messages
+- Log errors for debugging
+- Implement retry mechanisms
+
+## Testing Strategy
+
+### TDD Implementation
+- **Test-First Development**: Write tests before implementing any feature
+- **Red-Green-Refactor**: Follow the TDD cycle strictly
+- **Feature Test Suites**: Create comprehensive test suites for each feature
+- **Test-Driven Refactoring**: Use tests to guide safe refactoring
+- **Continuous Testing**: Run tests on every code change
+
+### Jest Configuration
+- Use Jest 29.7.0 with jsdom environment
+- Implement proper mocking for external APIs
+- Use Testing Library for component testing
+- Test both unit and integration scenarios
+- Maintain >90% test coverage for critical paths
+- **Test Coverage Reports**: Generate and review coverage reports
+- **Test Performance**: Optimize test execution time
+
+### Test Patterns
+- **Unit Tests**: Test individual functions and components in isolation
+- **Integration Tests**: Test component interactions and API integrations
+- **End-to-End Tests**: Test complete user workflows
+- **Error Scenario Testing**: Comprehensive error handling tests
+- **Mock Strategy**: Mock external dependencies (APIs, file system)
+- **Test Data Management**: Use consistent test data and fixtures
+- **Accessibility Testing**: Test ARIA compliance and keyboard navigation
+- **Performance Testing**: Test component rendering performance
+
+### Test Organization
+```
+__tests__/
+├── unit/                    # Unit tests for individual functions
+│   ├── portfolio-parser.test.ts
+│   ├── api-service.test.ts
+│   └── utils.test.ts
+├── integration/             # Integration tests
+│   ├── csv-upload.test.ts
+│   ├── api-integration.test.ts
+│   └── data-flow.test.ts
+├── components/              # Component tests
+│   ├── portfolio-analyzer.test.tsx
+│   ├── file-upload.test.tsx
+│   └── charts.test.tsx
+└── e2e/                     # End-to-end tests
+    ├── user-workflows.test.ts
+    └── error-scenarios.test.ts
+```
+
+## Performance Optimization
+
+### Next.js Optimizations
+- Use App Router's built-in caching
+- Implement proper image optimization
+- Use dynamic imports for code splitting
+- Optimize bundle size
+- Implement proper loading states
+
+### React Optimizations
+- Use React.memo for expensive components
+- Implement proper key props for lists
+- Use useMemo and useCallback appropriately
+- Avoid unnecessary re-renders
+- Implement proper state management
+
+## Security Considerations
+
+### API Security
+- Never expose API keys in client-side code
+- Use environment variables for sensitive data
+- Implement proper CORS policies
+- Validate all user inputs
+- Use HTTPS in production
+
+### Data Handling
+- Sanitize CSV data before processing
+- Validate file uploads
+- Implement proper error handling
+- Use secure file handling practices
+- Protect against XSS attacks
+
+## Development Workflow
+
+### Version Control & Approval Process
+- **MANDATORY USER APPROVAL**: NEVER commit files without explicit user approval
+- **Commit Authorization**: Always wait for user confirmation before executing any git commit operations
+- **File Change Review**: Present all file changes to user before any commit
+- **Approval Workflow**: Only proceed with commits after receiving explicit user approval
+- **TEST PASSING REQUIREMENT**: NEVER commit files when tests are not passing
+- **Pre-Commit Test Validation**: Run all tests before any commit and ensure 100% pass rate
+- **Test Failure Blocking**: Block commits if any tests fail, regardless of user approval
+
+### Test-Driven Development (TDD)
+- **Red-Green-Refactor Cycle**: Write failing tests first, then implement code to pass
+- **Feature-First Testing**: Write tests for each new feature before implementation
+- **Test Coverage**: Maintain >90% test coverage for critical business logic
+- **Test Organization**: Group tests by feature/component with descriptive test suites
+- **Mock Strategy**: Mock external dependencies (APIs, file system) for isolated testing
+- **Integration Tests**: Test complete user workflows and API integrations
+- **Regression Testing**: Ensure existing functionality remains intact
+- **Documentation-Driven Development**: Update PORTFOLIO_ANALYZER_DOCUMENTATION.md for every feature, fix, or improvement
+- **Feature Documentation**: Document all new features in the "Recent Fixes and Improvements" section with detailed descriptions
+
+### Code Quality
+- Use ESLint for code linting
+- Follow consistent naming conventions
+- Write self-documenting code
+- Use proper comments for complex logic
+- Maintain consistent formatting
+- **Test-First Approach**: Write tests before implementing features
+- **Refactoring Safety**: Use tests as safety net during refactoring
+
+### Git Practices
+- Use descriptive commit messages
+- Implement proper branching strategy
+- Review code before merging
+- Keep commits atomic and focused
+- Use conventional commit format
+- **Test-Driven Commits**: Include test updates in feature commits
+- **Documentation Updates**: Update docs with each feature addition
+- **MANDATORY DOCUMENTATION COMMIT**: Always commit documentation changes with feature changes
+- **Documentation Review**: Include documentation updates in code reviews
+- **MANDATORY USER APPROVAL**: NEVER commit files without explicit user approval
+- **Commit Authorization**: Always wait for user confirmation before executing any git commit operations
+- **TEST PASSING REQUIREMENT**: NEVER commit files when tests are not passing
+- **Pre-Commit Test Validation**: Run all tests before any commit and ensure 100% pass rate
+- **Test Failure Blocking**: Block commits if any tests fail, regardless of user approval
+
+## Environment Configuration
+
+### Environment Variables
+- `YAHOO_FINANCE_API_KEY`: Required for API access
+- Use `.env.local` for local development
+- Never commit sensitive data to version control
+- Use proper environment validation
+
+### Build Configuration
+- Use Next.js 15's built-in optimizations
+- Configure proper webpack settings
+- Implement proper asset optimization
+- Use TypeScript for type safety
+
+## Documentation
+
+### MANDATORY Documentation Process
+- **ALWAYS UPDATE PORTFOLIO_ANALYZER_DOCUMENTATION.md**: Every feature, fix, or improvement MUST be documented
+- **Documentation-First Approach**: Update documentation before or simultaneously with code changes
+- **Feature Tracking**: Document all changes in the "Recent Fixes and Improvements" section
+- **Detailed Descriptions**: Include comprehensive explanations of what was changed and why
+- **Version Tracking**: Update documentation with each code change, not just releases
+
+### Documentation Standards
+- **Living Documentation**: Update docs with every feature addition
+- **Test-Driven Documentation**: Document features as they're tested
+- **Version Control**: Track documentation changes in git
+- **Consistency**: Use consistent formatting and structure
+- **Accessibility**: Ensure documentation is accessible and searchable
+- **MANDATORY DOCUMENTATION UPDATE**: ALWAYS update PORTFOLIO_ANALYZER_DOCUMENTATION.md when adding, modifying, or fixing any feature
+- **Documentation-First Approach**: Update documentation before or simultaneously with code changes
+- **Feature Tracking**: Document all new features, fixes, and improvements in the "Recent Fixes and Improvements" section
+
+### Code Documentation
+- Document complex functions and components
+- Use JSDoc for API documentation
+- Maintain up-to-date README
+- Document configuration options
+- Provide usage examples
+- **Test Examples**: Include test examples in documentation
+- **Change Log**: Maintain detailed change log for each version
+
+### API Documentation
+- Document all API endpoints
+- Provide request/response examples
+- Document error codes and messages
+- Maintain API versioning strategy
+- **Test Coverage**: Document test coverage for each endpoint
+- **Integration Examples**: Provide integration test examples
+
+### Feature Documentation
+- **Feature Specifications**: Document feature requirements and specifications
+- **Test Scenarios**: Document test scenarios and edge cases
+- **User Stories**: Document user stories and acceptance criteria
+- **Technical Decisions**: Document architectural and technical decisions
+- **Performance Benchmarks**: Document performance expectations and benchmarks
+
+## Deployment
+
+### Production Considerations
+- Use proper environment variables
+- Implement proper logging
+- Configure monitoring and alerting
+- Use CDN for static assets
+- Implement proper caching strategies
+
+### CI/CD
+- Use GitHub Actions for automation
+- Implement proper testing in CI
+- Use semantic versioning
+- Implement proper deployment strategies
+- Monitor build performance
+
+## Common Patterns
+
+### TDD Development Pattern
+```typescript
+// 1. Write failing test first
+describe('PortfolioParser', () => {
+  it('should parse Swiss bank CSV with hierarchical structure', () => {
+    const csvData = mockSwissBankCSV;
+    const result = parseSwissBankCSV(csvData);
+    
+    expect(result.positions).toHaveLength(5);
+    expect(result.assetAllocation).toBeDefined();
+    expect(result.currencyAllocation).toBeDefined();
+  });
+});
+
+// 2. Implement minimal code to pass test
+export function parseSwissBankCSV(csvData: string[][]): SwissPortfolioData {
+  // Minimal implementation to pass test
+  return {
+    positions: [],
+    assetAllocation: [],
+    currencyAllocation: [],
+    // ... other required fields
+  };
+}
+
+// 3. Refactor and add more tests
+```
+
+### Data Fetching
+```typescript
+// Use proper error handling and loading states
+const [data, setData] = useState<DataType | null>(null);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState<string | null>(null);
+
+useEffect(() => {
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const result = await apiCall();
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  fetchData();
+}, []);
+```
+
+### Component Structure
+```typescript
+interface ComponentProps {
+  // Define prop interface
+}
+
+export function Component({ prop1, prop2 }: ComponentProps) {
+  // Component logic
+  return (
+    // JSX with proper accessibility
+  );
+}
+```
+
+### API Route Pattern
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(request: NextRequest) {
+  try {
+    // API logic
+    return NextResponse.json(data);
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Troubleshooting
+
+### Common Issues
+- TypeScript strict mode errors
+- Next.js App Router configuration
+- API rate limiting
+- CSV parsing issues
+- Component hydration errors
+
+### Debugging
+- Use proper logging
+- Implement error boundaries
+- Use React DevTools
+- Monitor API responses
+- Check browser console for errors
+
+Remember to always follow these patterns and maintain consistency across the codebase. The goal is to create maintainable, performant, and user-friendly code that follows modern React and Next.js best practices. 

@@ -443,12 +443,12 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
         const nextNextField = row.length > columnMap.currency + 1 ? row[columnMap.currency + 1]?.toString().trim() : ""
         // Only reconstruct if the next field looks like a currency code (3 letters)
         if (nextNextField && /^[A-Z]{3}$/.test(nextNextField.toUpperCase())) {
-          // Reconstruct the decimal price
-          priceStr = `${priceStr}.${nextField}`
-          // Shift currency and total fields
+        // Reconstruct the decimal price
+        priceStr = `${priceStr}.${nextField}`
+        // Shift currency and total fields
           currencyStr = nextNextField
           totalCHFStr = row.length > columnMap.currency + 2 ? row[columnMap.currency + 2]?.toString() : ""
-          console.log(`Reconstructed decimal price: ${priceStr}, currency: ${currencyStr}`)
+        console.log(`Reconstructed decimal price: ${priceStr}, currency: ${currencyStr}`)
         }
       }
     }
@@ -588,310 +588,216 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
   }
 }
 
+// Helper function to check if a cell is a category header
+function isCategoryHeader(cell: string): boolean {
+  if (!cell) return false
+  const lowerCell = cell.toLowerCase()
+  return lowerCell.includes('actions') || 
+         lowerCell.includes('etf') ||
+         lowerCell.includes('fonds') ||
+         lowerCell.includes('obligations') ||
+         lowerCell.includes('crypto') ||
+         lowerCell.includes('produits structurés') ||
+         lowerCell.includes('produits structurs') || // Handle corrupted encoding
+         lowerCell.includes('crypto-monnaies')
+}
+
+// Helper function to normalize category names
+function normalizeCategory(category: string): string {
+  const lowerCategory = category.toLowerCase()
+  if (lowerCategory.includes('actions')) return 'Actions'
+  if (lowerCategory.includes('etf')) return 'ETF'
+  if (lowerCategory.includes('fonds')) return 'Funds'
+  if (lowerCategory.includes('obligations')) return 'Bonds'
+  if (lowerCategory.includes('crypto') || lowerCategory.includes('crypto-monnaies')) return 'Cryptocurrencies'
+  if (lowerCategory.includes('produits structurés') || lowerCategory.includes('produits structurs')) return 'Structured Products'
+  return category
+}
+
+// Helper function to check if a row is a subtotal row
+function isSubtotalRow(cell: string): boolean {
+  if (!cell) return false
+  const lowerCell = cell.toLowerCase()
+  return lowerCell.includes('sous-total') || 
+         lowerCell.includes('subtotal') || 
+         lowerCell.includes('total')
+}
+
+// Helper function to check if a row is the grand total row
+function isGrandTotalRow(cell: string): boolean {
+  if (!cell) return false
+  const lowerCell = cell.toLowerCase()
+  return lowerCell === 'total' || 
+         lowerCell.includes('total général') || 
+         lowerCell.includes('grand total')
+}
+
+// Helper function to extract grand total data
+function extractGrandTotalData(row: string[], columnMapping: any): { amount: number; currency: string } | null {
+  // Look for the largest number in the row as the grand total amount
+  let largestAmount = 0
+  let currency = 'CHF' // Default currency
+  
+  for (let i = 0; i < row.length; i++) {
+    const cell = row[i]?.toString().trim()
+    if (!cell) continue
+    
+    // Try to parse as number
+    const amount = parseSwissNumber(cell)
+    if (!isNaN(amount) && amount > largestAmount) {
+      largestAmount = amount
+    }
+    
+    // Check if this cell looks like a currency code
+    if (cell.length === 3 && /^[A-Z]{3}$/.test(cell.toUpperCase())) {
+      currency = cell.toUpperCase()
+    }
+  }
+  
+  return largestAmount > 0 ? { amount: largestAmount, currency } : null
+}
+
+// Helper function to parse a position row
+function parsePositionRow(row: string[], columnIndices: any, currentCategory: string, headerRow: string[]): ParsedPosition | null {
+  // Check if this row has a valid symbol in the symbol column
+  const symbol = cleanSymbol(row[columnIndices.symbol]?.toString())
+  if (!symbol || symbol.length === 0) {
+    return null
+  }
+  
+  // Parse the position data using the column indices
+  const quantity = parseSwissNumber(row[columnIndices.quantity]?.toString())
+  const unitCost = parseSwissNumber(row[columnIndices.unitCost]?.toString())
+  const totalValue = parseSwissNumber(row[columnIndices.totalValue]?.toString())
+  const price = parseSwissNumber(row[columnIndices.price]?.toString())
+  const currency = row[columnIndices.currency]?.toString().trim() || 'CHF'
+  const totalValueCHF = parseSwissNumber(row[columnIndices.totalValueCHF]?.toString())
+  
+  // Validate that we have a valid quantity
+  if (quantity <= 0) {
+    console.log(`Invalid quantity: ${quantity}`)
+    return null
+  }
+  
+  return {
+    symbol,
+    name: symbol, // Use symbol as name for now
+    quantity,
+    price: price || unitCost,
+    currency,
+    category: currentCategory || 'Unknown',
+    domicile: 'CH',
+    totalValue: totalValueCHF || totalValue
+  }
+}
+
 async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> {
-  console.log("Parsing Swiss bank format CSV...")
+  console.log("Parsing Swiss bank format CSV with refined logic...")
+  
+  if (!rows || rows.length === 0) {
+    console.log("No rows to parse")
+    return createEmptyPortfolioData()
+  }
+
+  // Row 0 contains the headers for all positions
+  const headerRow = rows[0]
+  console.log("Using first row as header:", headerRow)
+  
+  // Use fixed column indices based on the actual Swiss bank CSV structure
+  const columnIndices = {
+    symbol: 1,        // "Symbole" column
+    quantity: 2,      // "Quantité" column  
+    unitCost: 3,      // "Coût unitaire" column
+    totalValue: 4,    // "Valeur totale" column
+    dailyChange: 5,   // "Variation journalière" column
+    dailyChangePercent: 6, // "Var. quot. %" column
+    price: 7,         // "Prix" column
+    currency: 8,      // "Dev." column
+    gainLossCHF: 9,   // "G&P CHF" column
+    gainLossPercent: 10, // "G&P %" column
+    totalValueCHF: 11, // "Valeur totale CHF" column
+    positionPercent: 12 // "Positions %" column
+  }
+  
+  console.log("Column mapping from first row:", columnIndices)
   
   const positions: ParsedPosition[] = []
   let currentCategory = ""
   let totalPortfolioValue = 0
   
-  // First pass: identify category headers and their positions
-  const categoryPositions: { [key: number]: string } = {}
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]
-    if (row && row.length > 0) {
-      const firstCell = row[0]?.toString().trim()
-      if (firstCell && (
-        firstCell.toLowerCase().includes("actions") || 
-        firstCell.toLowerCase().includes("etf") ||
-        firstCell.toLowerCase().includes("fonds") ||
-        firstCell.toLowerCase().includes("obligations") ||
-        firstCell.toLowerCase().includes("crypto") ||
-        firstCell.toLowerCase().includes("produits") ||
-        firstCell.toLowerCase().includes("aktien") ||
-        firstCell.toLowerCase().includes("anleihen") ||
-        firstCell.toLowerCase().includes("stocks") ||
-        firstCell.toLowerCase().includes("bonds")
-      )) {
-        categoryPositions[i] = firstCell
-        console.log("Found category at row", i, ":", firstCell)
-      }
-    }
-  }
-  
-  // Find the header row (usually row 1 with "Symbole", "Quantité", etc.)
-  let headerRow: string[] = []
-  let headerRowIndex = -1
-  
-  for (let i = 0; i < Math.min(rows.length, 10); i++) {
-    const row = rows[i]
-    if (row && row.length > 0) {
-      const rowText = row.join(" ").toLowerCase()
-      if ((rowText.includes("symbole") && (rowText.includes("quantité") || rowText.includes("menge"))) ||
-          (rowText.includes("symbol") && rowText.includes("menge"))) {
-        headerRow = row
-        headerRowIndex = i
-        console.log("Found header row at index", i, ":", headerRow)
-        break
-      }
-    }
-  }
-  
-  if (headerRowIndex === -1) {
-    console.log("No header row found, using fallback parsing")
-    return createEmptyPortfolioData()
-  }
-  
-  // Find column indices using more flexible matching
-  const symbolIndex = headerRow.findIndex(h => h.toLowerCase().includes("symbole") || h.toLowerCase().includes("symbol"))
-  const quantityIndex = headerRow.findIndex(h => h.toLowerCase().includes("quantité") || h.toLowerCase().includes("menge"))
-  const costIndex = headerRow.findIndex(h => h.toLowerCase().includes("coût") || h.toLowerCase().includes("prix") || h.toLowerCase().includes("kurs") || h.toLowerCase().includes("einstandspreis") || h.toLowerCase().includes("cours"))
-  const totalValueIndex = headerRow.findIndex(h => h.toLowerCase().includes("valeur totale") || h.toLowerCase().includes("gesamtwert"))
-  const currencyIndex = headerRow.findIndex(h => h.toLowerCase().includes("dev") || h.toLowerCase().includes("währung"))
-  const gainLossIndex = headerRow.findIndex(h => h.toLowerCase().includes("g&p chf") || h.toLowerCase().includes("gewinn/verlust"))
-  const positionPercentIndex = headerRow.findIndex(h => h.toLowerCase().includes("positions %") || h.toLowerCase().includes("position %"))
-  const categoryIndex = headerRow.findIndex(h => h.toLowerCase().includes("catégorie") || h.toLowerCase().includes("category") || h.toLowerCase().includes("type"))
-  
-  console.log("Header row:", headerRow)
-  console.log("Column indices:", {
-    symbol: symbolIndex,
-    quantity: quantityIndex,
-    cost: costIndex,
-    totalValue: totalValueIndex,
-    currency: currencyIndex,
-    gainLoss: gainLossIndex,
-    positionPercent: positionPercentIndex
-  })
-
-  // If we couldn't find the expected columns, try to infer them from the data
-  if (symbolIndex === -1 || quantityIndex === -1) {
-    console.log("Could not find expected columns, attempting to infer from data...")
-    
-    // Look at the first few data rows to infer column structure
-    for (let i = headerRowIndex + 1; i < Math.min(rows.length, headerRowIndex + 5); i++) {
-      const row = rows[i]
-      if (!row || row.length === 0) continue
-      
-      console.log(`Analyzing row ${i} for column inference:`, row)
-      
-      // Try to find symbol column (usually contains stock symbols like OXY, AAPL, etc.)
-      if (symbolIndex === -1) {
-        for (let j = 0; j < row.length; j++) {
-          const cell = row[j]?.toString().trim()
-          if (cell && cell.length >= 2 && cell.length <= 5 && /^[A-Z]+$/.test(cell)) {
-            console.log(`Found potential symbol column at index ${j}: "${cell}"`)
-            // Don't set symbolIndex yet, just log for debugging
-          }
-        }
-      }
-      
-      // Try to find quantity column (usually contains whole numbers)
-      if (quantityIndex === -1) {
-        for (let j = 0; j < row.length; j++) {
-          const cell = row[j]?.toString().trim()
-          if (cell && /^\d+$/.test(cell) && parseInt(cell) > 0) {
-            console.log(`Found potential quantity column at index ${j}: "${cell}"`)
-            // Don't set quantityIndex yet, just log for debugging
-          }
-        }
-      }
-    }
-    
-    // Fallback: If we still can't find columns, try common patterns
-    // Based on the sample row: [ " ", "OXY", "200", "54.84", "9150.00", "480.00", "5.54%", "45.75", "USD", "-2118.00", "-22.53%", "7281.11", "0.80%", "" ]
-    // Pattern: empty, symbol, quantity, price, total_value, ?, ?, ?, currency, ?, ?, ?, ?, empty
-    
-    if (symbolIndex === -1) {
-      // Try to find symbol in common positions (usually index 1 or 2)
-      for (let i = headerRowIndex + 1; i < Math.min(rows.length, headerRowIndex + 3); i++) {
-        const row = rows[i]
-        if (!row || row.length < 3) continue
-        
-        // Check if first cell is empty and second cell looks like a symbol
-        if ((!row[0] || row[0].toString().trim() === "") && 
-            row[1] && row[1].toString().trim().length >= 2 && 
-            /^[A-Z]+$/.test(row[1].toString().trim())) {
-          console.log(`Fallback: Found symbol pattern at index 1: "${row[1]}"`)
-          // We'll use this pattern in the processing loop
-        }
-      }
-    }
-  }
-  
-  // Process data rows
-  for (let i = headerRowIndex + 1; i < rows.length; i++) {
+  // Process rows starting from row 1 (skip header)
+  for (let i = 1; i < rows.length; i++) {
     const row = rows[i]
     if (!row || row.length === 0) continue
-
-    // Parse position data first to check if this is a valid position row
-    let symbol = symbolIndex >= 0 ? cleanSymbol(row[symbolIndex]?.toString()) : ""
     
-    // Fallback: If symbol index is -1, try common patterns
-    if (!symbol && symbolIndex === -1) {
-      // Try index 1 if first cell is empty (common pattern in Swiss bank CSVs)
-      if ((!row[0] || row[0].toString().trim() === "") && 
-          row[1] && row[1].toString().trim().length >= 2) {
-        symbol = cleanSymbol(row[1]?.toString())
-        console.log(`Fallback: Using symbol from index 1: "${symbol}"`)
-      }
+    console.log(`Processing row ${i}:`, row)
+    const firstCell = row[0]?.toString().trim()
+    console.log(`First cell: "${firstCell}"`)
+    
+    // Check if this is a category header
+    if (isCategoryHeader(firstCell)) {
+      currentCategory = normalizeCategory(firstCell)
+      console.log(`Found category header: "${firstCell}" -> "${currentCategory}"`)
+      continue
     }
     
-    console.log(`Row ${i}:`, row)
-    console.log(`Row ${i} symbol: "${symbol}", symbolIndex: ${symbolIndex}`)
+    // Check if this is a subtotal row
+    if (isSubtotalRow(firstCell)) {
+      console.log(`Found subtotal row: "${firstCell}"`)
+      continue
+    }
     
-    // If we have a valid symbol, this is likely a position row regardless of first cell
-    if (symbol && symbol.length >= 1) {
-      console.log(`Row ${i}: Valid symbol found, processing as position row`)
-      // This is a position row, continue with parsing
+    // Check if this is the grand total row
+    if (isGrandTotalRow(firstCell)) {
+      console.log(`Found grand total row: "${firstCell}"`)
+      // Extract grand total value
+      const grandTotalData = extractGrandTotalData(row, {})
+      if (grandTotalData) {
+        totalPortfolioValue = grandTotalData.amount
+        console.log(`Grand total: ${grandTotalData.amount} ${grandTotalData.currency}`)
+      }
+      continue
+    }
+    
+    // Try to parse as a position row
+    const position = parsePositionRow(row, columnIndices, currentCategory, headerRow)
+    if (position) {
+      positions.push(position)
+      console.log(`Parsed position: ${position.symbol} - ${position.quantity} @ ${position.price} ${position.currency}`)
     } else {
-      console.log(`Row ${i}: No valid symbol, checking if category/summary row`)
-      // No valid symbol found, check if this is a category or summary row
-      const firstCell = row[0]?.toString().trim()
-      if (!firstCell) {
-        console.log(`Row ${i}: Empty first cell, skipping`)
-        continue
-      }
-
-      // Check if this is a category header
-      if (categoryPositions[i]) {
-        currentCategory = categoryPositions[i]
-        console.log("Found category:", currentCategory)
-        continue
-      }
-
-      // Skip if this looks like a category header but wasn't caught in first pass
-      if (firstCell.toLowerCase().includes("actions") || 
-          firstCell.toLowerCase().includes("etf") ||
-          firstCell.toLowerCase().includes("fonds") ||
-          firstCell.toLowerCase().includes("obligations") ||
-          firstCell.toLowerCase().includes("crypto") ||
-          firstCell.toLowerCase().includes("produits") ||
-          firstCell.toLowerCase().includes("aktien") ||
-          firstCell.toLowerCase().includes("anleihen") ||
-          firstCell.toLowerCase().includes("stocks") ||
-          firstCell.toLowerCase().includes("bonds")) {
-        currentCategory = firstCell
-        console.log("Found category:", currentCategory)
-        continue
-      }
-
-      // Skip total/summary rows
-      if (firstCell.toLowerCase().includes("total") ||
-          firstCell.toLowerCase().includes("sous-total") ||
-          firstCell.toLowerCase().includes("subtotal") ||
-          firstCell.toLowerCase().includes("somme") ||
-          firstCell.toLowerCase().includes("sum") ||
-          firstCell.toLowerCase().includes("portfolio") ||
-          firstCell.toLowerCase().includes("portefeuille")) {
-        const totalValue = extractLargestNumberFromRow(row)
-        if (totalValue > totalPortfolioValue) {
-          totalPortfolioValue = totalValue
-          console.log(`Found potential total value: ${totalValue} at row ${i}`)
-        }
-        continue
-      }
-      
-      // If we get here, it's not a valid position row and not a category/summary row
-      console.log(`Row ${i}: Not a valid position, category, or summary row, skipping`)
-      continue
+      console.log(`Row ${i} could not be parsed as position, category, subtotal, or grand total`)
     }
-
-    // Determine column indices for this row (with fallbacks)
-    let actualQuantityIndex = quantityIndex
-    let actualCostIndex = costIndex
-    let actualTotalValueIndex = totalValueIndex
-    let actualCurrencyIndex = currencyIndex
-    
-    // If we're using fallback symbol detection, adjust other indices
-    if (symbolIndex === -1 && symbol === cleanSymbol(row[1]?.toString())) {
-      // Pattern: empty, symbol, quantity, price, total_value, ?, ?, ?, currency, ?, ?, ?, ?, empty
-      actualQuantityIndex = 2
-      actualCostIndex = 3
-      actualTotalValueIndex = 4
-      actualCurrencyIndex = 8
-      console.log(`Using fallback column indices: quantity=${actualQuantityIndex}, cost=${actualCostIndex}, totalValue=${actualTotalValueIndex}, currency=${actualCurrencyIndex}`)
-    }
-
-    const name = symbol // Use symbol as name if no name column
-    const quantity = actualQuantityIndex >= 0 ? parseSwissNumber(row[actualQuantityIndex]?.toString()) : 0
-    const price = actualCostIndex >= 0 ? parseSwissNumber(row[actualCostIndex]?.toString()) : 0
-    const currency = actualCurrencyIndex >= 0 ? row[actualCurrencyIndex]?.toString().trim() : "CHF"
-    const totalValue = actualTotalValueIndex >= 0 ? parseSwissNumber(row[actualTotalValueIndex]?.toString()) : 0
-
-    console.log(`Row ${i} parsed values:`, {
-      symbol,
-      quantity,
-      price,
-      currency,
-      totalValue,
-      actualQuantityIndex,
-      actualCostIndex,
-      actualTotalValueIndex,
-      actualCurrencyIndex,
-      rawQuantity: row[actualQuantityIndex],
-      rawPrice: row[actualCostIndex],
-      rawTotalValue: row[actualTotalValueIndex],
-      rawCurrency: row[actualCurrencyIndex]
-    })
-
-    if (quantity <= 0) {
-      console.log(`Row ${i}: Quantity <= 0, skipping`)
-      continue
-    }
-
-    // Determine the category for this position
-    // If we have a currentCategory, use it. Otherwise, try to find the category from previous rows
-    let positionCategory = currentCategory
-    if (!positionCategory || positionCategory === "Unknown") {
-      // First, check if there's an explicit category column
-      if (categoryIndex >= 0 && row[categoryIndex]) {
-        positionCategory = row[categoryIndex].toString().trim()
-      } else {
-        // Look for the most recent category before this row
-        for (let j = i - 1; j >= 0; j--) {
-          if (categoryPositions[j]) {
-            positionCategory = categoryPositions[j]
-            break
-          }
-        }
-      }
-    }
-
-    const position: ParsedPosition = {
-      symbol,
-      name,
-      quantity,
-      price,
-      currency,
-      category: positionCategory || "Unknown",
-      domicile: "CH",
-      totalValue
-    }
-
-    console.log("Parsed position:", position)
-    positions.push(position)
   }
-
+  
   console.log(`Parsed ${positions.length} positions with total value: ${totalPortfolioValue}`)
-
+  
   // Enrich positions with API data
   const enrichedPositions = await enrichPositionsWithAPIData(positions)
-
+  
+  // Calculate total value if not found in grand total
+  if (totalPortfolioValue === 0) {
+    totalPortfolioValue = enrichedPositions.reduce((sum, pos) => sum + pos.totalValueCHF, 0)
+  }
+  
   // Calculate allocations
-  const totalValue = totalPortfolioValue || enrichedPositions.reduce((sum, p) => sum + p.totalValueCHF, 0)
+  const assetAllocation = calculateAssetAllocation(enrichedPositions, totalPortfolioValue)
+  const currencyAllocation = calculateTrueCurrencyAllocation(enrichedPositions, totalPortfolioValue)
+  const countryAllocation = calculateTrueCountryAllocation(enrichedPositions, totalPortfolioValue)
+  const sectorAllocation = calculateTrueSectorAllocation(enrichedPositions, totalPortfolioValue)
+  const domicileAllocation = calculateDomicileAllocation(enrichedPositions, totalPortfolioValue)
   
   return {
     accountOverview: {
-      totalValue,
-      securitiesValue: totalValue,
+      totalValue: totalPortfolioValue,
+      securitiesValue: totalPortfolioValue,
       cashBalance: 0
     },
     positions: enrichedPositions,
-    assetAllocation: calculateAssetAllocation(enrichedPositions, totalValue),
-    currencyAllocation: calculateTrueCurrencyAllocation(enrichedPositions, totalValue),
-    trueCountryAllocation: calculateTrueCountryAllocation(enrichedPositions, totalValue),
-    trueSectorAllocation: calculateTrueSectorAllocation(enrichedPositions, totalValue),
-    domicileAllocation: calculateDomicileAllocation(enrichedPositions, totalValue)
+    assetAllocation,
+    currencyAllocation,
+    trueCountryAllocation: countryAllocation,
+    trueSectorAllocation: sectorAllocation,
+    domicileAllocation
   }
 }
 
@@ -1360,8 +1266,8 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
           const value = weight * position.totalValueCHF
           const current = allocation.get(country) || 0
           allocation.set(country, current + value)
-        })
-      } else {
+          })
+        } else {
         // Fallback to geography if no ETF composition data
         const current = allocation.get(position.geography || "Unknown") || 0
         allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
@@ -1393,8 +1299,8 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
           const value = weight * position.totalValueCHF
           const current = allocation.get(sector) || 0
           allocation.set(sector, current + value)
-        })
-      } else {
+          })
+        } else {
         // Fallback to mixed if no ETF composition data
         const current = allocation.get("Mixed") || 0
         allocation.set("Mixed", current + position.totalValueCHF)

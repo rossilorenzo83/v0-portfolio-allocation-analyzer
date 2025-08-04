@@ -1,5 +1,12 @@
 import { YAHOO_FINANCE_API_BASE_URL } from "./config"
 
+// Import YahooSession type from yahoo-finance-service
+interface YahooSession {
+  cookies: string
+  crumb: string
+  userAgent: string
+}
+
 interface StockPrice {
   symbol: string
   price: number
@@ -111,17 +118,15 @@ const SWISS_STOCK_MAPPING: Record<string, string> = {
 
 class APIService {
   private cache = new Map<string, { data: any; timestamp: number; ttl: number }>()
-  private symbolCache = new Map<string, string>() // Cache resolved symbols
   private rateLimitMap = new Map<string, number>()
   private readonly RATE_LIMIT_DELAY = 200
   private baseUrl = YAHOO_FINANCE_API_BASE_URL
 
   private getCached<T>(key: string): T | null {
     const cached = this.cache.get(key)
-    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+    if (cached && Date.now() - cached.timestamp < cached.ttl * 60 * 1000) {
       return cached.data as T
     }
-    this.cache.delete(key)
     return null
   }
 
@@ -129,14 +134,13 @@ class APIService {
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
-      ttl: ttlMinutes * 60 * 1000,
+      ttl: ttlMinutes
     })
   }
 
   private async rateLimit(): Promise<void> {
-    const now = Date.now()
     const lastRequest = this.rateLimitMap.get("global") || 0
-    const timeSinceLastRequest = now - lastRequest
+    const timeSinceLastRequest = Date.now() - lastRequest
 
     if (timeSinceLastRequest < this.RATE_LIMIT_DELAY) {
       await new Promise((resolve) => setTimeout(resolve, this.RATE_LIMIT_DELAY - timeSinceLastRequest))
@@ -145,98 +149,72 @@ class APIService {
     this.rateLimitMap.set("global", Date.now())
   }
 
-  async resolveSymbol(originalSymbol: string): Promise<string> {
-    // Check if we already resolved this symbol
-    if (this.symbolCache.has(originalSymbol)) {
-      return this.symbolCache.get(originalSymbol)!
-    }
-
-    console.log(`🔍 Resolving symbol: ${originalSymbol}`)
-
-    // Get all possible variations
-    const variations = this.getSymbolVariations(originalSymbol)
-    
-    // If there's only one variation (the original symbol) and it looks like a simple US stock,
-    // skip the resolution process and assume it's correct
-    if (variations.length === 1 && variations[0] === originalSymbol && 
-        !this.isEuropeanSymbol(originalSymbol) && !originalSymbol.includes('.')) {
-      console.log(`  📍 Assuming ${originalSymbol} is a valid US symbol, skipping resolution`)
-      this.symbolCache.set(originalSymbol, originalSymbol)
-      return originalSymbol
-    }
-
-    // For Swiss stocks, prefer the Swiss exchange version
-    if (SWISS_STOCK_MAPPING[originalSymbol]) {
-      const swissSymbol = SWISS_STOCK_MAPPING[originalSymbol]
-      console.log(`  📍 Preferring Swiss exchange symbol: ${swissSymbol}`)
-      this.symbolCache.set(originalSymbol, swissSymbol)
-      return swissSymbol
-    }
-
-    // Try each variation until we find one that works
-    for (const variation of variations) {
-      try {
-        await this.rateLimit()
-        console.log(`  Trying: ${variation}`)
-
-        const response = await fetch(`${this.baseUrl}/quote/${variation}`)
-
-        if (response.ok) {
-          const data = await response.json()
-          // Handle nested Yahoo Finance API response structure
-          const quote = data.quoteResponse?.result?.[0] || data
-          if (data && (quote.price || quote.regularMarketPrice || data.price || data.regularMarketPrice)) {
-            console.log(`  ✅ Found working symbol: ${variation}`)
-            this.symbolCache.set(originalSymbol, variation)
-            return variation
-          }
-        } else if (response.status === 401) {
-          console.log(`  ⚠️ 401 for ${variation} - skipping`)
-          continue
-        }
-      } catch (error) {
-        console.log(`  ❌ Error with ${variation}:`, error)
-        continue
-      }
-    }
-
-    console.log(`  🔄 No working symbol found, using original: ${originalSymbol}`)
-    this.symbolCache.set(originalSymbol, originalSymbol)
-    return originalSymbol
-  }
-
   async getStockPrice(symbol: string): Promise<StockPrice | null> {
     const cacheKey = `price_${symbol}`
     const cached = this.getCached<StockPrice>(cacheKey)
     if (cached) return cached
 
-    console.log(`📈 Fetching price for ${symbol}`)
-
-    // Resolve the correct symbol first
-    const resolvedSymbol = await this.resolveSymbol(symbol)
+    console.log(`💰 Fetching price for ${symbol}`)
 
     try {
       await this.rateLimit()
-      const response = await fetch(`${this.baseUrl}/quote/${resolvedSymbol}`)
+      
+      // Check if we're running server-side (has access to process.env)
+      if (typeof process !== 'undefined' && process.env) {
+        // Server-side: Use free Yahoo Finance API
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "application/json",
+          },
+        })
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log(`✅ Price data for ${symbol}:`, data)
+        if (response.ok) {
+          const data = await response.json()
+          const result = data.chart?.result?.[0]
+          if (result) {
+            const meta = result.meta
+            const currentPrice = meta.regularMarketPrice || meta.previousClose
+            const previousClose = meta.previousClose || currentPrice
+            const change = currentPrice - previousClose
+            const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
 
-        // Handle nested Yahoo Finance API response structure
-        const quote = data.quoteResponse?.result?.[0] || data
-        
-        const result: StockPrice = {
-          symbol: symbol, // Always return original symbol
-          price: quote.price || quote.regularMarketPrice || data.price || data.regularMarketPrice || 0,
-          currency: quote.currency || data.currency || this.inferCurrency(resolvedSymbol),
-          change: quote.change || quote.regularMarketChange || data.change || data.regularMarketChange || 0,
-          changePercent: quote.changePercent || quote.regularMarketChangePercent || data.changePercent || data.regularMarketChangePercent || 0,
-          lastUpdated: new Date().toISOString(),
+            const stockPrice: StockPrice = {
+              symbol: symbol, // Always return original symbol
+              price: Number(currentPrice.toFixed(2)),
+              currency: meta.currency || this.inferCurrency(symbol),
+              change: Number(change.toFixed(2)),
+              changePercent: Number(changePercent.toFixed(2)),
+              lastUpdated: new Date().toISOString(),
+            }
+
+            this.setCache(cacheKey, stockPrice, 5) // Cache for 5 minutes
+            return stockPrice
+          }
         }
+      } else {
+        // Client-side: Use Next.js API route
+        const response = await fetch(`${this.baseUrl}/quote/${encodeURIComponent(symbol)}`)
 
-        this.setCache(cacheKey, result, 5) // Cache for 5 minutes
-        return result
+        if (response.ok) {
+          const data = await response.json()
+          console.log(`✅ Price data for ${symbol}:`, data)
+          
+          const result: StockPrice = {
+            symbol: symbol, // Always return original symbol
+            price: data.price || 0,
+            currency: data.currency || this.inferCurrency(symbol),
+            change: data.change || 0,
+            changePercent: data.changePercent || 0,
+            lastUpdated: new Date().toISOString(),
+          }
+
+          this.setCache(cacheKey, result, 5) // Cache for 5 minutes
+          return result
+        } else {
+          console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
+        }
       }
     } catch (error) {
       console.error(`Error fetching price for ${symbol}:`, error)
@@ -255,32 +233,94 @@ class APIService {
 
     console.log(`📊 Fetching metadata for ${symbol}`)
 
-    // Resolve the correct symbol first
-    const resolvedSymbol = await this.resolveSymbol(symbol)
-
     try {
       await this.rateLimit()
-      const response = await fetch(`${this.baseUrl}/search/${resolvedSymbol}`)
+      
+      // Check if we're running server-side (has access to process.env)
+      if (typeof process !== 'undefined' && process.env) {
+        // Server-side: Use Yahoo Finance quoteSummary API for detailed company info
+        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryProfile,summaryDetail`
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "application/json",
+          },
+        })
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log(`✅ Metadata for ${symbol}:`, data)
+        if (response.ok) {
+          const data = await response.json()
+          const summaryProfile = data.quoteSummary?.result?.[0]?.summaryProfile
+          const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail
+          
+          if (summaryProfile) {
+            const metadata: AssetMetadata = {
+              symbol: symbol, // Always return original symbol
+              name: summaryProfile.longName || summaryProfile.shortName || symbol,
+              sector: summaryProfile.sector || this.inferSector(symbol),
+              country: summaryProfile.country || this.inferCountry(symbol),
+              currency: summaryProfile.currency || this.inferCurrency(symbol),
+              type: summaryProfile.quoteType || this.inferAssetType(symbol),
+              exchange: summaryProfile.exchange || this.inferExchange(symbol),
+            }
 
-        // Handle nested search response structure
-        const quote = data.quotes?.[0] || data
-        
-        const result: AssetMetadata = {
-          symbol: symbol, // Always return original symbol
-          name: quote.name || quote.longname || quote.longName || data.name || data.longName || this.getKnownName(symbol) || symbol,
-          sector: quote.sector || data.sector || this.inferSector(symbol),
-          country: quote.country || data.country || this.inferCountry(resolvedSymbol),
-          currency: quote.currency || data.currency || this.inferCurrency(resolvedSymbol),
-          type: quote.type || quote.quoteType || data.type || this.inferAssetType(symbol),
-          exchange: quote.exchange || data.exchange || this.inferExchange(symbol),
+            console.log(`✅ Real metadata found for ${symbol}:`, metadata)
+            this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
+            return metadata
+          }
         }
+        
+        // Fallback to search API if quoteSummary fails
+        console.log(`🔄 quoteSummary failed for ${symbol}, trying search API...`)
+        const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}`
+        const searchResponse = await fetch(searchUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "application/json",
+          },
+        })
 
-        this.setCache(cacheKey, result, 1440) // Cache for 24 hours
-        return result
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json()
+          const result = searchData.quotes?.[0]
+          if (result) {
+            const metadata: AssetMetadata = {
+              symbol: symbol, // Always return original symbol
+              name: result.longname || result.shortname || symbol,
+              sector: this.inferSector(symbol), // Use inference as fallback
+              country: this.inferCountry(symbol), // Use inference as fallback
+              currency: result.currency || this.inferCurrency(symbol),
+              type: this.inferAssetType(symbol),
+              exchange: result.exchange || this.inferExchange(symbol),
+            }
+
+            console.log(`✅ Search metadata found for ${symbol}:`, metadata)
+            this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
+            return metadata
+          }
+        }
+      } else {
+        // Client-side: Use Next.js API route
+        const response = await fetch(`${this.baseUrl}/search/${encodeURIComponent(symbol)}`)
+
+        if (response.ok) {
+          const data = await response.json()
+          console.log(`✅ Metadata for ${symbol}:`, data)
+          
+          const metadata: AssetMetadata = {
+            symbol: symbol, // Always return original symbol
+            name: data.name || symbol,
+            sector: data.sector || this.inferSector(symbol),
+            country: data.country || this.inferCountry(symbol),
+            currency: data.currency || this.inferCurrency(symbol),
+            type: data.type || this.inferAssetType(symbol),
+            exchange: data.exchange || this.inferExchange(symbol),
+          }
+
+          this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
+          return metadata
+        } else {
+          console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
+        }
       }
     } catch (error) {
       console.error(`Error fetching metadata for ${symbol}:`, error)
@@ -288,7 +328,7 @@ class APIService {
 
     // Return fallback
     const fallback = this.getFallbackMetadata(symbol)
-    this.setCache(cacheKey, fallback, 1440)
+    this.setCache(cacheKey, fallback, 60)
     return fallback
   }
 
@@ -297,52 +337,167 @@ class APIService {
     const cached = this.getCached<ETFComposition>(cacheKey)
     if (cached) return cached
 
-    console.log(`🏦 Fetching ETF composition for ${symbol}`)
-
-    // Resolve the correct symbol first
-    const resolvedSymbol = await this.resolveSymbol(symbol)
+    console.log(`📊 Fetching ETF composition for ${symbol}`)
 
     try {
       await this.rateLimit()
-      const response = await fetch(`${this.baseUrl}/etf/${resolvedSymbol}`)
+      
+      // Check if we're running server-side (has access to process.env)
+      if (typeof process !== 'undefined' && process.env) {
+        // Server-side: Use free Yahoo Finance API
+        // Try Yahoo Finance ETF holdings API directly
+        const holdingsUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=topHoldings,fundProfile,summaryProfile`
+        const response = await fetch(holdingsUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Accept: "application/json",
+          },
+        })
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log(`✅ ETF composition for ${symbol}:`, data)
+        if (response.ok) {
+          const data = await response.json()
+          const result = data.quoteSummary?.result?.[0]
+          if (result) {
+            const fundProfile = result.fundProfile
+            const summaryProfile = result.summaryProfile
 
-        // Process the scraped data - accept freetext values
-        const result: ETFComposition = {
-          symbol: symbol, // Always return original symbol
-          currency: this.processCurrencyData(data.currency || []),
-          country: this.processCountryData(data.country || []),
-          sector: this.processSectorData(data.sector || []),
-          holdings: data.holdings || [],
-          domicile: data.domicile || this.inferDomicile(symbol),
-          withholdingTax: data.withholdingTax || this.inferWithholdingTax(symbol),
-          lastUpdated: new Date().toISOString(),
+            // Process sector breakdown
+            const sectorWeightings = fundProfile?.sectorWeightings || {}
+            const sectors = Object.entries(sectorWeightings)
+              .map(([sector, weight]) => ({
+                sector: this.normalizeSectorName(sector),
+                weight: (weight as number) * 100,
+              }))
+              .filter((s) => s.weight > 0 && s.sector !== 'Unknown' && s.sector !== 'unknown')
+
+            // Process country breakdown
+            const countries = []
+            if (summaryProfile?.country && summaryProfile.country !== 'Unknown' && summaryProfile.country !== 'unknown') {
+              countries.push({ country: this.normalizeCountryName(summaryProfile.country), weight: 100 })
+            }
+
+            // Process currency
+            const currencies = []
+            if (summaryProfile?.currency && summaryProfile.currency !== 'Unknown' && summaryProfile.currency !== 'unknown') {
+              currencies.push({ currency: summaryProfile.currency.toUpperCase(), weight: 100 })
+            }
+
+            const etfComposition: ETFComposition = {
+              symbol: symbol, // Always return original symbol
+              currency: currencies.length > 0 ? currencies : this.processCurrencyData([]),
+              country: countries.length > 0 ? countries : this.processCountryData([]),
+              sector: sectors.length > 0 ? sectors : this.processSectorData([]),
+              holdings: [],
+              domicile: summaryProfile?.domicile || this.inferDomicile(symbol),
+              withholdingTax: this.inferWithholdingTax(symbol),
+              lastUpdated: new Date().toISOString(),
+            }
+
+            this.setCache(cacheKey, etfComposition, 1440) // Cache for 24 hours
+            return etfComposition
+          }
         }
+      } else {
+        // Client-side: Use Next.js API route
+        const response = await fetch(`${this.baseUrl}/etf/${encodeURIComponent(symbol)}`)
 
-        this.setCache(cacheKey, result, 1440) // Cache for 24 hours
-        return result
+        if (response.ok) {
+          const data = await response.json()
+          console.log(`✅ ETF composition for ${symbol}:`, data)
+
+          // Process the ETF data
+          const result: ETFComposition = {
+            symbol: symbol, // Always return original symbol
+            currency: this.processCurrencyData(data.currency || []),
+            country: this.processCountryData(data.country || []),
+            sector: this.processSectorData(data.sector || []),
+            holdings: data.holdings || [],
+            domicile: data.domicile || this.inferDomicile(symbol),
+            withholdingTax: data.withholdingTax || this.inferWithholdingTax(symbol),
+            lastUpdated: new Date().toISOString(),
+          }
+
+          this.setCache(cacheKey, result, 1440) // Cache for 24 hours
+          return result
+        } else {
+          console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
+        }
       }
     } catch (error) {
       console.error(`Error fetching ETF composition for ${symbol}:`, error)
     }
 
-    // Return fallback
-    const fallback = this.getFallbackETFComposition(symbol)
-    this.setCache(cacheKey, fallback, 1440)
-    return fallback
+    // Step 2: Try web scraping as fallback
+    console.log(`🔄 API failed for ${symbol}, attempting web scraping...`)
+    const scrapedData = await this.scrapeETFDataFromWeb(symbol)
+    if (scrapedData) {
+      this.setCache(cacheKey, scrapedData, 1440) // Cache for 24 hours
+      return scrapedData
+    }
+
+    // Step 3: Return fallback data
+    console.log(`❌ All methods failed for ${symbol}, returning fallback data`)
+    const fallbackData = this.getFallbackETFComposition(symbol)
+    this.setCache(cacheKey, fallbackData, 60) // Cache for 1 hour
+    return fallbackData
   }
+
+  async getETFCompositionWithSession(symbol: string, session: YahooSession): Promise<ETFComposition | null> {
+    const cacheKey = `etf_${symbol}`
+    const cached = this.getCached<ETFComposition>(cacheKey)
+    if (cached) return cached
+
+    console.log(`📊 Fetching ETF composition for ${symbol} with session`)
+
+    try {
+      await this.rateLimit()
+      
+      // Use Next.js API route instead of direct external API calls
+      const url = `/api/yahoo/etf-composition/${encodeURIComponent(symbol)}`
+      
+      console.log(`🔗 Making API call to: ${url}`)
+      
+      const response = await fetch(url)
+
+      if (response.ok) {
+        const etfComposition = await response.json()
+        
+        if (etfComposition && etfComposition.symbol) {
+          console.log(`✅ Real ETF composition found for ${symbol} via API route:`, etfComposition)
+          this.setCache(cacheKey, etfComposition, 1440) // Cache for 24 hours
+          return etfComposition
+        } else {
+          console.warn(`⚠️ Invalid ETF composition response for ${symbol}`)
+        }
+      } else {
+        console.warn(`⚠️ API route failed for ${symbol}: ${response.status} - ${response.statusText}`)
+      }
+      
+    } catch (error) {
+      console.error(`❌ Error fetching ETF composition for ${symbol}:`, error)
+    }
+
+    // Return fallback data
+    console.log(`❌ All methods failed for ${symbol}, returning fallback data`)
+    const fallbackData = this.getFallbackETFComposition(symbol)
+    this.setCache(cacheKey, fallbackData, 60) // Cache for 1 hour
+    return fallbackData
+  }
+
+
 
   async searchSymbol(query: string): Promise<SearchResult[]> {
     try {
-      const data = await fetch(`${this.baseUrl}/search/${query}`)
-      if (data.ok) {
-        const result = await data.json()
-        console.log(`✅ Search results for ${query}:`, result)
-        // Handle nested quotes structure
-        return result.quotes || (result ? [result] : [])
+      // Use Next.js API route which has access to server-side environment variables
+      const response = await fetch(`${this.baseUrl}/search/${encodeURIComponent(query)}`)
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log(`✅ Search results for ${query}:`, data)
+        // Handle search results structure
+        return Array.isArray(data) ? data : (data ? [data] : [])
+      } else {
+        console.error(`API route error for search ${query}: ${response.status} - ${response.statusText}`)
       }
     } catch (error) {
       console.error(`Error searching for symbol ${query}:`, error)
@@ -378,28 +533,10 @@ class APIService {
       .filter((sector) => sector.weight > 0)
   }
 
-  private getSymbolVariations(symbol: string): string[] {
-    const variations = [symbol] // Start with original
-
-    // Add known mappings
-    if (EUROPEAN_ETF_MAPPING[symbol]) {
-      variations.push(...EUROPEAN_ETF_MAPPING[symbol])
-    }
-
-    if (SWISS_STOCK_MAPPING[symbol]) {
-      variations.push(SWISS_STOCK_MAPPING[symbol])
-    }
-
-    // Auto-detect European symbols and add exchange suffixes
-    if (this.isEuropeanSymbol(symbol) && !symbol.includes(".")) {
-      const exchanges = [".L", ".DE", ".AS", ".MI", ".PA", ".SW"]
-      exchanges.forEach((exchange) => {
-        variations.push(`${symbol}${exchange}`)
-      })
-    }
-
-    // Remove duplicates
-    return [...new Set(variations)]
+  private resolveSymbol(originalSymbol: string): Promise<string> {
+    // This method is removed as symbol resolution is now handled by the search route.
+    // The original symbol is returned directly.
+    return Promise.resolve(originalSymbol);
   }
 
   private isEuropeanSymbol(symbol: string): boolean {
@@ -624,6 +761,368 @@ class APIService {
     }
   }
 
+  private async scrapeETFDataFromWeb(symbol: string): Promise<ETFComposition | null> {
+    console.log(`🌐 Attempting web scraping for ETF composition: ${symbol}`)
+    
+    try {
+      // Step 1: Try Yahoo Finance holdings page for detailed ETF composition data
+      const holdingsUrl = `https://finance.yahoo.com/quote/${symbol}/holdings`
+      console.log(`📊 Trying holdings page: ${holdingsUrl}`)
+      
+      const holdingsResponse = await fetch(holdingsUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Cache-Control': 'max-age=0'
+        }
+      })
+
+      if (holdingsResponse.ok) {
+        const holdingsHtml = await holdingsResponse.text()
+        console.log(`📄 Retrieved holdings HTML for ${symbol} (${holdingsHtml.length} characters)`)
+        
+        // Extract ETF composition data from holdings page HTML
+        const composition = this.parseETFDataFromHTML(holdingsHtml, symbol)
+        if (composition) {
+          console.log(`✅ Successfully scraped ETF data from holdings page for ${symbol}`)
+          return composition
+        }
+      } else {
+        console.warn(`⚠️ Holdings page not accessible for ${symbol}: HTTP ${holdingsResponse.status}`)
+      }
+
+      // Step 2: Fallback to main quote page
+      console.log(`🔄 Falling back to main quote page for ${symbol}`)
+      const quoteUrl = `https://finance.yahoo.com/quote/${symbol}`
+      
+      const quoteResponse = await fetch(quoteUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Cache-Control': 'max-age=0'
+        }
+      })
+
+      if (quoteResponse.ok) {
+        const quoteHtml = await quoteResponse.text()
+        console.log(`📄 Retrieved quote HTML for ${symbol} (${quoteHtml.length} characters)`)
+        
+        // Extract ETF composition data from quote page HTML
+        const composition = this.parseETFDataFromHTML(quoteHtml, symbol)
+        if (composition) {
+          console.log(`✅ Successfully scraped ETF data from quote page for ${symbol}`)
+          return composition
+        } else {
+          console.warn(`⚠️ No ETF composition data found in quote page HTML for ${symbol}`)
+        }
+      } else {
+        console.warn(`❌ Quote page not accessible for ${symbol}: HTTP ${quoteResponse.status}`)
+      }
+    } catch (error) {
+      console.error(`Web scraping failed for ${symbol}:`, error)
+    }
+
+    console.warn(`❌ Web scraping failed for ${symbol}, trying Yahoo Finance API directly...`)
+    
+    // Step 3: Try Yahoo Finance API directly as final fallback
+    try {
+      const apiUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=topHoldings,fundProfile,summaryProfile`
+      console.log(`📊 Trying Yahoo Finance API: ${apiUrl}`)
+      
+      const apiResponse = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+        }
+      })
+      
+      if (apiResponse.ok) {
+        const apiData = await apiResponse.json()
+        console.log(`📊 Yahoo Finance API response for ${symbol}:`, apiData)
+        
+        const result = apiData.quoteSummary?.result?.[0]
+        if (result) {
+          // Process the API data similar to the API route
+          const sectorWeightings = result.fundProfile?.sectorWeightings || result.topHoldings?.sectorWeightings || {}
+          const processedSectors = Object.entries(sectorWeightings)
+            .map(([sector, weight]) => ({
+              sector: this.normalizeSectorName(sector),
+              weight: (weight as number) * 100,
+            }))
+            .filter((s) => s.weight > 0 && s.sector !== 'Unknown' && s.sector !== 'unknown')
+          
+          // Check if we have meaningful data (not just "Unknown" values)
+          const hasValidSectors = processedSectors.length > 0 && 
+            processedSectors.some(s => s.sector !== 'Unknown' && s.sector !== 'unknown')
+          
+          const country = result.summaryProfile?.country
+          const hasValidCountry = country && country !== 'Unknown' && country !== 'unknown'
+          
+          const currency = result.summaryProfile?.currency
+          const hasValidCurrency = currency && currency !== 'Unknown' && currency !== 'unknown'
+          
+          const domicile = result.summaryProfile?.domicile
+          const hasValidDomicile = domicile && domicile !== 'Unknown' && domicile !== 'unknown'
+          
+          // Only proceed if we have meaningful data
+          if (hasValidSectors || hasValidCountry || hasValidCurrency || hasValidDomicile) {
+            console.log(`✅ Successfully extracted meaningful data from Yahoo Finance API for ${symbol}`)
+            
+            const countries = hasValidCountry ? 
+              [{ country: this.normalizeCountryName(country), weight: 100 }] : 
+              [{ country: this.inferCountry(symbol), weight: 100 }]
+            
+            const currencies = hasValidCurrency ? 
+              [{ currency: currency.toUpperCase(), weight: 100 }] : 
+              [{ currency: this.inferCurrency(symbol), weight: 100 }]
+            
+            return {
+              symbol,
+              currency: currencies,
+              country: countries,
+              sector: processedSectors.length > 0 ? processedSectors : [{ sector: this.inferSector(symbol), weight: 100 }],
+              holdings: [],
+              domicile: hasValidDomicile ? domicile : this.inferDomicile(symbol),
+              withholdingTax: this.inferWithholdingTax(symbol),
+              lastUpdated: new Date().toISOString()
+            }
+          } else {
+            console.warn(`⚠️ Yahoo Finance API returned only "Unknown" values for ${symbol}, treating as empty response`)
+          }
+        }
+      } else {
+        console.warn(`⚠️ Yahoo Finance API failed for ${symbol}: HTTP ${apiResponse.status}`)
+      }
+    } catch (error) {
+      console.error(`Yahoo Finance API fallback failed for ${symbol}:`, error)
+    }
+    
+    console.warn(`❌ All data sources failed for ${symbol}, falling back to static data`)
+    return null
+  }
+
+  private parseETFDataFromHTML(html: string, symbol: string): ETFComposition | null {
+    try {
+      console.log(`🔍 Parsing HTML for ${symbol}...`)
+      
+      const sectors: Array<{ sector: string; weight: number }> = []
+      const countries: Array<{ country: string; weight: number }> = []
+      const currencies: Array<{ currency: string; weight: number }> = []
+      
+      // Try to extract data from modern Yahoo Finance JSON structure
+      // Look for the main data object that contains ETF information
+      const dataMatches = html.match(/window\.__INITIAL_STATE__\s*=\s*({[\s\S]+?});/)
+      if (dataMatches) {
+        try {
+          const data = JSON.parse(dataMatches[1])
+          console.log(`📊 Found initial state data for ${symbol}`)
+          
+          // Extract sector allocations from the data structure
+          if (data.quoteSummary && data.quoteSummary.result) {
+            const result = data.quoteSummary.result[0]
+            
+            // Extract sector weightings from fundProfile
+            if (result.fundProfile && result.fundProfile.sectorWeightings) {
+              Object.entries(result.fundProfile.sectorWeightings).forEach(([sector, weight]) => {
+                if (typeof weight === 'number' && weight > 0 && sector !== 'Unknown' && sector !== 'unknown') {
+                  sectors.push({
+                    sector: this.normalizeSectorName(sector),
+                    weight: weight * 100
+                  })
+                }
+              })
+            }
+            
+            // Extract sector weightings from topHoldings (alternative source)
+            if (result.topHoldings && result.topHoldings.sectorWeightings) {
+              Object.entries(result.topHoldings.sectorWeightings).forEach(([sector, weight]) => {
+                if (typeof weight === 'number' && weight > 0 && sector !== 'Unknown' && sector !== 'unknown') {
+                  sectors.push({
+                    sector: this.normalizeSectorName(sector),
+                    weight: weight * 100
+                  })
+                }
+              })
+            }
+            
+            // Extract country information from summaryProfile
+            if (result.summaryProfile && result.summaryProfile.country && 
+                result.summaryProfile.country !== 'Unknown' && result.summaryProfile.country !== 'unknown') {
+              countries.push({
+                country: this.normalizeCountryName(result.summaryProfile.country),
+                weight: 100
+              })
+            }
+            
+            // Extract currency information from summaryProfile
+            if (result.summaryProfile && result.summaryProfile.currency && 
+                result.summaryProfile.currency !== 'Unknown' && result.summaryProfile.currency !== 'unknown') {
+              currencies.push({
+                currency: result.summaryProfile.currency.toUpperCase(),
+                weight: 100
+              })
+            }
+            
+            // Extract domicile information
+            const domicile = result.summaryProfile?.domicile || this.inferDomicile(symbol)
+            
+            console.log(`📈 Extracted data from initial state:`, {
+              sectors: sectors.length,
+              countries: countries.length,
+              currencies: currencies.length,
+              domicile
+            })
+          }
+        } catch (e) {
+          console.warn(`Failed to parse initial state JSON for ${symbol}:`, e)
+        }
+      }
+      
+      // Fallback: Try to extract from other JSON patterns in the HTML
+      if (sectors.length === 0) {
+        const sectorMatches = html.match(/"sectorWeightings":\s*({[^}]+})/g)
+        if (sectorMatches) {
+          for (const match of sectorMatches) {
+            try {
+              const sectorData = JSON.parse(match.replace(/"sectorWeightings":\s*/, ''))
+              Object.entries(sectorData).forEach(([sector, weight]) => {
+                if (typeof weight === 'number' && weight > 0 && sector !== 'Unknown' && sector !== 'unknown') {
+                  sectors.push({
+                    sector: this.normalizeSectorName(sector),
+                    weight: weight * 100
+                  })
+                }
+              })
+            } catch (e) {
+              // Continue parsing other matches
+            }
+          }
+        }
+      }
+      
+      // Fallback: Try to extract country and currency from other patterns
+      if (countries.length === 0) {
+        const countryMatch = html.match(/"country":\s*"([^"]+)"/)
+        if (countryMatch && countryMatch[1] !== 'Unknown' && countryMatch[1] !== 'unknown') {
+          countries.push({
+            country: this.normalizeCountryName(countryMatch[1]),
+            weight: 100
+          })
+        }
+      }
+      
+      if (currencies.length === 0) {
+        const currencyMatch = html.match(/"currency":\s*"([^"]+)"/)
+        if (currencyMatch && currencyMatch[1] !== 'Unknown' && currencyMatch[1] !== 'unknown') {
+          currencies.push({
+            currency: currencyMatch[1].toUpperCase(),
+            weight: 100
+          })
+        }
+      }
+      
+      // Extract domicile
+      const domicileMatch = html.match(/"domicile":\s*"([^"]+)"/)
+      const domicile = domicileMatch ? domicileMatch[1] : this.inferDomicile(symbol)
+      
+      console.log(`📈 Parsed data for ${symbol}:`, {
+        sectors: sectors.length,
+        countries: countries.length,
+        currencies: currencies.length
+      })
+
+      // If we found any meaningful data, return it
+      if (sectors.length > 0 || countries.length > 0 || currencies.length > 0) {
+        return {
+          symbol,
+          currency: currencies.length > 0 ? currencies : [{ currency: this.inferCurrency(symbol), weight: 100 }],
+          country: countries.length > 0 ? countries : [{ country: this.inferCountry(symbol), weight: 100 }],
+          sector: sectors.length > 0 ? sectors : [{ sector: this.inferSector(symbol), weight: 100 }],
+          holdings: [],
+          domicile,
+          withholdingTax: this.inferWithholdingTax(symbol),
+          lastUpdated: new Date().toISOString()
+        }
+      }
+
+      console.warn(`⚠️ No ETF composition data found in HTML for ${symbol}`)
+      return null
+    } catch (error) {
+      console.error(`Error parsing HTML for ${symbol}:`, error)
+      return null
+    }
+  }
+
+  private normalizeSectorName(sector: string): string {
+    const sectorMap: { [key: string]: string } = {
+      'information technology': 'Technology',
+      'it': 'Technology',
+      'technology': 'Technology',
+      'financial services': 'Financial Services',
+      'finance': 'Financial Services',
+      'healthcare': 'Healthcare',
+      'health': 'Healthcare',
+      'consumer discretionary': 'Consumer Discretionary',
+      'consumer staples': 'Consumer Staples',
+      'industrials': 'Industrials',
+      'energy': 'Energy',
+      'materials': 'Materials',
+      'utilities': 'Utilities',
+      'real estate': 'Real Estate',
+      'telecommunications': 'Telecommunications',
+      'communication services': 'Communication Services'
+    }
+    return sectorMap[sector.toLowerCase()] || sector
+  }
+
+  private normalizeCountryName(country: string): string {
+    const countryMap: { [key: string]: string } = {
+      'united states': 'United States',
+      'usa': 'United States',
+      'us': 'United States',
+      'ireland': 'Ireland',
+      'ie': 'Ireland',
+      'luxembourg': 'Luxembourg',
+      'lu': 'Luxembourg',
+      'switzerland': 'Switzerland',
+      'ch': 'Switzerland',
+      'germany': 'Germany',
+      'de': 'Germany',
+      'france': 'France',
+      'fr': 'France',
+      'japan': 'Japan',
+      'jp': 'Japan',
+      'united kingdom': 'United Kingdom',
+      'uk': 'United Kingdom',
+      'gb': 'United Kingdom',
+      'canada': 'Canada',
+      'ca': 'Canada',
+      'australia': 'Australia',
+      'au': 'Australia',
+      'china': 'China',
+      'cn': 'China',
+      'india': 'India',
+      'in': 'India',
+      'brazil': 'Brazil',
+      'br': 'Brazil'
+    }
+    return countryMap[country.toLowerCase()] || country
+  }
+
   private getKnownName(symbol: string): string | null {
     const names: Record<string, string> = {
       // US ETFs
@@ -704,3 +1203,5 @@ export async function getEtfHoldings(symbol: string): Promise<YahooEtfHolding[]>
     return []
   }
 }
+
+
