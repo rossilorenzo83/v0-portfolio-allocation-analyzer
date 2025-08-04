@@ -338,6 +338,18 @@ const FALLBACK_ETF_DATA: { [symbol: string]: EtfData } = {
       currencies: { USD: 0.65, EUR: 0.15, JPY: 0.07, Other: 0.13 },
     },
   },
+  "VWRL.SW": {
+    symbol: "VWRL.SW",
+    name: "Vanguard FTSE All-World UCITS ETF",
+    currency: "USD",
+    exchange: "EBS",
+    domicile: "IE",
+    composition: {
+      sectors: { "Technology": 0.4, "Financials": 0.2, "Healthcare": 0.15, "Consumer Discretionary": 0.12, Other: 0.13 },
+      countries: { "United States": 0.6, "Switzerland": 0.15, "Japan": 0.1, Other: 0.15 },
+      currencies: { USD: 0.65, EUR: 0.15, JPY: 0.07, Other: 0.13 },
+    },
+  },
   "VWRL": {
     symbol: "VWRL",
     name: "Vanguard FTSE All-World UCITS ETF",
@@ -348,6 +360,54 @@ const FALLBACK_ETF_DATA: { [symbol: string]: EtfData } = {
       sectors: { "Technology": 0.4, "Financials": 0.2, "Healthcare": 0.15, "Consumer Discretionary": 0.12, Other: 0.13 },
       countries: { "United States": 0.6, "Switzerland": 0.15, "Japan": 0.1, Other: 0.15 },
       currencies: { USD: 0.65, EUR: 0.15, JPY: 0.07, Other: 0.13 },
+    },
+  },
+  "SPICHA.SW": {
+    symbol: "SPICHA.SW",
+    name: "UBS Core SPI ETF CHF dis",
+    currency: "CHF",
+    exchange: "EBS",
+    domicile: "CH",
+    composition: {
+      sectors: { "Financials": 0.25, "Healthcare": 0.2, "Consumer Staples": 0.15, "Industrials": 0.12, "Technology": 0.1, Other: 0.18 },
+      countries: { "Switzerland": 1.0 },
+      currencies: { CHF: 1.0 },
+    },
+  },
+  "SPICHA": {
+    symbol: "SPICHA",
+    name: "UBS Core SPI ETF CHF dis",
+    currency: "CHF",
+    exchange: "EBS",
+    domicile: "CH",
+    composition: {
+      sectors: { "Financials": 0.25, "Healthcare": 0.2, "Consumer Staples": 0.15, "Industrials": 0.12, "Technology": 0.1, Other: 0.18 },
+      countries: { "Switzerland": 1.0 },
+      currencies: { CHF: 1.0 },
+    },
+  },
+  "VOOV.SW": {
+    symbol: "VOOV.SW",
+    name: "Vanguard S&P 500 UCITS ETF",
+    currency: "USD",
+    exchange: "EBS",
+    domicile: "IE",
+    composition: {
+      sectors: { "Information Technology": 0.28, Financials: 0.13, "Health Care": 0.12, Other: 0.47 },
+      countries: { "United States": 1.0 },
+      currencies: { USD: 1.0 },
+    },
+  },
+  "VOOV": {
+    symbol: "VOOV",
+    name: "Vanguard S&P 500 UCITS ETF",
+    currency: "USD",
+    exchange: "EBS",
+    domicile: "IE",
+    composition: {
+      sectors: { "Information Technology": 0.28, Financials: 0.13, "Health Care": 0.12, Other: 0.47 },
+      countries: { "United States": 1.0 },
+      currencies: { USD: 1.0 },
     },
   },
   SMH: {
@@ -368,7 +428,12 @@ const FALLBACK_ETF_DATA: { [symbol: string]: EtfData } = {
 const FALLBACK_QUOTE_DATA: { [symbol: string]: QuoteData } = {
   "VUSA.L": { price: 72.5, currency: "USD" },
   "VWRL.L": { price: 105.2, currency: "USD" },
+  "VWRL.SW": { price: 105.2, currency: "USD" },
   "VWRL": { price: 105.2, currency: "USD" },
+  "SPICHA.SW": { price: 125.8, currency: "CHF" },
+  "SPICHA": { price: 125.8, currency: "CHF" },
+  "VOOV.SW": { price: 72.5, currency: "USD" },
+  "VOOV": { price: 72.5, currency: "USD" },
   SMH: { price: 260.15, currency: "USD" },
   // Add more common ETF quotes as needed
 }
@@ -464,12 +529,23 @@ export async function getEtfDataWithFallback(symbol: string): Promise<EtfData | 
     }
   }
 
-  // Step 2: Use static fallback data if API failed
-  console.log(`🔄 API failed for ${symbol}, using static fallback data`)
+  // Step 2: Try static fallback data for the current symbol
+  console.log(`🔄 API failed for ${symbol}, trying static fallback data`)
   data = FALLBACK_ETF_DATA[symbol.toUpperCase()]
   if (data) {
     console.log(`✅ Static fallback data found for ${symbol}`)
     return data
+  }
+
+  // Step 3: If this is a resolved symbol (e.g., SPICHA.SW), try the original symbol (e.g., SPICHA)
+  if (symbol.includes('.') && symbol.includes('SW')) {
+    const originalSymbol = symbol.split('.')[0] // Extract SPICHA from SPICHA.SW
+    console.log(`🔄 Trying original symbol fallback: ${originalSymbol}`)
+    data = FALLBACK_ETF_DATA[originalSymbol.toUpperCase()]
+    if (data) {
+      console.log(`✅ Static fallback data found for original symbol ${originalSymbol}`)
+      return data
+    }
   }
 
   console.warn(`❌ No data available for ${symbol} from any source`)
