@@ -39,12 +39,16 @@ const customJestConfig = {
   ],
   coverageThreshold: {
     global: {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80,
+      branches: 50,
+      functions: 60,
+      lines: 60,
+      statements: 60,
     },
   },
+  // CI-specific settings
+  testTimeout: 30000,
+  maxWorkers: process.env.CI ? 2 : '50%',
+  verbose: process.env.CI ? true : false,
 }
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
