@@ -25,6 +25,26 @@ const customJestConfig = {
     "<rootDir>/node_modules/",
     "<rootDir>/scripts/", // Ignore scripts folder from Jest tests
   ],
+  collectCoverageFrom: [
+    "portfolio-parser.ts",
+    "etf-data-service.ts",
+    "lib/**/*.ts",
+    "components/file-upload-helper.tsx",
+    "components/loading-progress.tsx",
+    "portfolio-analyzer.tsx",
+    "!**/*.d.ts",
+    "!**/node_modules/**",
+    "!**/.next/**",
+    "!**/components/ui/**",
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+  },
 }
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async

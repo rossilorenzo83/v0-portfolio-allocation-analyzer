@@ -141,14 +141,14 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
       return <p className="text-center text-gray-500">No data available for {title}.</p>
     }
     return (
-      <Card className="w-full">
+      <Card className="w-full" data-testid={`${title.toLowerCase().replace(/\s/g, "-")}-chart`}>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
           <CardDescription>Breakdown of your portfolio by {title.toLowerCase()}.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center p-4">
           <ChartContainer
-            config={data.reduce((acc, item, idx) => {
+            config={data.reduce((acc: Record<string, any>, item, idx) => {
               acc[item.name.toLowerCase().replace(/\s/g, "-")] = {
                 label: item.name,
                 color: COLORS[idx % COLORS.length],
@@ -156,9 +156,10 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
               return acc
             }, {})}
             className="h-[300px] w-full"
+            data-testid="responsive-container"
           >
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
+              <PieChart data-testid="pie-chart">
                 <Pie data={data} cx="50%" cy="50%" outerRadius={100} fill="#8884d8" dataKey="value" labelLine={false}>
                   {data.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -199,7 +200,7 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
       return <p className="text-center text-gray-500">No positions found.</p>
     }
     return (
-      <Card className="w-full">
+      <Card className="w-full" data-testid="positions-table">
         <CardHeader>
           <CardTitle>Portfolio Positions</CardTitle>
           <CardDescription>Detailed breakdown of all your holdings.</CardDescription>
@@ -288,16 +289,30 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
           )}
 
           {portfolioData && (
-            <div className="space-y-8">
-              <Card>
+            <div className="space-y-8" data-testid="portfolio-analysis">
+              <Card data-testid="portfolio-summary">
                 <CardHeader>
                   <CardTitle>Portfolio Analysis</CardTitle>
                   <CardDescription>
                     Analysis of your portfolio with {portfolioData.positions.length} positions
                   </CardDescription>
                 </CardHeader>
+                <CardContent>
+                  <Button 
+                    onClick={() => {
+                      setPortfolioData(null)
+                      setFileInput(null)
+                      setTextInput("")
+                      setError(null)
+                    }}
+                    variant="outline"
+                    data-testid="reset-button"
+                  >
+                    Analyze Another Portfolio
+                  </Button>
+                </CardContent>
               </Card>
-              <Card>
+              <Card data-testid="account-overview">
                 <CardHeader>
                   <CardTitle>Account Overview</CardTitle>
                 </CardHeader>
@@ -325,7 +340,7 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
 
               {renderPositionsTable(portfolioData.positions)}
 
-              <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-8 md:grid-cols-2" data-testid="allocation-charts">
                 {renderAllocationChart(portfolioData.assetAllocation, "Asset Allocation")}
                 {renderAllocationChart(portfolioData.currencyAllocation, "Currency Allocation")}
                 {renderAllocationChart(portfolioData.trueCountryAllocation, "True Country Allocation")}
