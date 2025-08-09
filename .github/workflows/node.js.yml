@@ -13,6 +13,11 @@ jobs:
   test-and-build:
     name: Test and Build (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      actions: read
+      checks: write
 
     strategy:
       matrix:
@@ -62,6 +67,9 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
