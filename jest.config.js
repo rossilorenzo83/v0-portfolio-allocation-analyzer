@@ -1,40 +1,55 @@
-/** @type {import('jest').Config} */
-const config = {
-    preset: "ts-jest",
-    testEnvironment: "jsdom",
-    setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
+const nextJest = require("next/jest")
 
-    moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
+const createJestConfig = nextJest({
+  // Provide the path to your Next.js app to load next.config.js and .env files in your test environment
+  dir: "./",
+})
 
-    transform: {
-        "^.+\\.(ts|tsx)$": ["ts-jest", {
-            tsconfig: "tsconfig.json",
-            useESM: false,
-        }],
+// Add any custom config to be passed to Jest
+const customJestConfig = {
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.js"],
+  moduleNameMapper: {
+    // Handle module aliases (this will be automatically configured for you by Next.js, but you can add more here)
+    "^@/components/(.*)$": "<rootDir>/components/$1",
+    "^@/lib/(.*)$": "<rootDir>/lib/$1",
+    "^@/hooks/(.*)$": "<rootDir>/hooks/$1",
+    "^@/app/(.*)$": "<rootDir>/app/$1",
+    "^@/scripts/(.*)$": "<rootDir>/scripts/$1",
+    "^@/etf-data-service$": "<rootDir>/etf-data-service.ts",
+    "^@/portfolio-parser$": "<rootDir>/portfolio-parser.ts",
+  },
+  testEnvironment: "jest-environment-jsdom",
+  // Remove custom transform since Next.js Jest handles TypeScript/JSX automatically
+  testPathIgnorePatterns: [
+    "<rootDir>/.next/",
+    "<rootDir>/node_modules/",
+    "<rootDir>/scripts/", // Ignore scripts folder from Jest tests
+  ],
+  collectCoverageFrom: [
+    "portfolio-parser.ts",
+    "etf-data-service.ts",
+    "lib/**/*.ts",
+    "components/file-upload-helper.tsx",
+    "components/loading-progress.tsx",
+    "portfolio-analyzer.tsx",
+    "!**/*.d.ts",
+    "!**/node_modules/**",
+    "!**/.next/**",
+    "!**/components/ui/**",
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 41,
+      functions: 58,
+      lines: 55,
+      statements: 54,
     },
+  },
+  // CI-specific settings
+  testTimeout: 30000,
+  maxWorkers: process.env.CI ? 2 : '50%',
+  verbose: process.env.CI ? true : false,
+}
 
-    moduleNameMapper: {
-        "^@/(.*)$": "<rootDir>/src/$1",
-        "^@lib/(.*)$": "<rootDir>/src/lib/$1",
-        "^@components/(.*)$": "<rootDir>/src/components/$1",
-        "\\.(css|less|scss|sass)$": "identity-obj-proxy",
-        "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/__mocks__/fileMock.js",
-    },
-
-    testMatch: [
-        "**/__tests__/**/*.(ts|tsx|js)",
-        "**/*.(test|spec).(ts|tsx|js)",
-    ],
-
-    clearMocks: true,
-    restoreMocks: true,
-    testTimeout: 10000,
-    verbose: true,
-
-    testPathIgnorePatterns: [
-        "<rootDir>/.next/",
-        "<rootDir>/node_modules/",
-    ],
-};
-
-module.exports = config;
+// createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
+module.exports = createJestConfig(customJestConfig)

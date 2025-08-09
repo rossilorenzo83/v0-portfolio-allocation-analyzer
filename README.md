@@ -1,175 +1,89 @@
-# Swiss Portfolio Analyzer
+# Portfolio Allocation Analyzer
 
-A comprehensive portfolio analysis tool designed for Swiss bank statements with advanced ETF look-through analysis, tax optimization insights, and currency exposure breakdown.
+This project is a web application designed to help users analyze their investment portfolios, particularly focusing on Swiss bank CSV data. It provides detailed breakdowns of asset, currency, country, sector, and domicile allocations, leveraging real-time market data and ETF composition information.
 
 ## Features
 
-### 📊 Portfolio Analysis
-- **Asset Allocation**: Breakdown by stocks, ETFs, bonds, crypto, and other instruments
-- **Currency Exposure**: True currency exposure analysis with ETF look-through
-- **Geographic Distribution**: Regional allocation including ETF underlying holdings
-- **Sector Analysis**: Sector breakdown with ETF underlying sector allocation
-
-### 🏦 Swiss Banking Focus
-- **Tax Optimization**: ETF domicile analysis for Swiss tax efficiency
-- **Withholding Tax**: Identification of tax-optimized vs. high-tax ETFs
-- **Currency Analysis**: CHF, USD, EUR exposure with ETF underlying breakdown
-- **Swiss Bank Format**: Designed for Swiss portfolio statements
-
-### 📈 Advanced ETF Analysis
-- **Look-Through Analysis**: Analyzes underlying holdings of ETFs
-- **Currency Mapping**: Maps ETF underlying currency exposure
-- **Tax Domicile**: Ireland vs. US domiciled ETF identification
-- **Performance Tracking**: Gain/loss analysis per position
+- **CSV Import**: Upload or paste CSV data from your bank statements.
+- **Detailed Portfolio Analysis**: Get a comprehensive overview of your holdings.
+- **Real-time Data Integration**: Fetches current prices and ETF compositions using a mocked Yahoo Finance API.
+- **Allocation Breakdowns**: Visualizes asset, currency, country, sector, and domicile allocations with interactive charts and tables.
+- **Swiss Tax Optimization**: Considers tax implications for Swiss investors based on asset domicile.
+- **Smart Symbol Resolution**: Attempts to resolve common European ETF and Swiss stock symbols.
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
-- Docker (optional, for containerized deployment)
 
-### Local Development
+- Node.js (v18 or higher)
+- npm or Yarn
+- Git
 
-1. **Clone the repository**
-   \`\`\`bash
-   git clone https://github.com/yourusername/swiss-portfolio-analyzer.git
-   cd swiss-portfolio-analyzer
-   \`\`\`
+### Installation
 
-2. **Install dependencies**
-   \`\`\`bash
-   npm install
-   \`\`\`
+1.  **Clone the repository:**
+    \`\`\`bash
+    git clone https://github.com/your-username/portfolio-allocation-analyzer.git
+    cd portfolio-allocation-analyzer
+    \`\`\`
+2.  **Install dependencies:**
+    \`\`\`bash
+    npm install
+    # or
+    yarn install
+    \`\`\`
+3.  **Set up Environment Variables:**
+    Create a `.env.local` file in the root directory and add your Yahoo Finance API key:
+    \`\`\`
+    YAHOO_FINANCE_API_KEY=YOUR_YAHOO_FINANCE_API_KEY
+    NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL=/api/yahoo
+    \`\`\`
+    *Note: For development, the `NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL` is set to proxy through `/api/yahoo` to avoid CORS issues and allow for server-side API calls.*
 
-3. **Run the development server**
-   \`\`\`bash
-   npm run dev
-   \`\`\`
+### Running the Application
 
-4. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
-
-### Docker Deployment
-
-1. **Build and run with Docker Compose**
-   \`\`\`bash
-   docker-compose up --build
-   \`\`\`
-
-2. **Access the application**
-   - Production: [http://localhost:3000](http://localhost:3000)
-   - Development: [http://localhost:3001](http://localhost:3001)
-
-### Docker Commands
 \`\`\`bash
-# Build the image
-docker build -t swiss-portfolio-analyzer .
-
-# Run the container
-docker run -p 3000:3000 swiss-portfolio-analyzer
-
-# Run in development mode with volume mounting
-docker run -p 3000:3000 -v $(pwd):/app swiss-portfolio-analyzer npm run dev
+npm run dev
+# or
+yarn dev
 \`\`\`
 
-## Usage
-
-### File Upload
-1. Export your portfolio statement from your Swiss bank
-2. Save as PDF or copy text content to a .txt file
-3. Upload the file using the upload interface
-4. The analyzer will parse and display comprehensive analysis
-
-### Expected File Format
-The analyzer expects Swiss bank portfolio statements with the following information:
-- Portfolio positions with symbols, names, quantities, prices
-- Currency information
-- Asset categories (Actions, ETF, Fonds, etc.)
-- Account overview with total values
-
-### Sample Data Structure
-\`\`\`
-Valeur totale 889'528.75
-Solde espèces 5'129.55
-Valeur des titres 877'853.96
-
-Positions:
-AAPL - Apple Inc. - 100 shares - USD 150.00
-VWRL - Vanguard FTSE All-World - 500 shares - CHF 89.96
-\`\`\`
-
-## Technology Stack
-
-- **Frontend**: Next.js 14, React 18, TypeScript
-- **Styling**: Tailwind CSS, shadcn/ui components
-- **Charts**: Recharts for data visualization
-- **Icons**: Lucide React
-- **Deployment**: Docker, Docker Compose
+Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
 ## Project Structure
 
-\`\`\`
-├── app/                    # Next.js app directory
-├── components/            # Reusable UI components
-│   └── ui/               # shadcn/ui components
-├── lib/                  # Utility functions
-├── swiss-portfolio-analyzer.tsx    # Main analyzer component
-├── swiss-portfolio-parser.ts       # Portfolio parsing logic
-├── Dockerfile            # Docker configuration
-├── docker-compose.yml    # Docker Compose setup
-└── README.md            # This file
-\`\`\`
+-   `app/`: Next.js App Router pages and API routes.
+    -   `api/yahoo/`: API routes for proxying Yahoo Finance API calls (quote, ETF, search).
+-   `components/`: Reusable React components, including Shadcn UI components.
+-   `hooks/`: Custom React hooks.
+-   `lib/`: Utility functions and API service logic.
+-   `portfolio-parser.ts`: Core logic for parsing CSV data and enriching portfolio positions.
+-   `etf-data-service.ts`: Service for fetching and processing ETF and stock data from the API.
+-   `public/`: Static assets.
+-   `scripts/`: Utility scripts for testing and analysis.
+-   `styles/`: Global CSS and Tailwind CSS configuration.
+-   `__tests__/`: Jest test files.
 
-## Features in Detail
+## Scripts
 
-### Currency Analysis
-- **Trading Currency**: The currency in which ETFs are traded
-- **Underlying Currency**: The actual currency exposure from ETF holdings
-- **Look-Through Analysis**: Breaks down ETF holdings to show true exposure
-
-### Tax Optimization
-- **Ireland Domiciled**: 15% withholding tax (tax-optimized)
-- **US Domiciled**: 30% withholding tax (higher tax burden)
-- **Swiss Domiciled**: No withholding tax for Swiss residents
-
-### ETF Database
-The analyzer includes a comprehensive ETF database with:
-- Underlying currency exposure percentages
-- Geographic allocation
-- Sector breakdown
-- Tax domicile information
+-   `npm run dev`: Starts the development server.
+-   `npm run build`: Builds the application for production.
+-   `npm run start`: Starts the production server.
+-   `npm run lint`: Runs ESLint to check for code quality issues.
+-   `npm test`: Runs Jest tests.
+-   `npm run test:watch`: Runs Jest tests in watch mode.
+-   `npm run test:ci`: Runs Jest tests in CI mode.
+-   `ts-node scripts/analyze-csv-structure.ts <path_to_csv_file>`: Analyzes the structure of a given CSV file.
+-   `ts-node scripts/test-real-csv.ts <CSV_URL>`: Fetches and parses a CSV from a URL, printing detailed output.
+-   `ts-node scripts/test-api-service.ts`: Tests the `api-service.ts` functions directly.
+-   `ts-node scripts/test-file-upload.ts`: Tests the CSV parsing logic with a local sample file.
+-   `ts-node scripts/test-integration.ts`: Tests the full integration of CSV parsing and data enrichment.
+-   `ts-node scripts/analyze-real-csv.ts <path_to_csv_file>`: Provides a detailed analysis of a real CSV file, including enriched data.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## Roadmap
-
-- [ ] Real-time ETF data integration
-- [ ] PDF parsing with PDF.js
-- [ ] Portfolio rebalancing suggestions
-- [ ] Risk metrics calculation
-- [ ] Historical performance tracking
-- [ ] Export functionality (PDF/Excel reports)
-- [ ] Multi-language support (German, French, Italian)
-- [ ] Mobile responsive improvements
+Contributions are welcome! Please feel free to open issues or submit pull requests.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Disclaimer
-
-This tool is for informational purposes only and should not be considered as financial advice. Always consult with a qualified financial advisor before making investment decisions.
-
-## Support
-
-If you encounter any issues or have questions, please open an issue on GitHub or contact the maintainers.
-
----
-
-**Made with ❤️ for Swiss investors**
+This project is licensed under the MIT License.

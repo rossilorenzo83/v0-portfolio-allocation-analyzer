@@ -1,56 +1,39 @@
-// API Configuration
+// API Configuration - Focused on Yahoo Finance only
 export const API_CONFIG = {
-  // Alpha Vantage API
-  ALPHA_VANTAGE: {
-    KEY: process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY || "demo",
-    BASE_URL: "https://www.alphavantage.co/query",
-    RATE_LIMIT: 5, // requests per minute for free tier
-  },
-
-  // Finnhub API
-  FINNHUB: {
-    KEY: process.env.NEXT_PUBLIC_FINNHUB_KEY || "demo",
-    BASE_URL: "https://finnhub.io/api/v1",
-    RATE_LIMIT: 60, // requests per minute for free tier
-  },
-
   // Yahoo Finance (no key required)
   YAHOO_FINANCE: {
     BASE_URL: "https://query1.finance.yahoo.com",
     RATE_LIMIT: 2000, // requests per hour
   },
 
-  // CoinGecko API (no key required for basic usage)
-  COINGECKO: {
-    BASE_URL: "https://api.coingecko.com/api/v3",
-    RATE_LIMIT: 50, // requests per minute for free tier
-  },
-
-  // Exchange Rate API
+  // Exchange Rate API for currency conversion
   EXCHANGE_RATE: {
     BASE_URL: "https://api.exchangerate-api.com/v4",
     RATE_LIMIT: 1500, // requests per month for free tier
   },
 }
 
+// API base URL from environment variable
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
+
+// Yahoo Finance API base URL from environment variable
+export const YAHOO_FINANCE_API_BASE_URL = process.env.NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL || "/api/yahoo"
+
+// Yahoo Finance API key from environment variable
+export const YAHOO_FINANCE_API_KEY = process.env.YAHOO_FINANCE_API_KEY || "YOUR_YAHOO_FINANCE_API_KEY"
+
+// PDF Worker URL
+export const PDF_WORKER_URL = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.mjs`
+
 // Validate API configuration
 export function validateAPIConfig() {
   const warnings: string[] = []
 
-  if (API_CONFIG.ALPHA_VANTAGE.KEY === "demo") {
-    warnings.push("Alpha Vantage API key not configured - using demo key with limited functionality")
-  }
-
-  if (API_CONFIG.FINNHUB.KEY === "demo") {
-    warnings.push("Finnhub API key not configured - using demo key with limited functionality")
-  }
-
-  if (warnings.length > 0) {
-    console.warn("API Configuration Warnings:", warnings)
-  }
+  // Yahoo Finance doesn't require API keys, so no validation needed
+  console.log("Using Yahoo Finance API - no API key required")
 
   return {
-    isValid: warnings.length === 0,
+    isValid: true,
     warnings,
   }
 }
@@ -83,6 +66,17 @@ export class RateLimiter {
 
     const oldestRequest = Math.min(...requests)
     return Math.max(0, windowMs - (Date.now() - oldestRequest))
+  }
+
+  getRemainingRequests(apiName: string, limit: number, windowMs = 60000): number {
+    const now = Date.now()
+    const requests = this.requests.get(apiName) || []
+    const validRequests = requests.filter((time) => now - time < windowMs)
+    return Math.max(0, limit - validRequests.length)
+  }
+
+  getRequestHistory(apiName: string): number[] {
+    return this.requests.get(apiName) || []
   }
 }
 

@@ -1,65 +1,32 @@
-# Dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# Testing
-/coverage
-
 # Next.js
-/.next/
-/out/
+.next/
+out/
 
-# Production
-/build
-
-# Misc
-.DS_Store
-*.pem
-
-# Debug
+# Node.js
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Local env files
-.env*.local
+# Environment variables
 .env
-.env.development
-.env.production
-
-# Vercel
-.vercel
+.env*.local
 
 # TypeScript
 *.tsbuildinfo
-next-env.d.ts
+
+# Jest
+.jest/
+coverage/
+
+# VS Code
+.vscode/
 
 # Docker
 .dockerignore
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-Thumbs.db
-
-# Personal data (important!)
-/data/
-/uploads/
-/personal/
-*.pdf
-personal-portfolio.*
-
-# API Configuration (IMPORTANT - DO NOT COMMIT)
-config/api-keys.js
-config/secrets.json
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-
+# Test files and personal data
+test-*.csv
+test-*.js
+*-portfolio.csv
+personal-*.csv
