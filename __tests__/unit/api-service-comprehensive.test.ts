@@ -7,9 +7,39 @@ describe('API Service Comprehensive Coverage', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(global.fetch as jest.Mock).mockClear()
+    // Provide a safe default for any fetch calls not explicitly mocked in a test
+    ;(global.fetch as jest.Mock).mockImplementation(() =>
+      Promise.resolve({
+        ok: false,
+        status: 500,
+        statusText: 'Error',
+        json: async () => ({}),
+        text: async () => ''
+      })
+    )
   })
 
   describe('Stock Price Fetching', () => {
+    it('should fetch stock price successfully via server path (response.ok=true)', async () => {
+      ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          chart: { result: [{ meta: { regularMarketPrice: 123.45, previousClose: 120.0, currency: 'USD' } }] }
+        })
+      })
+
+      const result = await apiService.getStockPrice('SRV_OK')
+      expect(result).toMatchObject({ symbol: 'SRV_OK', price: 123.45, currency: 'USD' })
+    })
+
+    it('should fall back when server fetch is not ok in server environment', async () => {
+      ;(global.fetch as jest.Mock)
+        .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Error' })
+
+      const result = await apiService.getStockPrice('CLIENT_OK')
+      expect(result?.symbol).toBe('CLIENT_OK')
+      expect(typeof result?.price).toBe('number')
+    })
     it('should fetch stock price successfully', async () => {
       const mockResponse = {
         quoteResponse: {
@@ -72,6 +102,26 @@ describe('API Service Comprehensive Coverage', () => {
   })
 
   describe('Asset Metadata Fetching', () => {
+    it('should fetch asset metadata via server quoteSummary path', async () => {
+      ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          quoteSummary: { result: [{ summaryProfile: { longName: 'Srv Inc', sector: 'Technology', country: 'United States', currency: 'USD', quoteType: 'Stock', exchange: 'NYSE' } }] }
+        })
+      })
+
+      const result = await apiService.getAssetMetadata('SRV_META')
+      expect(result).toMatchObject({ symbol: 'SRV_META', name: 'Srv Inc', sector: 'Technology', country: 'United States' })
+    })
+
+    it('should fetch asset metadata via server search fallback', async () => {
+      ;(global.fetch as jest.Mock)
+        .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Error' }) // quoteSummary fails
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ quotes: [{ longname: 'Search Inc', currency: 'USD', exchange: 'NASDAQ' }] }) })
+
+      const result = await apiService.getAssetMetadata('SRCH_META')
+      expect(result).toMatchObject({ symbol: 'SRCH_META', name: 'Search Inc', exchange: 'NASDAQ' })
+    })
     it('should fetch asset metadata successfully', async () => {
       const mockResponse = {
         quoteResponse: {
@@ -116,6 +166,28 @@ describe('API Service Comprehensive Coverage', () => {
   })
 
   describe('ETF Composition Fetching', () => {
+    it('should fetch ETF composition via server quoteSummary path', async () => {
+      ;(global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          quoteSummary: { result: [{ summaryProfile: { country: 'United States', currency: 'USD', domicile: 'US' }, fundProfile: { sectorWeightings: { technology: 0.2, finance: 0.1 } } }] }
+        })
+      })
+
+      const result = await apiService.getETFComposition('SRV_ETF')
+      expect(result).toBeTruthy()
+      expect(result?.country[0].country).toBe('United States')
+      expect(result?.currency[0].currency).toBe('USD')
+      expect(result?.sector.length).toBeGreaterThan(0)
+    })
+
+    it('should fall back when server path not ok in server environment', async () => {
+      ;(global.fetch as jest.Mock)
+        .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Error' })
+
+      const result = await apiService.getETFComposition('CLI_ETF')
+      expect(result?.symbol).toBe('CLI_ETF')
+    })
     it('should fetch ETF composition successfully', async () => {
       const mockResponse = {
         etfHoldings: {
@@ -438,3 +510,7 @@ describe('API Service Comprehensive Coverage', () => {
     })
   })
 })
+
+
+
+

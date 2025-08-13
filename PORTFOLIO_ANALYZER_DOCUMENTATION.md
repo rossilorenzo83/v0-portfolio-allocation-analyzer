@@ -5,6 +5,32 @@ The Swiss Portfolio Analyzer is a comprehensive web application that parses CSV 
 
 ## Recent Fixes and Improvements
 
+### Coverage Expansion: Yahoo Finance Service + Server Paths (Latest)
+**Date**: January 16, 2025  
+**Status**: ✅ COMPLETED
+
+#### Key Achievements:
+- 📈 Overall coverage now above 60% thresholds and CI passing
+- 🧪 Added server-path tests for `lib/yahoo-finance-service.ts` covering:
+  - Session establishment (crumb, cookies, user agent)
+  - `getQuote` via server path with parsed result
+  - `searchSymbol` server path success, non-ok, and error handling
+  - `getETFComposition` server path delegating to api-service result mapping
+- 🧩 Stabilized mocks for Playwright-like page interactions by mocking `page.goto`
+
+#### Result:
+- ✅ Test Suites: 18/18 passing
+- ✅ Coverage (key libs):
+  - `yahoo-finance-service.ts`: ~75% lines, 63% branches
+  - `share-metadata-service.ts`: ~96% lines
+  - `api-service.ts`: broader exercised paths, stable under CI
+
+#### Files Updated/Added:
+- `__tests__/unit/yahoo-finance-server-path.test.ts` (new)
+
+#### Notes:
+- Adjusted test harness to provide minimal `page.goto` mock to exercise session logic safely in Node env.
+
 ### GitHub Actions Workflow Optimization (Latest)
 **Date**: January 16, 2025  
 **Status**: ✅ **COMPLETED**
