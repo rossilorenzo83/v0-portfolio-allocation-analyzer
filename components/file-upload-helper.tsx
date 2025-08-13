@@ -77,7 +77,7 @@ export function FileUploadHelper({ onFileChange }: FileUploadHelperProps) {
               <FileText className="w-5 h-5 text-blue-500" />
               <span className="text-sm font-medium">{file.name}</span>
             </div>
-            <Button variant="ghost" size="icon" onClick={handleRemoveFile}>
+            <Button aria-label="Remove file" variant="ghost" size="icon" onClick={handleRemoveFile}>
               <XCircle className="w-4 h-4 text-gray-500" />
             </Button>
           </div>

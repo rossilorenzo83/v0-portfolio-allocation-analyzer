@@ -1,7 +1,6 @@
 import React from "react"
 import { render, screen } from "@testing-library/react"
 import { jest } from "@jest/globals"
-import PortfolioAnalyzer from "../../portfolio-analyzer"
 
 // Mock the parsePortfolioCsv function
 const mockParsePortfolioCsv = jest.fn()
@@ -48,6 +47,10 @@ jest.mock("recharts", () => ({
     </div>
   ),
 }))
+
+// Import after mocks so they take effect for the component under test
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PortfolioAnalyzer = require("../../portfolio-analyzer").default
 
 // Mock the FileUploadHelper component
 jest.mock("../../components/file-upload-helper", () => ({
