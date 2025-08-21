@@ -12,8 +12,8 @@ updates:
     groups:
     # Specify a name for the group, which will be used in pull request titles
     # and branch names
-    minor-updates:
-      applies-to: version-updates
-      update-types:
-        - "minor"
-        - "patch"
+      minor-updates:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
