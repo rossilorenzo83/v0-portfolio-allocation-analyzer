@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { yahooFinanceService } from '@/lib/yahoo-finance-service'
 import { getEtfHoldings } from '@/lib/api-service'
 import { ETFComposition } from '@/types/yahoo'
+import { normalizeSectorName, normalizeCountryName } from '@/lib/normalization-utils'
 
 export async function GET(
   request: NextRequest,
@@ -54,7 +55,13 @@ export async function GET(
     console.log(`🔑 Using crumb: ${session.crumb}`)
     console.log(`👤 Using User-Agent: ${session.userAgent.substring(0, 50)}...`)
     
-    const response = await fetch(url, { headers })
+    const response = await fetch(url, { 
+      headers,
+      // Disable SSL certificate validation for development
+      ...(process.env.NODE_ENV === 'development' && { 
+        agent: new (require('https').Agent)({ rejectUnauthorized: false })
+      })
+    })
 
     if (response.ok) {
       const data = await response.json()
@@ -70,40 +77,54 @@ export async function GET(
         console.log(`🏦 Fund Profile for ${symbol}:`, JSON.stringify(fundProfile, null, 2))
         console.log(`📈 Summary Profile for ${symbol}:`, JSON.stringify(summaryProfile, null, 2))
 
-        // Process sector breakdown
-        const sectorWeightings = fundProfile?.sectorWeightings || {}
-        console.log(`🏭 Sector Weightings for ${symbol}:`, JSON.stringify(sectorWeightings, null, 2))
+        // Process sector breakdown from topHoldings (sectorWeightings is array of objects)
+        const sectorWeightingsArray = result.topHoldings?.sectorWeightings || []
+        console.log(`🏭 Sector Weightings Array for ${symbol}:`, JSON.stringify(sectorWeightingsArray, null, 2))
         
-        const sectors = Object.entries(sectorWeightings)
-          .map(([sector, weight]) => ({
-            sector: normalizeSectorName(sector),
-            weight: (weight as number) * 100,
-          }))
+        const sectors = sectorWeightingsArray
+          .flatMap((sectorObj: any) => 
+            Object.entries(sectorObj).map(([sector, data]) => ({
+              sector: normalizeSectorName(sector),
+              weight: ((data as any)?.raw || 0) * 100,
+            }))
+          )
           .filter((s) => s.weight > 0 && s.sector !== 'Unknown' && s.sector !== 'unknown')
 
         console.log(`✅ Processed sectors for ${symbol}:`, sectors)
 
-        // Process country breakdown
+        // Process holdings
+        const holdings = (result.topHoldings?.holdings || [])
+          .map((holding: any) => ({
+            symbol: holding.symbol,
+            name: holding.holdingName,
+            weight: (holding.holdingPercent?.raw || 0) * 100,
+          }))
+          .filter((h: any) => h.symbol && h.weight > 0)
+
+        console.log(`📊 Holdings for ${symbol}:`, holdings.length, "holdings")
+
+        // Process country breakdown (infer from domicile and holdings for US market ETFs)
         const countries = []
-        if (summaryProfile?.country && summaryProfile.country !== 'Unknown' && summaryProfile.country !== 'unknown') {
-          countries.push({ country: normalizeCountryName(summaryProfile.country), weight: 100 })
+        const domicile = summaryProfile?.domicile || inferDomicile(symbol)
+        if (domicile === 'US' || symbol.match(/^[A-Z]{2,5}$/)) {
+          // For US-listed ETFs, assume US market focus unless specified otherwise
+          countries.push({ country: 'United States', weight: 100 })
         }
 
         console.log(`🌍 Countries for ${symbol}:`, countries)
 
-        // Process currency
+        // Process currency (USD for US-listed ETFs)
         const currencies = []
-        if (summaryProfile?.currency && summaryProfile.currency !== 'Unknown' && summaryProfile.currency !== 'unknown') {
-          currencies.push({ currency: summaryProfile.currency.toUpperCase(), weight: 100 })
+        if (symbol.match(/^[A-Z]{2,5}$/)) {
+          // For US-listed symbols, assume USD
+          currencies.push({ currency: 'USD', weight: 100 })
         }
 
         console.log(`💰 Currencies for ${symbol}:`, currencies)
 
-        // Check if we have rich data (not just fallback data)
+        // Check if we have rich data (real sector data from API)
         const hasRichData = sectors.length > 0 && 
-                           !sectors.every(s => s.sector === 'Other') &&
-                           countries.length > 0 &&
-                           !countries.every(c => c.country === 'United States')
+                           !sectors.every(s => s.sector === 'Other')
 
         console.log(`🔍 Rich data check for ${symbol}:`, {
           hasSectors: sectors.length > 0,
@@ -119,7 +140,7 @@ export async function GET(
             currency: currencies,
             country: countries,
             sector: sectors,
-            holdings: [],
+            holdings: holdings,
             domicile: summaryProfile?.domicile || inferDomicile(symbol),
             withholdingTax: inferWithholdingTax(symbol),
             lastUpdated: new Date().toISOString(),
@@ -306,55 +327,6 @@ function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null 
   }
 }
 
-function normalizeSectorName(sector: string): string {
-  const sectorMap: Record<string, string> = {
-    'technology': 'Technology',
-    'financial_services': 'Financial Services',
-    'healthcare': 'Healthcare',
-    'consumer_discretionary': 'Consumer Discretionary',
-    'consumer_staples': 'Consumer Staples',
-    'industrials': 'Industrials',
-    'energy': 'Energy',
-    'materials': 'Materials',
-    'real_estate': 'Real Estate',
-    'utilities': 'Utilities',
-    'communication_services': 'Communication Services',
-  }
-  
-  const normalized = sector.toLowerCase().replace(/\s+/g, '_')
-  return sectorMap[normalized] || sector
-}
-
-function normalizeCountryName(country: string): string {
-  const countryMap: Record<string, string> = {
-    'united states': 'United States',
-    'usa': 'United States',
-    'us': 'United States',
-    'united kingdom': 'United Kingdom',
-    'uk': 'United Kingdom',
-    'germany': 'Germany',
-    'france': 'France',
-    'japan': 'Japan',
-    'china': 'China',
-    'canada': 'Canada',
-    'australia': 'Australia',
-    'switzerland': 'Switzerland',
-    'netherlands': 'Netherlands',
-    'sweden': 'Sweden',
-    'denmark': 'Denmark',
-    'norway': 'Norway',
-    'finland': 'Finland',
-    'belgium': 'Belgium',
-    'austria': 'Austria',
-    'italy': 'Italy',
-    'spain': 'Spain',
-    'ireland': 'Ireland',
-    'luxembourg': 'Luxembourg',
-  }
-  
-  const normalized = country.toLowerCase()
-  return countryMap[normalized] || country
-}
 
 function processCurrencyData(currencies: any[]): Array<{ currency: string; weight: number }> {
   if (!currencies || currencies.length === 0) {

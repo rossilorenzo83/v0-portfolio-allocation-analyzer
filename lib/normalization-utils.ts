@@ -8,20 +8,26 @@ export function normalizeSectorName(sector: string): string {
     'it': 'Technology',
     'technology': 'Technology',
     'financial services': 'Financial Services',
+    'financial_services': 'Financial Services',
     'financials': 'Financial Services',
     'finance': 'Financial Services',
     'healthcare': 'Healthcare',
     'health': 'Healthcare',
     'health care': 'Healthcare',
     'consumer discretionary': 'Consumer Discretionary',
+    'consumer_cyclical': 'Consumer Discretionary',
     'consumer staples': 'Consumer Staples',
+    'consumer_defensive': 'Consumer Staples',
     'industrials': 'Industrials',
     'communication services': 'Communication Services',
+    'communication_services': 'Communication Services',
     'telecommunications': 'Telecommunications',
     'utilities': 'Utilities',
     'energy': 'Energy',
     'materials': 'Materials',
-    'real estate': 'Real Estate'
+    'basic_materials': 'Materials',
+    'real estate': 'Real Estate',
+    'realestate': 'Real Estate'
   }
   
   return sectorMap[sector.toLowerCase()] || sector

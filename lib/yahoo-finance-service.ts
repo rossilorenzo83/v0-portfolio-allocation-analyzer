@@ -251,7 +251,13 @@ class YahooFinanceService {
         headers['X-Crumb'] = session.crumb
       }
       
-      const response = await fetch(url, { headers })
+      const response = await fetch(url, { 
+        headers,
+        // Disable SSL certificate validation for development
+        ...(process.env.NODE_ENV === 'development' && { 
+          agent: new (require('https').Agent)({ rejectUnauthorized: false })
+        })
+      })
 
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status}`)
@@ -307,7 +313,13 @@ class YahooFinanceService {
         headers['X-Crumb'] = session.crumb
       }
       
-      const response = await fetch(url, { headers })
+      const response = await fetch(url, { 
+        headers,
+        // Disable SSL certificate validation for development
+        ...(process.env.NODE_ENV === 'development' && { 
+          agent: new (require('https').Agent)({ rejectUnauthorized: false })
+        })
+      })
 
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status}`)

@@ -1,5 +1,6 @@
 import Papa from "papaparse"
 import { etfDataService, resolveSymbolAndFetchData } from "./etf-data-service"
+import { apiService } from "./lib/api-service"
 
 export interface SwissPortfolioData {
   accountOverview: {
@@ -1107,7 +1108,7 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
       // Other domiciles have higher withholding taxes
       const taxOptimized = domicile === "US" || domicile === "IE" || domicile === "LU"
 
-      // Extract sector and geography from ETF composition if available
+      // Extract sector and geography from ETF composition or stock metadata
       let sector = parsed.sector || "Unknown"
       let geography = parsed.geography || "Unknown"
       
@@ -1123,6 +1124,22 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         if (Object.keys(countries).length > 0) {
           const largestCountry = Object.entries(countries).reduce((a, b) => countries[a[0]] > countries[b[0]] ? a : b)
           geography = largestCountry[0]
+        }
+      } else if (parsed.category === "Actions") {
+        // For individual stocks, try to get share metadata
+        try {
+          const shareMetadata = await apiService.getShareMetadata(parsed.symbol)
+          if (shareMetadata) {
+            if (shareMetadata.sector && shareMetadata.sector !== "Unknown") {
+              sector = shareMetadata.sector
+            }
+            if (shareMetadata.country && shareMetadata.country !== "Unknown") {
+              geography = shareMetadata.country
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to get share metadata for ${parsed.symbol}:`, error)
+          // Keep default "Unknown" values
         }
       }
 

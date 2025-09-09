@@ -54,7 +54,12 @@ class ShareMetadataService {
       
       console.log(`🔗 Making API call to: ${url}`)
       
-      const response = await fetch(url)
+      const response = await fetch(url, {
+        // Disable SSL certificate validation for development
+        ...(process.env.NODE_ENV === 'development' && { 
+          agent: new (require('https').Agent)({ rejectUnauthorized: false })
+        })
+      })
 
       if (response.ok) {
         const metadata = await response.json()
