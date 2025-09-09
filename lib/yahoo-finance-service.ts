@@ -15,40 +15,7 @@ if (typeof window === 'undefined') {
 }
 
 import { apiService } from './api-service'
-
-interface YahooSession {
-  cookies: string
-  crumb: string
-  userAgent: string
-}
-
-interface QuoteData {
-  symbol: string
-  price: number
-  currency: string
-  change: number
-  changePercent: number
-  lastUpdated: string
-}
-
-interface SearchResult {
-  symbol: string
-  name: string
-  exchange: string
-  type: string
-  currency: string
-}
-
-interface ETFComposition {
-  symbol: string
-  name: string
-  domicile: string
-  withholdingTax: number
-  expenseRatio: number
-  country: Array<{ country: string; weight: number }>
-  sector: Array<{ sector: string; weight: number }>
-  currency: Array<{ currency: string; weight: number }>
-}
+import { YahooSession, ETFComposition, QuoteData, SearchResult } from '@/types/yahoo'
 
 class YahooFinanceService {
   private browser: any = null

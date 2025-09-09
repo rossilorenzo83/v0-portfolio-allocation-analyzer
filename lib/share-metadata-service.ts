@@ -1,21 +1,10 @@
 // Share/Stock Metadata Service
 // Handles fetching sector, country, and other metadata for individual shares/stocks
 
-interface YahooSession {
-  cookies: string
-  crumb: string
-  userAgent: string
-}
+import { YahooSession, AssetMetadata } from '@/types/yahoo'
 
-interface ShareMetadata {
-  symbol: string
-  name: string
-  sector: string
-  country: string
-  currency: string
-  type: string
-  exchange: string
-}
+// Alias AssetMetadata as ShareMetadata for compatibility
+type ShareMetadata = AssetMetadata
 
 class ShareMetadataService {
   private cache = new Map<string, { data: ShareMetadata; timestamp: number; ttl: number }>()

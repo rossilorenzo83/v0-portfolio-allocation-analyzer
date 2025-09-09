@@ -1,17 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { yahooFinanceService } from '@/lib/yahoo-finance-service'
-import { getEtfHoldings } from '@/lib/api-service';
-
-interface ETFComposition {
-  symbol: string
-  currency: Array<{ currency: string; weight: number }>
-  country: Array<{ country: string; weight: number }>
-  sector: Array<{ sector: string; weight: number }>
-  holdings: Array<{ symbol: string; name: string; weight: number }>
-  domicile: string
-  withholdingTax: number
-  lastUpdated: string
-}
+import { getEtfHoldings } from '@/lib/api-service'
+import { ETFComposition } from '@/types/yahoo'
 
 export async function GET(
   request: NextRequest,
