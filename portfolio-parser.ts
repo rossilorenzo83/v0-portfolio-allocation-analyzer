@@ -1124,17 +1124,19 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         if (Object.keys(countries).length > 0) {
           const largestCountry = Object.entries(countries).reduce((a, b) => countries[a[0]] > countries[b[0]] ? a : b)
           geography = largestCountry[0]
+          domicile = etfData.domicile
         }
       } else if (parsed.category === "Actions") {
         // For individual stocks, try to get share metadata
         try {
-          const shareMetadata = await apiService.getShareMetadata(parsed.symbol)
+          const shareMetadata = await apiService.getAssetMetadata(parsed.symbol)
           if (shareMetadata) {
             if (shareMetadata.sector && shareMetadata.sector !== "Unknown") {
               sector = shareMetadata.sector
             }
             if (shareMetadata.country && shareMetadata.country !== "Unknown") {
               geography = shareMetadata.country
+              domicile = shareMetadata.domicile
             }
           }
         } catch (error) {

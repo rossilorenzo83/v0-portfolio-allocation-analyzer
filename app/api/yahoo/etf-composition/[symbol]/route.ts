@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { yahooFinanceService } from '@/lib/yahoo-finance-service'
-import { getEtfHoldings } from '@/lib/api-service'
 import { ETFComposition } from '@/types/yahoo'
 import { normalizeSectorName, normalizeCountryName } from '@/lib/normalization-utils'
 
@@ -103,12 +102,34 @@ export async function GET(
 
         console.log(`📊 Holdings for ${symbol}:`, holdings.length, "holdings")
 
-        // Process country breakdown (infer from domicile and holdings for US market ETFs)
-        const countries = []
-        const domicile = summaryProfile?.domicile || inferDomicile(symbol)
-        if (domicile === 'US' || symbol.match(/^[A-Z]{2,5}$/)) {
-          // For US-listed ETFs, assume US market focus unless specified otherwise
-          countries.push({ country: 'United States', weight: 100 })
+        // Process country breakdown - prioritize actual country weightings from API
+        const countries: Array<{ country: string; weight: number }> = []
+        
+        // Try to get actual country distribution from fundProfile
+        const countryWeightings = fundProfile?.countryWeightings
+        console.log(`🌍 Raw country weightings for ${symbol}:`, JSON.stringify(countryWeightings, null, 2))
+        
+        if (countryWeightings && typeof countryWeightings === 'object') {
+          Object.entries(countryWeightings).forEach(([country, weightData]) => {
+            const weight = (weightData as any)?.raw || (typeof weightData === 'number' ? weightData : 0)
+            if (weight && weight > 0) {
+              console.log(`🌍 Processing country ${country}: ${weight} -> ${weight * 100}%`)
+              countries.push({
+                country: normalizeCountryName(country),
+                weight: weight * 100
+              })
+            }
+          })
+        }
+        
+        // Only fall back to inference if no API data available
+        if (countries.length === 0) {
+          console.log(`⚠️ No country weightings from API for ${symbol}, using fallback logic`)
+          const domicile = summaryProfile?.domicile || inferDomicile(symbol)
+          if (domicile === 'US' || symbol.match(/^[A-Z]{2,5}$/)) {
+            // For US-listed ETFs without country data, provide a reasonable default
+            countries.push({ country: 'United States', weight: 100 })
+          }
         }
 
         console.log(`🌍 Countries for ${symbol}:`, countries)
@@ -141,7 +162,7 @@ export async function GET(
             country: countries,
             sector: sectors,
             holdings: holdings,
-            domicile: summaryProfile?.domicile || inferDomicile(symbol),
+            domicile: summaryProfile?.domicile || fundProfile?.domicile || inferDomicileFromCountryAndSymbol(summaryProfile?.country, symbol),
             withholdingTax: inferWithholdingTax(symbol),
             lastUpdated: new Date().toISOString(),
           }
@@ -265,11 +286,12 @@ function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null 
     const countries: Array<{ country: string; weight: number }> = []
     const countryData = data?.quoteSummary?.result?.[0]?.fundProfile?.countryWeightings
     if (countryData) {
-      Object.entries(countryData).forEach(([country, weight]) => {
-        if (weight && (weight as number) > 0) {
+      Object.entries(countryData).forEach(([country, weightData]) => {
+        const weight = (weightData as any)?.raw || (typeof weightData === 'number' ? weightData : 0)
+        if (weight && weight > 0) {
           countries.push({
             country: normalizeCountryName(country),
-            weight: (weight as number) * 100
+            weight: weight * 100
           })
         }
       })
@@ -314,7 +336,7 @@ function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null 
       country: countries.length > 0 ? countries : [{ country: 'United States', weight: 100 }],
       sector: sectors.length > 0 ? sectors : [{ sector: 'Other', weight: 100 }],
       holdings: holdings,
-      domicile: summaryProfile?.domicile || fundProfile?.domicile || inferDomicile(symbol),
+      domicile: summaryProfile?.domicile || fundProfile?.domicile || inferDomicileFromCountryAndSymbol(summaryProfile?.country, symbol),
       withholdingTax: inferWithholdingTax(symbol),
       lastUpdated: new Date().toISOString()
     }
@@ -397,3 +419,33 @@ function getFallbackETFComposition(symbol: string): ETFComposition {
     lastUpdated: new Date().toISOString(),
   }
 } 
+
+function inferDomicileFromCountryAndSymbol(country: string, symbol: string): string {
+  // First try explicit domicile inference based on symbol patterns
+  const explicitDomicile = inferDomicile(symbol)
+  if (explicitDomicile !== "Unknown") {
+    return explicitDomicile
+  }
+
+  // If we have country information, use it to infer domicile
+  if (country) {
+    const countryToDomicile: Record<string, string> = {
+      "United States": "US",
+      "Ireland": "IE", 
+      "Switzerland": "CH",
+      "Luxembourg": "LU",
+      "Germany": "DE",
+      "France": "FR",
+      "United Kingdom": "GB",
+      "Canada": "CA",
+      "Netherlands": "NL",
+    }
+    
+    const domicile = countryToDomicile[country]
+    if (domicile) {
+      return domicile
+    }
+  }
+
+  return "Unknown"
+}

@@ -1,4 +1,4 @@
-plea/**
+/**
  * Bug Detection Tests - These tests would have caught the SQN sector allocation bug
  * 
  * This test suite validates that the portfolio parser correctly enriches individual stocks
@@ -11,7 +11,7 @@ import { parsePortfolioCsv } from "../../portfolio-parser"
 jest.mock('../../lib/api-service', () => ({
   apiService: {
     getETFData: jest.fn(),
-    getShareMetadata: jest.fn(),
+    getAssetMetadata: jest.fn(),
     getQuote: jest.fn(),
   }
 }))
@@ -23,7 +23,7 @@ describe("Bug Detection: SQN Sector Allocation Issue", () => {
     jest.clearAllMocks()
     
     // Mock successful share metadata responses (simulating working API)
-    mockApiService.getShareMetadata.mockImplementation((symbol) => {
+    mockApiService.getAssetMetadata.mockImplementation((symbol) => {
       const stockData = {
         'SQN': { symbol: 'SQN', sector: 'Financial Services', country: 'Switzerland', currency: 'CHF', type: 'EQUITY' },
         'AAPL': { symbol: 'AAPL', sector: 'Technology', country: 'United States', currency: 'USD', type: 'EQUITY' },
@@ -133,7 +133,7 @@ Actions, , , , , , , , , , , , ,
 
   it("DEMO: What the bug looked like with API failures", async () => {
     // Simulate the bug by making share metadata fail (returning "Unknown")
-    mockApiService.getShareMetadata.mockRejectedValue(new Error('Share metadata API failed'))
+    mockApiService.getAssetMetadata.mockRejectedValue(new Error('Share metadata API failed'))
     
     const csvContent = ` ,Symbole,Quantité,Coût unitaire,Valeur totale,Variation journalière,Var. quot. %,Prix,Dev.,G&P CHF,G&P %,Valeur totale CHF,Positions %,
 Actions, , , , , , , , , , , , , 

@@ -246,6 +246,43 @@ class ETFDataService {
           currencies: { "USD": 1.0 }
         }
       },
+      // US ETFs
+      'BND': {
+        symbol: "BND",
+        name: "Vanguard Total Bond Market ETF",
+        currency: "USD",
+        exchange: "NASDAQ",
+        domicile: "US",
+        composition: {
+          sectors: { "Government Bonds": 0.40, "Corporate Bonds": 0.30, "Mortgage Bonds": 0.20, "Municipal Bonds": 0.10 },
+          countries: { "United States": 1.0 },
+          currencies: { "USD": 1.0 }
+        }
+      },
+      'IEFA': {
+        symbol: "IEFA",
+        name: "iShares Core MSCI EAFE IMI Index ETF",
+        currency: "USD",
+        exchange: "NYSE",
+        domicile: "US",
+        composition: {
+          sectors: { "Technology": 0.15, "Financial Services": 0.20, "Healthcare": 0.15, "Consumer Discretionary": 0.12, "Industrials": 0.15, "Materials": 0.08, "Consumer Staples": 0.10, "Energy": 0.05 },
+          countries: { "Japan": 0.25, "United Kingdom": 0.15, "France": 0.12, "Germany": 0.10, "Switzerland": 0.08, "Canada": 0.08, "Netherlands": 0.05, "Australia": 0.05, "Other": 0.12 },
+          currencies: { "USD": 0.60, "EUR": 0.25, "JPY": 0.10, "GBP": 0.05 }
+        }
+      },
+      'VOOV': {
+        symbol: "VOOV",
+        name: "Vanguard S&P 500 Value ETF",
+        currency: "USD",
+        exchange: "NYSE",
+        domicile: "US",
+        composition: {
+          sectors: { "Financial Services": 0.25, "Healthcare": 0.18, "Industrials": 0.15, "Consumer Staples": 0.10, "Energy": 0.12, "Utilities": 0.08, "Materials": 0.05, "Consumer Discretionary": 0.07 },
+          countries: { "United States": 1.0 },
+          currencies: { "USD": 1.0 }
+        }
+      },
       // Swiss ETFs
       'SPICHA': {
         symbol: "SPICHA",

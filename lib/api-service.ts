@@ -206,87 +206,46 @@ class APIService {
       
       // Check if we're running server-side (has access to process.env)
       if (typeof process !== 'undefined' && process.env) {
-        // Server-side: Use Yahoo Finance quoteSummary API for detailed company info
-        const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryProfile,summaryDetail`
-        const response = await fetch(url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "application/json",
-          },
-        })
+        // Server-side: Use local share-metadata API route for proper Swiss symbol resolution
+        const url = `/api/yahoo/share-metadata/${encodeURIComponent(symbol)}`
+        const response = await fetch(`http://localhost:3000${url}`)
 
         if (response.ok) {
-          const data = await response.json()
-          const summaryProfile = data.quoteSummary?.result?.[0]?.summaryProfile
-          const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail
+          const metadata = await response.json()
           
-          if (summaryProfile) {
-            const metadata: AssetMetadata = {
-              symbol: symbol, // Always return original symbol
-              name: summaryProfile.longName || summaryProfile.shortName || symbol,
-              sector: summaryProfile.sector || this.inferSector(symbol),
-              country: summaryProfile.country || this.inferCountry(symbol),
-              currency: summaryProfile.currency || this.inferCurrency(symbol),
-              type: summaryProfile.quoteType || this.inferAssetType(symbol),
-              exchange: summaryProfile.exchange || this.inferExchange(symbol),
+          if (metadata && metadata.symbol) {
+            // Add domicile inference based on country and symbol
+            const domicile = this.inferDomicileFromCountry(metadata.country, symbol)
+            const enrichedMetadata = {
+              ...metadata,
+              domicile: domicile
             }
-
-            console.log(`✅ Real metadata found for ${symbol}:`, metadata)
-            this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
-            return metadata
-          }
-        }
-        
-        // Fallback to search API if quoteSummary fails
-        console.log(`🔄 quoteSummary failed for ${symbol}, trying search API...`)
-        const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}`
-        const searchResponse = await fetch(searchUrl, {
-        headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "application/json",
-          },
-        })
-
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json()
-          const result = searchData.quotes?.[0]
-          if (result) {
-            const metadata: AssetMetadata = {
-              symbol: symbol, // Always return original symbol
-              name: result.longname || result.shortname || symbol,
-              sector: this.inferSector(symbol), // Use inference as fallback
-              country: this.inferCountry(symbol), // Use inference as fallback
-              currency: result.currency || this.inferCurrency(symbol),
-              type: this.inferAssetType(symbol),
-              exchange: result.exchange || this.inferExchange(symbol),
-            }
-
-            console.log(`✅ Search metadata found for ${symbol}:`, metadata)
-            this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
-            return metadata
+            
+            console.log(`✅ Real metadata found for ${symbol}:`, enrichedMetadata)
+            this.setCache(cacheKey, enrichedMetadata, 60) // Cache for 1 hour
+            return enrichedMetadata
           }
         }
       } else {
-        // Client-side: Use Next.js API route
-        const response = await fetch(`${this.baseUrl}/search/${encodeURIComponent(symbol)}`)
+        // Client-side: Use Next.js share-metadata API route  
+        const response = await fetch(`${this.baseUrl}/share-metadata/${encodeURIComponent(symbol)}`)
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log(`✅ Metadata for ${symbol}:`, data)
-
-          const metadata: AssetMetadata = {
-          symbol: symbol, // Always return original symbol
-            name: data.name || symbol,
-            sector: data.sector || this.inferSector(symbol),
-            country: data.country || this.inferCountry(symbol),
-            currency: data.currency || this.inferCurrency(symbol),
-            type: data.type || this.inferAssetType(symbol),
-            exchange: data.exchange || this.inferExchange(symbol),
+        if (response.ok) {
+          const metadata = await response.json()
+          
+          if (metadata && metadata.symbol) {
+            // Add domicile inference based on country and symbol
+            const domicile = this.inferDomicileFromCountry(metadata.country, symbol)
+            const enrichedMetadata = {
+              ...metadata,
+              domicile: domicile
+            }
+            
+            console.log(`✅ Client-side metadata found for ${symbol}:`, enrichedMetadata)
+            this.setCache(cacheKey, enrichedMetadata, 60) // Cache for 1 hour
+            return enrichedMetadata
           }
-
-          this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
-          return metadata
-      } else {
+        } else {
           console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
         }
       }
@@ -560,14 +519,49 @@ class APIService {
   }
 
   private inferDomicile(symbol: string): string {
-    // US ETFs
-    if (symbol.match(/^(VTI|VXUS|VEA|VWO|SPY|QQQ|IVV)$/)) {
+    // US ETFs - Common US-domiciled ETFs
+    if (symbol.match(/^(VTI|VXUS|VEA|VWO|SPY|QQQ|IVV|BND|IEFA|VOOV|VB|VO|VV|VTEB|VGIT|VMOT|VCIT|VCSH)$/)) {
       return "US"
     }
 
     // European ETFs are typically Irish or Luxembourg
     if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
       return "IE" // Most are Irish
+    }
+
+    // Swiss ETFs
+    if (symbol.match(/^(SPICHA|SPICHACC|CHSPI)$/) || symbol.endsWith('.SW')) {
+      return "CH"
+    }
+
+    return "Unknown"
+  }
+
+  private inferDomicileFromCountry(country: string, symbol: string): string {
+    // First try explicit domicile inference based on symbol patterns
+    const explicitDomicile = this.inferDomicile(symbol)
+    if (explicitDomicile !== "Unknown") {
+      return explicitDomicile
+    }
+
+    // If we have country information, use it to infer domicile
+    if (country) {
+      const countryToDomicile: Record<string, string> = {
+        "United States": "US",
+        "Ireland": "IE", 
+        "Switzerland": "CH",
+        "Luxembourg": "LU",
+        "Germany": "DE",
+        "France": "FR",
+        "United Kingdom": "GB",
+        "Canada": "CA",
+        "Netherlands": "NL",
+      }
+      
+      const domicile = countryToDomicile[country]
+      if (domicile) {
+        return domicile
+      }
     }
 
     return "Unknown"
@@ -610,14 +604,16 @@ class APIService {
   }
 
   private getFallbackMetadata(symbol: string): AssetMetadata {
+    const country = this.inferCountry(symbol)
     return {
       symbol: symbol,
       name: this.getKnownName(symbol) || symbol,
       sector: this.inferSector(symbol),
-      country: this.inferCountry(symbol),
+      country: country,
       currency: this.inferCurrency(symbol),
       type: this.inferAssetType(symbol),
       exchange: this.inferExchange(symbol),
+      domicile: this.inferDomicileFromCountry(country, symbol),
     }
   }
 

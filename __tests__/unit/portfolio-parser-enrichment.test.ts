@@ -4,7 +4,7 @@ import { parsePortfolioCsv } from "../../portfolio-parser"
 jest.mock('../../lib/api-service', () => ({
   apiService: {
     getETFData: jest.fn(),
-    getShareMetadata: jest.fn(),
+    getAssetMetadata: jest.fn(),
     getQuote: jest.fn(),
   }
 }))
@@ -19,7 +19,7 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
   describe("Individual Stock Enrichment (Actions category)", () => {
     it("should enrich individual stocks with sector and geography from share metadata", async () => {
       // Mock successful share metadata response
-      mockApiService.getShareMetadata.mockResolvedValueOnce({
+      mockApiService.getAssetMetadata.mockResolvedValueOnce({
         symbol: 'AAPL',
         name: 'Apple Inc.',
         sector: 'Technology',
@@ -55,7 +55,7 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
 
     it("should handle multiple individual stocks correctly", async () => {
       // Mock different stocks with different sectors
-      mockApiService.getShareMetadata
+      mockApiService.getAssetMetadata
         .mockResolvedValueOnce({
           symbol: 'AAPL',
           sector: 'Technology',
@@ -115,7 +115,7 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
 
     it("should reproduce the SQN bug scenario - large stock position showing as Unknown", async () => {
       // Mock SQN metadata (this is the key stock from the user's CSV)
-      mockApiService.getShareMetadata.mockResolvedValueOnce({
+      mockApiService.getAssetMetadata.mockResolvedValueOnce({
         symbol: 'SQN',
         name: 'SQN',
         sector: 'Financial Services',
@@ -162,7 +162,7 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
 
     it("should gracefully handle share metadata API failures", async () => {
       // Mock API failure
-      mockApiService.getShareMetadata.mockRejectedValue(new Error('API Error'))
+      mockApiService.getAssetMetadata.mockRejectedValue(new Error('API Error'))
       mockApiService.getQuote.mockResolvedValue({ symbol: 'AAPL', price: 150 })
 
       const csvContent = `Actions, , , , , , , , , , , , , 
@@ -203,7 +203,7 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
       })
 
       // Mock stock data
-      mockApiService.getShareMetadata.mockResolvedValueOnce({
+      mockApiService.getAssetMetadata.mockResolvedValueOnce({
         symbol: 'AAPL',
         sector: 'Technology',
         country: 'United States',
@@ -244,7 +244,7 @@ Actions, , , , , , , , , , , , ,
   describe("Allocation Calculation Validation", () => {
     it("should calculate realistic sector allocations when stocks are properly enriched", async () => {
       // Large position in Financial Services (like SQN scenario)
-      mockApiService.getShareMetadata
+      mockApiService.getAssetMetadata
         .mockResolvedValueOnce({
           symbol: 'JPM',
           sector: 'Financial Services',
@@ -282,7 +282,7 @@ Actions, , , , , , , , , , , , ,
 
     it("should identify when sector allocation is dominated by 'Unknown' (the bug scenario)", async () => {
       // Simulate the bug - API fails, stocks default to "Unknown"
-      mockApiService.getShareMetadata.mockRejectedValue(new Error('API Error'))
+      mockApiService.getAssetMetadata.mockRejectedValue(new Error('API Error'))
       mockApiService.getQuote.mockResolvedValue({ price: 100 })
 
       const csvContent = `Actions, , , , , , , , , , , , , 

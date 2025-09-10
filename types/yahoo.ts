@@ -28,6 +28,7 @@ export interface AssetMetadata {
   currency: string
   type: string
   exchange?: string
+  domicile?: string
 }
 
 export interface QuoteData {
