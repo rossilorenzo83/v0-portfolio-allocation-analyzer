@@ -521,12 +521,29 @@ export async function resolveSymbolAndFetchData(
          console.log(`✅ Asset metadata found for ${symbol}:`, assetMetadata)
          
          // Convert asset metadata to ETF-like format for consistent analysis
+         // Fallback domicile logic: use domicile if available, otherwise infer from country
+         let domicile = assetMetadata.domicile
+         if (!domicile || domicile === "Unknown") {
+           // Map country names to domicile codes
+           const countryToDomicile: Record<string, string> = {
+             "Switzerland": "CH",
+             "United States": "US",
+             "Ireland": "IE",
+             "Luxembourg": "LU",
+             "Germany": "DE",
+             "France": "FR",
+             "United Kingdom": "GB",
+             "Netherlands": "NL",
+           }
+           domicile = countryToDomicile[assetMetadata.country] || "UNKNOWN"
+         }
+         
          etfData = {
            symbol: assetMetadata.symbol,
            name: assetMetadata.name,
            currency: assetMetadata.currency,
            exchange: assetMetadata.type || "UNKNOWN",
-           domicile: assetMetadata.country || "UNKNOWN",
+           domicile: domicile,
            composition: {
              sectors: { [assetMetadata.sector || "Unknown"]: 1.0 },
              countries: { [assetMetadata.country || "Unknown"]: 1.0 },
@@ -535,30 +552,10 @@ export async function resolveSymbolAndFetchData(
          }
          console.log(`✅ Converted asset metadata to ETF format for ${symbol}`)
        } else {
-         console.warn(`⚠️ No asset metadata found for ${symbol}`)
-         // Fallback to basic method if API route fails
-         const fallbackMetadata = await apiService.getAssetMetadata(symbol)
-         
-                   if (fallbackMetadata) {
-            console.log(`✅ Asset metadata found for ${symbol} (fallback):`, fallbackMetadata)
-            
-            // Convert asset metadata to ETF-like format for consistent analysis
-            etfData = {
-              symbol: fallbackMetadata.symbol,
-              name: fallbackMetadata.name,
-              currency: fallbackMetadata.currency,
-              exchange: fallbackMetadata.type || "UNKNOWN",
-              domicile: fallbackMetadata.country || "UNKNOWN",
-              composition: {
-                sectors: { [fallbackMetadata.sector || "Unknown"]: 1.0 },
-                countries: { [fallbackMetadata.country || "Unknown"]: 1.0 },
-                currencies: { [fallbackMetadata.currency || "USD"]: 1.0 },
-              },
-            }
-            console.log(`✅ Converted asset metadata to ETF format for ${symbol} (fallback)`)
-          } else {
-            console.warn(`⚠️ No asset metadata found for ${symbol}`)
-          }
+         console.warn(`⚠️ No asset metadata found for ${symbol} - skipping redundant fallback call`)
+         // REMOVED: Redundant fallback call to apiService.getAssetMetadata() that was causing duplicate API requests
+         // Both shareMetadataService and apiService call the same /api/yahoo/share-metadata endpoint
+         // The second call was failing with empty headers because the session was already consumed
       }
     }
     

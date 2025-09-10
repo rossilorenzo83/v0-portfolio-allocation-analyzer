@@ -67,6 +67,7 @@ const EUROPEAN_ETF_MAPPING: Record<string, string[]> = {
 
 // Swiss stock symbol mapping
 const SWISS_STOCK_MAPPING: Record<string, string> = {
+  // Major Swiss stocks
   NESN: "NESN.SW",
   NOVN: "NOVN.SW",
   ROG: "ROG.SW",
@@ -82,6 +83,13 @@ const SWISS_STOCK_MAPPING: Record<string, string> = {
   SCMN: "SCMN.SW",
   BAER: "BAER.SW",
   CFR: "CFR.SW",
+  
+  // Swiss financial services and ETF providers
+  SQN: "SQN.SW", // Swiss Quant Nasdaq 100 Index
+  SQRE: "SQRE.SW", // SwissRe
+  LISN: "LISN.SW", // Lindt & Sprüngli
+  HOLN: "HOLN.SW", // Holcim
+  SGSN: "SGSN.SW", // SGS
 }
 
 class APIService {
@@ -519,6 +527,13 @@ class APIService {
   }
 
   private inferDomicile(symbol: string): string {
+    // Swiss stocks and ETFs (check first since they're most specific)
+    if (Object.keys(SWISS_STOCK_MAPPING).includes(symbol) || 
+        symbol.match(/^(SPICHA|SPICHACC|CHSPI)$/) || 
+        symbol.endsWith('.SW')) {
+      return "CH"
+    }
+
     // US ETFs - Common US-domiciled ETFs
     if (symbol.match(/^(VTI|VXUS|VEA|VWO|SPY|QQQ|IVV|BND|IEFA|VOOV|VB|VO|VV|VTEB|VGIT|VMOT|VCIT|VCSH)$/)) {
       return "US"
@@ -527,11 +542,6 @@ class APIService {
     // European ETFs are typically Irish or Luxembourg
     if (Object.keys(EUROPEAN_ETF_MAPPING).includes(symbol)) {
       return "IE" // Most are Irish
-    }
-
-    // Swiss ETFs
-    if (symbol.match(/^(SPICHA|SPICHACC|CHSPI)$/) || symbol.endsWith('.SW')) {
-      return "CH"
     }
 
     return "Unknown"
@@ -753,6 +763,11 @@ class APIService {
       SCMN: "Swisscom AG",
       BAER: "Julius Baer Group Ltd",
       CFR: "Compagnie Financière Richemont SA",
+      SQN: "Swiss Quant Nasdaq 100 Index",
+      SQRE: "Swiss Re Ltd",
+      LISN: "Lindt & Sprüngli AG",
+      HOLN: "Holcim Ltd",
+      SGSN: "SGS SA",
     }
 
     return names[symbol] || null

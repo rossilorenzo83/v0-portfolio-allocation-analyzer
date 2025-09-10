@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -18,6 +18,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recha
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { FileUploadHelper } from "@/components/file-upload-helper"
 import { LoadingProgress } from "@/components/loading-progress"
+import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react"
 
 const COLORS = [
   "#0088FE",
@@ -140,15 +141,65 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
     if (!data || data.length === 0) {
       return <p className="text-center text-gray-500">No data available for {title}.</p>
     }
+
+    // Sort data by percentage (highest first) for consistent ordering
+    const sortedData = useMemo(() => 
+      [...data].sort((a, b) => b.percentage - a.percentage), 
+      [data]
+    )
+
+    // State for table sorting
+    const [sortConfig, setSortConfig] = useState<{key: keyof AllocationItem, direction: 'asc' | 'desc'} | null>(
+      {key: 'percentage', direction: 'desc'} // Default sort by percentage desc
+    )
+
+    // Sort table data based on current sort config
+    const sortedTableData = useMemo(() => {
+      if (!sortConfig) return sortedData
+      
+      return [...sortedData].sort((a, b) => {
+        const aVal = a[sortConfig.key]
+        const bVal = b[sortConfig.key]
+        
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+          return sortConfig.direction === 'asc' 
+            ? aVal.localeCompare(bVal) 
+            : bVal.localeCompare(aVal)
+        }
+        
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal
+        }
+        
+        return 0
+      })
+    }, [sortedData, sortConfig])
+
+    const handleSort = (key: keyof AllocationItem) => {
+      setSortConfig(current => ({
+        key,
+        direction: current?.key === key && current?.direction === 'desc' ? 'asc' : 'desc'
+      }))
+    }
+
+    const getSortIcon = (key: keyof AllocationItem) => {
+      if (!sortConfig || sortConfig.key !== key) {
+        return <ChevronsUpDown className="ml-2 h-4 w-4 text-gray-400" />
+      }
+      return sortConfig.direction === 'desc' 
+        ? <ChevronDown className="ml-2 h-4 w-4" />
+        : <ChevronUp className="ml-2 h-4 w-4" />
+    }
+
     return (
       <Card className="w-full" data-testid={`${title.toLowerCase().replace(/\s/g, "-")}-chart`}>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
-          <CardDescription>Breakdown of your portfolio by {title.toLowerCase()}.</CardDescription>
+          <CardDescription>Breakdown of your portfolio by {title.toLowerCase()}. Legend and data ordered by highest percentage.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center p-4">
           <ChartContainer
-            config={data.reduce((acc: Record<string, any>, item, idx) => {
+            config={sortedData.reduce((acc: Record<string, any>, item, idx) => {
               acc[item.name.toLowerCase().replace(/\s/g, "-")] = {
                 label: item.name,
                 color: COLORS[idx % COLORS.length],
@@ -160,8 +211,8 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
           >
             <ResponsiveContainer width="100%" height="100%">
               <PieChart data-testid="pie-chart">
-                <Pie data={data} cx="50%" cy="50%" outerRadius={100} fill="#8884d8" dataKey="value" labelLine={false}>
-                  {data.map((entry, index) => (
+                <Pie data={sortedData} cx="50%" cy="50%" outerRadius={100} fill="#8884d8" dataKey="value" labelLine={false}>
+                  {sortedData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -174,17 +225,41 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Value (CHF)</TableHead>
-                  <TableHead className="text-right">Percentage</TableHead>
+                  <TableHead 
+                    className="cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-gray-800"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center">
+                      Category
+                      {getSortIcon('name')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="text-right cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-gray-800"
+                    onClick={() => handleSort('value')}
+                  >
+                    <div className="flex items-center justify-end">
+                      Value (CHF)
+                      {getSortIcon('value')}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="text-right cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-gray-800"
+                    onClick={() => handleSort('percentage')}
+                  >
+                    <div className="flex items-center justify-end">
+                      Percentage
+                      {getSortIcon('percentage')}
+                    </div>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.map((item, index) => (
+                {sortedTableData.map((item, index) => (
                   <TableRow key={index}>
-                    <TableCell>{item.name}</TableCell>
-                    <TableCell className="text-right">{item.value.toFixed(2)}</TableCell>
-                    <TableCell className="text-right">{item.percentage.toFixed(2)}%</TableCell>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell className="text-right font-mono">{item.value.toLocaleString('en-CH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
+                    <TableCell className="text-right font-mono font-semibold">{item.percentage.toFixed(2)}%</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

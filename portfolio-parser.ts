@@ -1073,15 +1073,44 @@ function detectCSVDelimiter(csvText: string): string {
 
 async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Promise<PortfolioPosition[]> {
   const enrichedPositions: PortfolioPosition[] = []
+  
+  console.log(`🚀 Processing ${parsedPositions.length} positions with parallelism (max 3 concurrent)`)
 
-  for (const parsed of parsedPositions) {
+  // Process positions in batches for controlled parallelism
+  const BATCH_SIZE = 3 // Avoid overwhelming the API
+  const batches = []
+  
+  for (let i = 0; i < parsedPositions.length; i += BATCH_SIZE) {
+    batches.push(parsedPositions.slice(i, i + BATCH_SIZE))
+  }
+  
+  for (const batch of batches) {
+    console.log(`📦 Processing batch of ${batch.length} positions...`)
+    
+    const batchPromises = batch.map(async (parsed) => {
     console.log(`Enriching ${parsed.symbol}...`)
 
     try {
+      // Smart symbol resolution based on CSV currency
+      // Use currency from CSV to determine likely exchange
+      let smartSymbol = parsed.symbol
+      if (!parsed.symbol.includes('.')) {
+        if (parsed.currency === 'CHF') {
+          smartSymbol = `${parsed.symbol}.SW`
+          console.log(`🇨🇭 CSV currency is CHF, trying Swiss exchange: ${parsed.symbol} → ${smartSymbol}`)
+        } else if (parsed.currency === 'GBP') {
+          smartSymbol = `${parsed.symbol}.L`
+          console.log(`🇬🇧 CSV currency is GBP, trying London exchange: ${parsed.symbol} → ${smartSymbol}`)
+        } else if (parsed.currency === 'EUR') {
+          // For EUR, we'd need more logic to determine which European exchange
+          console.log(`🇪🇺 CSV currency is EUR for ${parsed.symbol}, keeping as-is (needs exchange detection)`)
+        }
+      }
+      
       // Use centralized ETF data service for all enrichment
       // This handles symbol resolution, API calls, caching, and fallbacks
       const position = {
-        symbol: parsed.symbol,
+        symbol: smartSymbol, // Use currency-aware symbol
         name: parsed.name,
         currency: parsed.currency,
         exchange: "UNKNOWN", // Will be resolved by the service
@@ -1089,7 +1118,15 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         category: parsed.category
       }
 
-      const { etfData, quoteData } = await resolveSymbolAndFetchData(position)
+      // Add timeout protection to prevent infinite loading
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Timeout enriching ${parsed.symbol} after 30 seconds`)), 30000)
+      })
+      
+      const { etfData, quoteData } = await Promise.race([
+        resolveSymbolAndFetchData(position),
+        timeoutPromise
+      ])
       
       console.log(`Enrichment results for ${parsed.symbol}:`, {
         etfData: etfData ? 'Found' : 'Not found',
@@ -1101,7 +1138,7 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
 
       // Determine tax optimization for Swiss investors
       // Use original domicile from CSV if available, otherwise use enriched data
-      const domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfData?.domicile || "Unknown")
+      let domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfData?.domicile || "Unknown")
 
       // For Swiss investors: US domiciled ETFs are tax-optimized (15% withholding tax)
       // Irish/Luxembourg ETFs are also good (15% withholding tax)
@@ -1112,12 +1149,13 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
       let sector = parsed.sector || "Unknown"
       let geography = parsed.geography || "Unknown"
       
-      if (etfData?.composition && (parsed.category === "ETF" || parsed.category === "Funds")) {
-        // For ETFs, use ETF composition data for sector and geography
+      if (etfData?.composition) {
+        // For ETFs AND individual stocks (converted to ETF-like format), use composition data
         const sectors = etfData.composition.sectors
         if (Object.keys(sectors).length > 0) {
           const largestSector = Object.entries(sectors).reduce((a, b) => sectors[a[0]] > sectors[b[0]] ? a : b)
           sector = largestSector[0]
+          console.log(`🎯 Using ETF composition sector for ${parsed.symbol}: ${sector}`)
         }
         
         const countries = etfData.composition.countries
@@ -1125,23 +1163,20 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
           const largestCountry = Object.entries(countries).reduce((a, b) => countries[a[0]] > countries[b[0]] ? a : b)
           geography = largestCountry[0]
           domicile = etfData.domicile
+          console.log(`🌍 Using ETF composition country for ${parsed.symbol}: ${geography}`)
         }
-      } else if (parsed.category === "Actions") {
-        // For individual stocks, try to get share metadata
-        try {
-          const shareMetadata = await apiService.getAssetMetadata(parsed.symbol)
-          if (shareMetadata) {
-            if (shareMetadata.sector && shareMetadata.sector !== "Unknown") {
-              sector = shareMetadata.sector
-            }
-            if (shareMetadata.country && shareMetadata.country !== "Unknown") {
-              geography = shareMetadata.country
-              domicile = shareMetadata.domicile
-            }
-          }
-        } catch (error) {
-          console.warn(`Failed to get share metadata for ${parsed.symbol}:`, error)
-          // Keep default "Unknown" values
+      }
+      
+      // If we still don't have sector/geography data and this is a stock, log it
+      if ((sector === "Unknown" || geography === "Unknown") && parsed.category === "Actions") {
+        console.warn(`⚠️ No enrichment data found for individual stock ${parsed.symbol}`)
+        console.warn(`  - Sector: ${sector}`)
+        console.warn(`  - Geography: ${geography}`)
+        console.warn(`  - ETF data available: ${!!etfData}`)
+        console.warn(`  - ETF composition available: ${!!etfData?.composition}`)
+        if (etfData?.composition) {
+          console.warn(`  - Composition sectors:`, Object.keys(etfData.composition.sectors))
+          console.warn(`  - Composition countries:`, Object.keys(etfData.composition.countries))
         }
       }
 
@@ -1170,9 +1205,16 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         etfComposition: etfData?.composition || undefined,
       }
 
-      enrichedPositions.push(enrichedPosition)
+      return enrichedPosition
     } catch (error) {
       console.error(`Error enriching ${parsed.symbol}:`, error)
+      
+      // If it's a timeout error, log more details
+      if (error instanceof Error && error.message.includes('Timeout')) {
+        console.error(`❌ TIMEOUT: CSV loading stuck on ${parsed.symbol} - this suggests an API hang`)
+        console.error(`   Position category: ${parsed.category}`)
+        console.error(`   This often indicates Yahoo Finance session or network issues`)
+      }
 
       // Add position with basic data if API fails
       const enrichedPosition: PortfolioPosition = {
@@ -1198,8 +1240,15 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         isOTC: false,
       }
 
-      enrichedPositions.push(enrichedPosition)
+      return enrichedPosition
     }
+    })
+    
+    // Wait for all positions in this batch to complete
+    const batchResults = await Promise.all(batchPromises)
+    enrichedPositions.push(...batchResults)
+    
+    console.log(`✅ Batch completed, ${enrichedPositions.length}/${parsedPositions.length} positions processed`)
   }
 
   // Calculate position percentages
@@ -1277,22 +1326,35 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF" || position.category === "Funds") {
-      // Use ETF composition data for true country exposure
-      if (position.etfComposition && position.etfComposition.countries) {
-        const countries = position.etfComposition.countries
-        Object.entries(countries).forEach(([country, weight]) => {
-          const value = weight * position.totalValueCHF
-          const current = allocation.get(country) || 0
-          allocation.set(country, current + value)
+    // Use ETF composition data for true country exposure (works for both ETFs and individual stocks converted to ETF-like format)
+    let hasCountryData = false
+    
+    if (position.etfComposition) {
+        // Try new structure first: country array
+        if (position.etfComposition.country && Array.isArray(position.etfComposition.country)) {
+          console.log(`📍 Using NEW country structure for ${position.symbol}:`, position.etfComposition.country)
+          position.etfComposition.country.forEach(({ country, weight }) => {
+            const value = (weight / 100) * position.totalValueCHF // weight is in percentage
+            const current = allocation.get(country) || 0
+            allocation.set(country, current + value)
           })
-        } else {
-        // Fallback to geography if no ETF composition data
-        const current = allocation.get(position.geography || "Unknown") || 0
-        allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
+          hasCountryData = true
+        }
+        // Try old structure: countries object
+        else if (position.etfComposition.countries) {
+          console.log(`📍 Using OLD country structure for ${position.symbol}:`, position.etfComposition.countries)
+          Object.entries(position.etfComposition.countries).forEach(([country, weight]) => {
+            const value = weight * position.totalValueCHF
+            const current = allocation.get(country) || 0
+            allocation.set(country, current + value)
+          })
+          hasCountryData = true
+        }
       }
-    } else {
-      // Direct country exposure
+    
+    if (!hasCountryData) {
+      // Fallback to geography if no ETF composition data (for all asset types)
+      console.log(`📍 No composition country data for ${position.symbol} (${position.category}), using geography:`, position.geography)
       const current = allocation.get(position.geography || "Unknown") || 0
       allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
     }
@@ -1310,22 +1372,22 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF" || position.category === "Funds") {
-      // Use ETF composition data for true sector exposure
-      if (position.etfComposition && position.etfComposition.sectors) {
-        const sectors = position.etfComposition.sectors
-        Object.entries(sectors).forEach(([sector, weight]) => {
-          const value = weight * position.totalValueCHF
-          const current = allocation.get(sector) || 0
-          allocation.set(sector, current + value)
-          })
-        } else {
-        // Fallback to mixed if no ETF composition data
-        const current = allocation.get("Mixed") || 0
-        allocation.set("Mixed", current + position.totalValueCHF)
-      }
-    } else {
-      // Direct sector exposure
+    // Use ETF composition data for true sector exposure (works for both ETFs and individual stocks converted to ETF-like format)
+    let hasSectorData = false
+    
+    if (position.etfComposition && position.etfComposition.sectors) {
+      const sectors = position.etfComposition.sectors
+      Object.entries(sectors).forEach(([sector, weight]) => {
+        const value = weight * position.totalValueCHF
+        const current = allocation.get(sector) || 0
+        allocation.set(sector, current + value)
+      })
+      hasSectorData = true
+    }
+    
+    if (!hasSectorData) {
+      // Fallback to position.sector if no ETF composition data (for all asset types)
+      console.log(`📊 No composition sector data for ${position.symbol} (${position.category}), using position sector:`, position.sector)
       const current = allocation.get(position.sector || "Unknown") || 0
       allocation.set(position.sector || "Unknown", current + position.totalValueCHF)
     }
