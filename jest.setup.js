@@ -75,6 +75,76 @@ global.fetch = jest.fn((url) => {
           ],
         }),
     })
+  } else if (url.includes("query1.finance.yahoo.com/v10/finance/quoteSummary/")) {
+    // Mock direct Yahoo Finance asset metadata requests
+    const symbol = url.split("/").pop()?.split("?")[0]
+    const sectorMappings = {
+      'ABNB': 'Consumer Cyclical',
+      'AZN': 'Healthcare',
+      'BABA': 'Consumer Cyclical',
+      'META': 'Communication Services',
+      'OXY': 'Energy', 
+      'SQN': 'Financial Services',
+      'SQN.SW': 'Financial Services',
+      'UMC': 'Technology',
+      'AAPL': 'Technology',
+      'JPM': 'Financial Services',
+      'JNJ': 'Healthcare',
+      'XOM': 'Energy',
+      'NESN': 'Consumer Defensive'
+    }
+    return Promise.resolve({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          quoteSummary: {
+            result: [
+              {
+                summaryProfile: {
+                  sector: sectorMappings[symbol] || 'Technology',
+                  country: symbol === 'NESN' || symbol === 'SQN' || symbol === 'SQN.SW' ? 'Switzerland' : 'United States',
+                  industry: 'Technology Services'
+                },
+                summaryDetail: {
+                  currency: 'USD',
+                  marketCap: { raw: 1000000000 }
+                }
+              },
+            ],
+          },
+        }),
+    })
+  } else if (url.includes("localhost:3000/api/yahoo/share-metadata/")) {
+    // Mock local share-metadata API route calls
+    const symbol = url.split("/").pop()
+    const sectorMappings = {
+      'ABNB': 'Consumer Cyclical',
+      'AZN': 'Healthcare',
+      'BABA': 'Consumer Cyclical',
+      'META': 'Communication Services',
+      'OXY': 'Energy', 
+      'SQN': 'Financial Services',
+      'SQN.SW': 'Financial Services',
+      'UMC': 'Technology',
+      'AAPL': 'Technology',
+      'JPM': 'Financial Services',
+      'JNJ': 'Healthcare',
+      'XOM': 'Energy',
+      'NESN': 'Consumer Defensive'
+    }
+    return Promise.resolve({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          symbol: symbol,
+          name: symbol,
+          sector: sectorMappings[symbol] || 'Technology',
+          country: symbol === 'NESN' || symbol === 'SQN' || symbol === 'SQN.SW' ? 'Switzerland' : 'United States',
+          currency: 'USD',
+          type: 'EQUITY',
+          exchange: 'NMS'
+        }),
+    })
   }
   return Promise.reject(new Error(`Unhandled fetch request: ${url}`))
 })

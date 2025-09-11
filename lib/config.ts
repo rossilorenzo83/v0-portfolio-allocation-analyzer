@@ -30,7 +30,6 @@ export function validateAPIConfig() {
   const warnings: string[] = []
 
   // Yahoo Finance doesn't require API keys, so no validation needed
-  console.log("Using Yahoo Finance API - no API key required")
 
   return {
     isValid: true,

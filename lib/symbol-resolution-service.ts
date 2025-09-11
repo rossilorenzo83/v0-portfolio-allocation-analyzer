@@ -49,11 +49,9 @@ class SymbolResolutionService {
     // Check cache first
     const cached = this.symbolCache.get(originalSymbol)
     if (cached && this.isCacheValid(cached)) {
-      console.log(`📋 Cache hit for symbol resolution: ${originalSymbol} -> ${cached.resolvedSymbol}`)
       return cached
     }
 
-    console.log(`🔍 Resolving symbol: ${originalSymbol}`)
 
     // If it's not a European symbol, return as-is
     if (!this.isEuropeanSymbol(originalSymbol)) {
@@ -72,17 +70,14 @@ class SymbolResolutionService {
 
     // For European symbols, try all variations using the sophisticated service
     const variations = this.getSymbolVariations(originalSymbol)
-    console.log(`  🌍 European symbol detected: ${originalSymbol}, trying variations:`, variations)
 
     for (const variation of variations) {
       try {
-        console.log(`  Trying: ${variation}`)
         
         // Use the sophisticated service to search for this variation
         const searchResult = await yahooFinanceService.searchSymbol(variation)
         
         if (searchResult && searchResult.symbol === variation) {
-          console.log(`  ✅ Found working symbol: ${variation}`)
           
           const result: SymbolResolutionResult = {
             originalSymbol,
@@ -98,13 +93,13 @@ class SymbolResolutionService {
           return result
         }
       } catch (error) {
-        console.log(`  ❌ Error with ${variation}:`, error)
+        // Log search error for debugging but continue trying other variations
+        console.warn(`Symbol search failed for variation ${variation}:`, error)
         continue
       }
     }
 
     // If no variation works, return the original symbol
-    console.log(`  🔄 No working symbol found, using original: ${originalSymbol}`)
     const result: SymbolResolutionResult = {
       originalSymbol,
       resolvedSymbol: originalSymbol,

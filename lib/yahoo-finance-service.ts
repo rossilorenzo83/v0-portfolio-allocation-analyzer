@@ -1,5 +1,34 @@
 // Conditional import for Playwright - only on server side
-let playwright: any = null
+interface PlaywrightBrowser {
+  newPage(): Promise<PlaywrightPage>
+  close(): Promise<void>
+}
+
+interface PlaywrightPage {
+  goto(url: string, options?: { waitUntil?: string }): Promise<void>
+  waitForSelector(selector: string, options?: { timeout?: number }): Promise<any>
+  click(selector: string): Promise<void>
+  evaluate(fn: () => any): Promise<any>
+  context(): { cookies(): Promise<PlaywrightCookie[]> }
+  close(): Promise<void>
+}
+
+interface PlaywrightCookie {
+  name: string
+  value: string
+  domain: string
+  path: string
+}
+
+interface PlaywrightModule {
+  chromium: {
+    launch(options?: { headless?: boolean }): Promise<PlaywrightBrowser>
+  }
+  Browser: any
+  Page: any
+}
+
+let playwright: PlaywrightModule | null = null
 let Browser: any = null
 let Page: any = null
 
@@ -15,48 +44,15 @@ if (typeof window === 'undefined') {
 }
 
 import { apiService } from './api-service'
-
-interface YahooSession {
-  cookies: string
-  crumb: string
-  userAgent: string
-}
-
-interface QuoteData {
-  symbol: string
-  price: number
-  currency: string
-  change: number
-  changePercent: number
-  lastUpdated: string
-}
-
-interface SearchResult {
-  symbol: string
-  name: string
-  exchange: string
-  type: string
-  currency: string
-}
-
-interface ETFComposition {
-  symbol: string
-  name: string
-  domicile: string
-  withholdingTax: number
-  expenseRatio: number
-  country: Array<{ country: string; weight: number }>
-  sector: Array<{ sector: string; weight: number }>
-  currency: Array<{ currency: string; weight: number }>
-}
+import { YahooSession, ETFComposition, QuoteData, SearchResult } from '@/types/yahoo'
 
 class YahooFinanceService {
-  private browser: any = null
+  private browser: PlaywrightBrowser | null = null
   private session: YahooSession | null = null
   private sessionExpiry: number = 0
   private readonly SESSION_DURATION = 5 * 60 * 1000 // 5 minutes (as requested)
 
-  private async getBrowser(): Promise<any> {
+  private async getBrowser(): Promise<PlaywrightBrowser> {
     if (!playwright) {
       throw new Error('Playwright not available on client side')
     }
@@ -90,13 +86,12 @@ class YahooFinanceService {
     return await this.browser.newPage()
   }
 
-  async handleEUDisclaimer(page: any): Promise<void> {
+  async handleEUDisclaimer(page: PlaywrightPage): Promise<void> {
     if (!playwright) {
       throw new Error('Playwright not available on client side')
     }
     
     try {
-      console.log('🔍 Checking for EU disclaimer...')
       
       // Wait for potential disclaimer elements
       const disclaimerSelectors = [
@@ -114,27 +109,27 @@ class YahooFinanceService {
         try {
           const element = await page.$(selector)
           if (element) {
-            console.log(`✅ Found disclaimer element: ${selector}`)
             await element.click()
             await page.waitForTimeout(2000) // Wait for page to load
             break
           }
         } catch (e) {
-          // Continue to next selector
+          // Continue to next selector - log for debugging
+          console.warn(`Disclaimer selector ${selector} failed:`, e)
         }
       }
     } catch (error) {
-      console.log('⚠️ No EU disclaimer found or error handling it:', error)
+      // Failed to handle EU disclaimer, but this is non-critical
+      console.error('Error handling EU disclaimer:', error)
     }
   }
 
-  private async extractCrumbFromPage(page: any): Promise<string | null> {
+  private async extractCrumbFromPage(page: PlaywrightPage): Promise<string | null> {
     if (!playwright) {
       throw new Error('Playwright not available on client side')
     }
     
     try {
-      console.log('🔑 Attempting to extract crumb token...')
       
       // Try multiple methods to extract crumb
       const crumbScript = await page.evaluate(() => {
@@ -175,20 +170,16 @@ class YahooFinanceService {
       })
       
       if (crumbScript && crumbScript !== 'default-crumb') {
-        console.log('✅ Crumb token extracted successfully')
         return crumbScript
       }
       
-      console.log('⚠️ Crumb token not found, will try without crumb')
       return null
     } catch (error) {
-      console.log('⚠️ Error extracting crumb token:', error)
       return null
     }
   }
 
   private async establishSession(): Promise<YahooSession> {
-    console.log('🔐 Establishing new Yahoo Finance session...')
     
     const page = await this.createPage()
     
@@ -204,10 +195,10 @@ class YahooFinanceService {
       
       // Get cookies and filter only essential ones
       const allCookies = await page.context().cookies()
-      const essentialCookies = allCookies.filter((cookie: any) => 
+      const essentialCookies = allCookies.filter((cookie: PlaywrightCookie) => 
         ['B', 'A1', 'A3', 'A1S', 'A2', 'GUC', 'cmp', 'euconsent-v2'].includes(cookie.name)
       )
-      const cookieString = essentialCookies.map((cookie: any) => `${cookie.name}=${cookie.value}`).join('; ')
+      const cookieString = essentialCookies.map((cookie: PlaywrightCookie) => `${cookie.name}=${cookie.value}`).join('; ')
       
       // Get user agent
       const userAgent = await page.evaluate(() => navigator.userAgent)
@@ -218,16 +209,11 @@ class YahooFinanceService {
       const session: YahooSession = {
         cookies: cookieString,
         crumb: crumb || '',
-        userAgent: userAgent
+        userAgent
       }
       
-      console.log('✅ New session established successfully')
-      console.log(`🍪 Essential cookies: ${essentialCookies.length}/${allCookies.length} cookies`)
-      console.log(`🍪 Cookie string length: ${cookieString.length} chars`)
       if (crumb) {
-        console.log(`🔑 Crumb: ${crumb.substring(0, 10)}...`)
       } else {
-        console.log('⚠️ No crumb found, using default')
       }
       
       return session
@@ -241,13 +227,10 @@ class YahooFinanceService {
     const now = Date.now()
     
     if (!this.session || now > this.sessionExpiry) {
-      console.log('🔄 Session expired or not available, establishing new session...')
       this.session = await this.establishSession()
       this.sessionExpiry = now + this.SESSION_DURATION
-      console.log(`⏰ Session will expire at: ${new Date(this.sessionExpiry).toLocaleTimeString()}`)
     } else {
       const remainingTime = Math.round((this.sessionExpiry - now) / 1000)
-      console.log(`📋 Using cached session (${remainingTime}s remaining)`)
     }
     
     return this.session
@@ -257,7 +240,6 @@ class YahooFinanceService {
     try {
       // Check if Playwright is available
       if (!playwright) {
-        console.log('⚠️ Playwright not available, using fallback quote data')
         return {
           symbol,
           price: 0,
@@ -284,7 +266,10 @@ class YahooFinanceService {
         headers['X-Crumb'] = session.crumb
       }
       
-      const response = await fetch(url, { headers })
+      const response = await fetch(url, { 
+        headers,
+        // (SSL certificate validation remains enabled in all environments)
+      })
 
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status}`)
@@ -309,7 +294,7 @@ class YahooFinanceService {
       }
 
       return {
-        symbol: symbol,
+        symbol,
         price: Number(currentPrice.toFixed(2)),
         currency: meta.currency || 'USD',
         change: Number(change.toFixed(2)),
@@ -340,7 +325,10 @@ class YahooFinanceService {
         headers['X-Crumb'] = session.crumb
       }
       
-      const response = await fetch(url, { headers })
+      const response = await fetch(url, { 
+        headers,
+        // Do not disable SSL certificate validation
+      })
 
       if (!response.ok) {
         throw new Error(`API request failed: ${response.status}`)
@@ -374,7 +362,6 @@ class YahooFinanceService {
       const session = await this.getValidSession()
       
       // Use the existing working logic from api-service.ts, but pass session data
-      console.log(`📊 Using existing api-service logic for ETF composition: ${symbol}`)
       
       // Pass session data to apiService for authenticated calls
       const etfData = await apiService.getETFCompositionWithSession(symbol, session)

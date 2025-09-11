@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       
       // Return mock data as fallback
       const mockData = {
-        symbol: symbol,
+        symbol,
         name: `${symbol} Stock`,
         exchange: "NASDAQ",
         type: "EQUITY",
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     
     // Return mock data as fallback
     const mockData = {
-      symbol: symbol,
+      symbol,
       name: `${symbol} Stock`,
       exchange: "NASDAQ",
       type: "EQUITY",

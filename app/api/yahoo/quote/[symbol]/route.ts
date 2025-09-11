@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       
       // Return mock data as fallback
       const mockData = {
-        symbol: symbol,
+        symbol,
         price: 100.00,
         currency: "USD",
         change: 1.50,
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     
     // Return mock data as fallback
     const mockData = {
-      symbol: symbol,
+      symbol,
       price: 100.00,
       currency: "USD",
       change: 1.50,

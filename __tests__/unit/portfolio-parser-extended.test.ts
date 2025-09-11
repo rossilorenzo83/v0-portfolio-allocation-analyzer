@@ -232,4 +232,64 @@ GOOGL,"Alphabet Inc. - Class A",5,2500`
       expect(result.positions).toBeDefined()
     })
   })
+
+  describe('Portfolio Allocation Bug Regression Tests', () => {
+    it('should enrich individual stocks with proper sectors (SQN bug regression test)', async () => {
+      // This test specifically targets the bug where individual stocks get "Unknown" sectors
+      const csvContent = `Actions, , , , , , , , , , , , , 
+ ,SQN,1000,100.00,100000.00,,,100.00,CHF,0,0%,100000.00,90%,
+ ,AAPL,100,100.00,10000.00,,,100.00,USD,0,0%,10000.00,10%,`
+
+      const result = await parsePortfolioCsv(csvContent)
+
+      // Validate positions exist
+      expect(result.positions).toHaveLength(2)
+      
+      const sqnPosition = result.positions.find(p => p.symbol === 'SQN')
+      const aaplPosition = result.positions.find(p => p.symbol === 'AAPL')
+      
+      expect(sqnPosition).toBeDefined()
+      expect(aaplPosition).toBeDefined()
+      
+      // CRITICAL BUG CHECK: The sector allocation should not be dominated by "Unknown"
+      const sectorAllocation = result.trueSectorAllocation
+      const unknownSector = sectorAllocation.find(s => s.name === 'Unknown')
+      
+      // This is the key assertion that would catch the original bug
+      if (unknownSector) {
+        // Before fix: This would be ~100% due to all stocks being "Unknown"
+        // After fix: This should be much lower
+        expect(unknownSector.percentage).toBeLessThan(95) // Catch the 90%+ "Unknown" bug
+      }
+      
+      // Should have at least some non-Unknown sectors
+      const knownSectors = sectorAllocation.filter(s => s.name !== 'Unknown')
+      expect(knownSectors.length).toBeGreaterThan(0)
+      
+      // Total percentages should add up to ~100%
+      const totalPercentage = sectorAllocation.reduce((sum, s) => sum + s.percentage, 0)
+      expect(totalPercentage).toBeCloseTo(100, 1)
+    })
+
+    it('should prevent country allocation dominated by Unknown', async () => {
+      // Test country/geography allocation bug
+      const csvContent = `Actions, , , , , , , , , , , , , 
+ ,SQN,1000,100.00,100000.00,,,100.00,CHF,0,0%,100000.00,85%,
+ ,AAPL,100,100.00,10000.00,,,100.00,USD,0,0%,10000.00,15%,`
+
+      const result = await parsePortfolioCsv(csvContent)
+
+      const countryAllocation = result.trueCountryAllocation
+      const unknownCountry = countryAllocation.find(c => c.name === 'Unknown')
+      
+      // Similar test for geography - should not be dominated by "Unknown"
+      if (unknownCountry) {
+        expect(unknownCountry.percentage).toBeLessThan(95)
+      }
+      
+      // Should have meaningful country diversity
+      const knownCountries = countryAllocation.filter(c => c.name !== 'Unknown')
+      expect(knownCountries.length).toBeGreaterThan(0)
+    })
+  })
 })

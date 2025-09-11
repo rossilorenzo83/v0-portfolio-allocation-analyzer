@@ -1,16 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { yahooFinanceService } from '@/lib/yahoo-finance-service'
-import { getEtfHoldings } from '@/lib/api-service';
+import { ETFComposition } from '@/types/yahoo'
+import { normalizeSectorName, normalizeCountryName } from '@/lib/normalization-utils'
 
-interface ETFComposition {
+// TypeScript interfaces for the Yahoo Finance API data structures
+interface SectorWeightingData {
+  raw?: number
+}
+
+interface SectorWeightingObject {
+  [sector: string]: SectorWeightingData
+}
+
+interface HoldingData {
   symbol: string
-  currency: Array<{ currency: string; weight: number }>
-  country: Array<{ country: string; weight: number }>
-  sector: Array<{ sector: string; weight: number }>
-  holdings: Array<{ symbol: string; name: string; weight: number }>
-  domicile: string
-  withholdingTax: number
-  lastUpdated: string
+  holdingName?: string
+  holdingPercent?: {
+    raw?: number
+  }
+  weight?: number
+  name?: string
+}
+
+interface ProcessedHolding {
+  symbol: string
+  name: string
+  weight: number
+}
+
+interface CurrencyData {
+  currency: string
+  weight: number
+}
+
+interface CountryData {
+  country: string
+  weight: number
+}
+
+interface SectorData {
+  sector: string
+  weight: number
+}
+
+interface CountryWeightingData {
+  raw?: number
+}
+
+interface CountryWeightings {
+  [country: string]: CountryWeightingData | number
 }
 
 export async function GET(
@@ -19,9 +57,6 @@ export async function GET(
 ) {
   const { symbol } = await params
 
-  console.log(`🚀 API ROUTE CALLED - Yahoo ETF Composition API`)
-  console.log(`Request URL: ${request.url}`)
-  console.log(`Request method: ${request.method}`)
 
   try {
     // Get a valid session from the sophisticated service
@@ -35,7 +70,6 @@ export async function GET(
       )
     }
 
-    console.log(`📊 Fetching ETF composition for ${symbol} with session`)
 
     // Validate session data
     if (!session.cookies || session.cookies.length < 10) {
@@ -59,114 +93,105 @@ export async function GET(
       headers['X-Crumb'] = session.crumb
     }
     
-    console.log(`🔗 Making external API call to: ${url}`)
-    console.log(`🍪 Using cookies: ${session.cookies.substring(0, 50)}...`)
-    console.log(`🔑 Using crumb: ${session.crumb}`)
-    console.log(`👤 Using User-Agent: ${session.userAgent.substring(0, 50)}...`)
     
-    const response = await fetch(url, { headers })
+    const response = await fetch(url, { 
+      headers,
+      // Disable SSL certificate validation for development
+      ...(process.env.NODE_ENV === 'development' && { 
+        agent: new (require('https').Agent)({ rejectUnauthorized: false })
+      })
+    })
 
     if (response.ok) {
       const data = await response.json()
-      console.log(`📊 API Response for ${symbol}:`, JSON.stringify(data, null, 2))
-      
       const result = data.quoteSummary?.result?.[0]
       if (result) {
-        console.log(`📋 Result structure for ${symbol}:`, JSON.stringify(result, null, 2))
-        
         const fundProfile = result.fundProfile
         const summaryProfile = result.summaryProfile
 
-        console.log(`🏦 Fund Profile for ${symbol}:`, JSON.stringify(fundProfile, null, 2))
-        console.log(`📈 Summary Profile for ${symbol}:`, JSON.stringify(summaryProfile, null, 2))
-
-        // Process sector breakdown
-        const sectorWeightings = fundProfile?.sectorWeightings || {}
-        console.log(`🏭 Sector Weightings for ${symbol}:`, JSON.stringify(sectorWeightings, null, 2))
+        // Process sector breakdown from topHoldings (sectorWeightings is array of objects)
+        const sectorWeightingsArray: SectorWeightingObject[] = result.topHoldings?.sectorWeightings || []
         
-        const sectors = Object.entries(sectorWeightings)
-          .map(([sector, weight]) => ({
-            sector: normalizeSectorName(sector),
-            weight: (weight as number) * 100,
-          }))
+        const sectors = sectorWeightingsArray
+          .flatMap((sectorObj: SectorWeightingObject) => 
+            Object.entries(sectorObj).map(([sector, data]) => ({
+              sector: normalizeSectorName(sector),
+              weight: (data?.raw || 0) * 100,
+            }))
+          )
           .filter((s) => s.weight > 0 && s.sector !== 'Unknown' && s.sector !== 'unknown')
 
-        console.log(`✅ Processed sectors for ${symbol}:`, sectors)
+        // Process holdings
+        const holdings = (result.topHoldings?.holdings || [])
+          .map((holding: HoldingData): ProcessedHolding => ({
+            symbol: holding.symbol,
+            name: holding.holdingName || holding.symbol,
+            weight: (holding.holdingPercent?.raw || 0) * 100,
+          }))
+          .filter((h: ProcessedHolding) => h.symbol && h.weight > 0)
 
-        // Process country breakdown
-        const countries = []
-        if (summaryProfile?.country && summaryProfile.country !== 'Unknown' && summaryProfile.country !== 'unknown') {
-          countries.push({ country: normalizeCountryName(summaryProfile.country), weight: 100 })
+        // Process country breakdown - prioritize actual country weightings from API
+        const countries: CountryData[] = []
+        
+        // Try to get actual country distribution from fundProfile
+        const countryWeightings: CountryWeightings = fundProfile?.countryWeightings
+        
+        if (countryWeightings && typeof countryWeightings === 'object') {
+          Object.entries(countryWeightings).forEach(([country, weightData]) => {
+            const weight = (weightData as CountryWeightingData)?.raw || (typeof weightData === 'number' ? weightData : 0)
+            if (weight && weight > 0) {
+              countries.push({
+                country: normalizeCountryName(country),
+                weight: weight * 100
+              })
+            }
+          })
+        }
+        
+        // Only fall back to inference if no API data available
+        if (countries.length === 0) {
+          const domicile = summaryProfile?.domicile || inferDomicile(symbol)
+          if (domicile === 'US' || symbol.match(/^[A-Z]{2,5}$/)) {
+            // For US-listed ETFs without country data, provide a reasonable default
+            countries.push({ country: 'United States', weight: 100 })
+          }
         }
 
-        console.log(`🌍 Countries for ${symbol}:`, countries)
-
-        // Process currency
-        const currencies = []
-        if (summaryProfile?.currency && summaryProfile.currency !== 'Unknown' && summaryProfile.currency !== 'unknown') {
-          currencies.push({ currency: summaryProfile.currency.toUpperCase(), weight: 100 })
+        // Process currency (USD for US-listed ETFs)
+        const currencies: CurrencyData[] = []
+        if (symbol.match(/^[A-Z]{2,5}$/)) {
+          // For US-listed symbols, assume USD
+          currencies.push({ currency: 'USD', weight: 100 })
         }
 
-        console.log(`💰 Currencies for ${symbol}:`, currencies)
-
-        // Check if we have rich data (not just fallback data)
+        // Check if we have rich data (real sector data from API)
         const hasRichData = sectors.length > 0 && 
-                           !sectors.every(s => s.sector === 'Other') &&
-                           countries.length > 0 &&
-                           !countries.every(c => c.country === 'United States')
-
-        console.log(`🔍 Rich data check for ${symbol}:`, {
-          hasSectors: sectors.length > 0,
-          hasNonOtherSectors: !sectors.every(s => s.sector === 'Other'),
-          hasCountries: countries.length > 0,
-          hasNonUSDCountries: !countries.every(c => c.country === 'United States'),
-          hasRichData
-        })
+                           !sectors.every(s => s.sector === 'Other')
 
         if (hasRichData) {
           const etfComposition: ETFComposition = {
-            symbol: symbol, // Always return original symbol
+            symbol, // Always return original symbol
             currency: currencies,
             country: countries,
             sector: sectors,
-            holdings: [],
-            domicile: summaryProfile?.domicile || inferDomicile(symbol),
+            holdings,
+            domicile: summaryProfile?.domicile || fundProfile?.domicile || inferDomicileFromCountryAndSymbol(summaryProfile?.country, symbol),
             withholdingTax: inferWithholdingTax(symbol),
             lastUpdated: new Date().toISOString(),
           }
 
-          console.log(`✅ Real ETF composition found for ${symbol} with session:`, etfComposition)
           return NextResponse.json(etfComposition)
-        } else {
-          console.log(`🔄 API returned poor quality data for ${symbol}, trying web scraping...`)
         }
-      } else {
-        console.warn(`⚠️ No result found in response for ${symbol}`)
-        console.warn(`⚠️ Full response data:`, JSON.stringify(data, null, 2))
-      }
-    } else {
-      console.warn(`⚠️ External API request failed for ${symbol}: ${response.status} - ${response.statusText}`)
-      console.warn(`⚠️ Response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`)
-      
-      // Try to get response body for debugging
-      try {
-        const errorBody = await response.text()
-        console.warn(`⚠️ Error response body:`, errorBody)
-      } catch (e) {
-        console.warn(`⚠️ Could not read error response body:`, e)
       }
     }
 
     // Try web scraping as fallback (when API fails OR returns poor quality data)
-    console.log(`🔄 Trying web scraping fallback for ${symbol}...`)
     const scrapedData = await scrapeETFDataFromWeb(symbol)
     if (scrapedData) {
-      console.log(`✅ Web scraping successful for ${symbol}:`, scrapedData)
       return NextResponse.json(scrapedData)
     }
 
     // Return fallback
-    console.log(`🔄 Using fallback ETF composition for ${symbol}`)
     const fallback = getFallbackETFComposition(symbol)
     return NextResponse.json(fallback)
 
@@ -182,12 +207,9 @@ export async function GET(
 // Helper functions (moved from service to avoid circular dependency)
 async function scrapeETFDataFromWeb(symbol: string): Promise<ETFComposition | null> {
   try {
-    console.log(`🌐 Attempting web scraping for ${symbol}...`)
-    
     // Get a valid session for web scraping
     const session = await yahooFinanceService.getCurrentSession()
     if (!session) {
-      console.warn(`⚠️ No session available for web scraping ${symbol}`)
       return null
     }
 
@@ -216,12 +238,10 @@ async function scrapeETFDataFromWeb(symbol: string): Promise<ETFComposition | nu
       if (etfData) {
         const composition = parseETFDataFromHTML(etfData, symbol)
         if (composition) {
-          console.log(`✅ Web scraping successful for ${symbol}`)
           return composition
         }
       }
       
-      console.warn(`⚠️ No ETF data found in page for ${symbol}`)
       return null
       
     } finally {
@@ -234,11 +254,11 @@ async function scrapeETFDataFromWeb(symbol: string): Promise<ETFComposition | nu
   }
 }
 
-function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null {
+function parseETFDataFromHTML(data: unknown, symbol: string): ETFComposition | null {
   try {
     // Extract sector breakdown
-    const sectors: Array<{ sector: string; weight: number }> = []
-    const sectorData = data?.quoteSummary?.result?.[0]?.fundProfile?.sectorWeightings
+    const sectors: SectorData[] = []
+    const sectorData = (data as any)?.quoteSummary?.result?.[0]?.fundProfile?.sectorWeightings
     if (sectorData) {
       Object.entries(sectorData).forEach(([sector, weight]) => {
         if (weight && (weight as number) > 0) {
@@ -251,22 +271,23 @@ function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null 
     }
     
     // Extract country breakdown
-    const countries: Array<{ country: string; weight: number }> = []
-    const countryData = data?.quoteSummary?.result?.[0]?.fundProfile?.countryWeightings
+    const countries: CountryData[] = []
+    const countryData = (data as any)?.quoteSummary?.result?.[0]?.fundProfile?.countryWeightings
     if (countryData) {
-      Object.entries(countryData).forEach(([country, weight]) => {
-        if (weight && (weight as number) > 0) {
+      Object.entries(countryData).forEach(([country, weightData]) => {
+        const weight = (weightData as CountryWeightingData)?.raw || (typeof weightData === 'number' ? weightData : 0)
+        if (weight && weight > 0) {
           countries.push({
             country: normalizeCountryName(country),
-            weight: (weight as number) * 100
+            weight: weight * 100
           })
         }
       })
     }
     
     // Extract currency breakdown
-    const currencies: Array<{ currency: string; weight: number }> = []
-    const currencyData = data?.quoteSummary?.result?.[0]?.fundProfile?.currencyWeightings
+    const currencies: CurrencyData[] = []
+    const currencyData = (data as any)?.quoteSummary?.result?.[0]?.fundProfile?.currencyWeightings
     if (currencyData) {
       Object.entries(currencyData).forEach(([currency, weight]) => {
         if (weight && (weight as number) > 0) {
@@ -279,10 +300,10 @@ function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null 
     }
     
     // Extract holdings
-    const holdings: Array<{ symbol: string; name: string; weight: number }> = []
-    const holdingsData = data?.quoteSummary?.result?.[0]?.topHoldings?.holdings
+    const holdings: ProcessedHolding[] = []
+    const holdingsData = (data as any)?.quoteSummary?.result?.[0]?.topHoldings?.holdings
     if (holdingsData && Array.isArray(holdingsData)) {
-      holdingsData.forEach((holding: any) => {
+      holdingsData.forEach((holding: HoldingData) => {
         if (holding.symbol && holding.weight) {
           holdings.push({
             symbol: holding.symbol,
@@ -294,16 +315,16 @@ function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null 
     }
     
     // Get fund profile info
-    const fundProfile = data?.quoteSummary?.result?.[0]?.fundProfile
-    const summaryProfile = data?.quoteSummary?.result?.[0]?.summaryProfile
+    const fundProfile = (data as any)?.quoteSummary?.result?.[0]?.fundProfile
+    const summaryProfile = (data as any)?.quoteSummary?.result?.[0]?.summaryProfile
     
     const composition: ETFComposition = {
-      symbol: symbol,
+      symbol,
       currency: currencies.length > 0 ? currencies : [{ currency: 'USD', weight: 100 }],
       country: countries.length > 0 ? countries : [{ country: 'United States', weight: 100 }],
       sector: sectors.length > 0 ? sectors : [{ sector: 'Other', weight: 100 }],
-      holdings: holdings,
-      domicile: summaryProfile?.domicile || fundProfile?.domicile || inferDomicile(symbol),
+      holdings,
+      domicile: summaryProfile?.domicile || fundProfile?.domicile || inferDomicileFromCountryAndSymbol(summaryProfile?.country, symbol),
       withholdingTax: inferWithholdingTax(symbol),
       lastUpdated: new Date().toISOString()
     }
@@ -316,84 +337,35 @@ function parseETFDataFromHTML(data: any, symbol: string): ETFComposition | null 
   }
 }
 
-function normalizeSectorName(sector: string): string {
-  const sectorMap: Record<string, string> = {
-    'technology': 'Technology',
-    'financial_services': 'Financial Services',
-    'healthcare': 'Healthcare',
-    'consumer_discretionary': 'Consumer Discretionary',
-    'consumer_staples': 'Consumer Staples',
-    'industrials': 'Industrials',
-    'energy': 'Energy',
-    'materials': 'Materials',
-    'real_estate': 'Real Estate',
-    'utilities': 'Utilities',
-    'communication_services': 'Communication Services',
-  }
-  
-  const normalized = sector.toLowerCase().replace(/\s+/g, '_')
-  return sectorMap[normalized] || sector
-}
 
-function normalizeCountryName(country: string): string {
-  const countryMap: Record<string, string> = {
-    'united states': 'United States',
-    'usa': 'United States',
-    'us': 'United States',
-    'united kingdom': 'United Kingdom',
-    'uk': 'United Kingdom',
-    'germany': 'Germany',
-    'france': 'France',
-    'japan': 'Japan',
-    'china': 'China',
-    'canada': 'Canada',
-    'australia': 'Australia',
-    'switzerland': 'Switzerland',
-    'netherlands': 'Netherlands',
-    'sweden': 'Sweden',
-    'denmark': 'Denmark',
-    'norway': 'Norway',
-    'finland': 'Finland',
-    'belgium': 'Belgium',
-    'austria': 'Austria',
-    'italy': 'Italy',
-    'spain': 'Spain',
-    'ireland': 'Ireland',
-    'luxembourg': 'Luxembourg',
-  }
-  
-  const normalized = country.toLowerCase()
-  return countryMap[normalized] || country
-}
-
-function processCurrencyData(currencies: any[]): Array<{ currency: string; weight: number }> {
+function processCurrencyData(currencies: CurrencyData[]): CurrencyData[] {
   if (!currencies || currencies.length === 0) {
     return [{ currency: 'USD', weight: 100 }]
   }
   
-  return currencies.map((currency: any) => ({
+  return currencies.map((currency: CurrencyData) => ({
     currency: currency.currency || 'USD',
     weight: currency.weight || 100,
   }))
 }
 
-function processCountryData(countries: any[]): Array<{ country: string; weight: number }> {
+function processCountryData(countries: CountryData[]): CountryData[] {
   if (!countries || countries.length === 0) {
     return [{ country: 'United States', weight: 100 }]
   }
   
-  return countries.map((country: any) => ({
+  return countries.map((country: CountryData) => ({
     country: country.country || 'United States',
     weight: country.weight || 100,
   }))
 }
 
-function processSectorData(sectors: any[]): Array<{ sector: string; weight: number }> {
+function processSectorData(sectors: SectorData[]): SectorData[] {
   if (!sectors || sectors.length === 0) {
     return [{ sector: 'Other', weight: 100 }]
   }
   
-  return sectors.map((sector: any) => ({
+  return sectors.map((sector: SectorData) => ({
     sector: sector.sector || 'Other',
     weight: sector.weight || 100,
   }))
@@ -435,3 +407,33 @@ function getFallbackETFComposition(symbol: string): ETFComposition {
     lastUpdated: new Date().toISOString(),
   }
 } 
+
+function inferDomicileFromCountryAndSymbol(country: string, symbol: string): string {
+  // First try explicit domicile inference based on symbol patterns
+  const explicitDomicile = inferDomicile(symbol)
+  if (explicitDomicile !== "Unknown") {
+    return explicitDomicile
+  }
+
+  // If we have country information, use it to infer domicile
+  if (country) {
+    const countryToDomicile: Record<string, string> = {
+      "United States": "US",
+      "Ireland": "IE", 
+      "Switzerland": "CH",
+      "Luxembourg": "LU",
+      "Germany": "DE",
+      "France": "FR",
+      "United Kingdom": "GB",
+      "Canada": "CA",
+      "Netherlands": "NL",
+    }
+    
+    const domicile = countryToDomicile[country]
+    if (domicile) {
+      return domicile
+    }
+  }
+
+  return "Unknown"
+}

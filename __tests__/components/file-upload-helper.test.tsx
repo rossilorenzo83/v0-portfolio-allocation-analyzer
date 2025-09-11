@@ -134,15 +134,15 @@ describe('FileUploadHelper Component', () => {
 
   describe('Error Handling', () => {
     it('should render gracefully with invalid props', () => {
-      // @ts-ignore - Testing invalid props
-      render(<FileUploadHelper onFileChange={null} />)
+      // Testing invalid props by casting to any
+      render(<FileUploadHelper onFileChange={null as any} />)
       
       expect(screen.getByText('Upload Portfolio CSV')).toBeInTheDocument()
     })
 
     it('should handle missing props', () => {
-      // @ts-ignore - Testing missing props
-      render(<FileUploadHelper />)
+      // Testing missing props by casting to any
+      render(<FileUploadHelper {...{} as any} />)
       
       expect(screen.getByText('Upload Portfolio CSV')).toBeInTheDocument()
     })

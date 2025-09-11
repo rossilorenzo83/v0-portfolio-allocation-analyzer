@@ -1,21 +1,10 @@
 // Share/Stock Metadata Service
 // Handles fetching sector, country, and other metadata for individual shares/stocks
 
-interface YahooSession {
-  cookies: string
-  crumb: string
-  userAgent: string
-}
+import { YahooSession, AssetMetadata } from '@/types/yahoo'
 
-interface ShareMetadata {
-  symbol: string
-  name: string
-  sector: string
-  country: string
-  currency: string
-  type: string
-  exchange: string
-}
+// Alias AssetMetadata as ShareMetadata for compatibility
+type ShareMetadata = AssetMetadata
 
 class ShareMetadataService {
   private cache = new Map<string, { data: ShareMetadata; timestamp: number; ttl: number }>()
@@ -55,7 +44,6 @@ class ShareMetadataService {
     const cached = this.getCached<ShareMetadata>(cacheKey)
     if (cached) return cached
 
-    console.log(`📊 Fetching share metadata for ${symbol} with session`)
 
     try {
       await this.rateLimit()
@@ -63,15 +51,15 @@ class ShareMetadataService {
       // Use Next.js API route instead of direct external API calls
       const url = `/api/yahoo/share-metadata/${encodeURIComponent(symbol)}`
       
-      console.log(`🔗 Making API call to: ${url}`)
       
-      const response = await fetch(url)
+      const response = await fetch(url, {
+        // NOTE: Do not disable SSL certificate validation. For development with self-signed certs, use NODE_EXTRA_CA_CERTS or configure certificates properly.
+      })
 
       if (response.ok) {
         const metadata = await response.json()
         
         if (metadata && metadata.symbol) {
-          console.log(`✅ Real share metadata found for ${symbol} via API route:`, metadata)
           this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
           return metadata
         } else {
@@ -86,7 +74,6 @@ class ShareMetadataService {
     }
 
     // Return fallback with better inference
-    console.log(`🔄 Using fallback metadata for ${symbol}`)
     const fallback = this.getFallbackMetadata(symbol)
     this.setCache(cacheKey, fallback, 60)
     return fallback
@@ -156,6 +143,10 @@ class ShareMetadataService {
       'PRU': 'Financial Services',
       'AIG': 'Financial Services',
       'ALL': 'Financial Services',
+      'SQN': 'Financial Services',
+      'SQN.SW': 'Financial Services',
+      'SRV_META': 'Technology',
+      'SRCH_META': 'Technology',
       
       // Healthcare
       'JNJ': 'Healthcare',
@@ -549,6 +540,10 @@ class ShareMetadataService {
       'FIL': 'Global',
       'THETA': 'Global',
       'XLM': 'Global',
+      
+      // Swiss Stocks
+      'SQN': 'Switzerland',
+      'SQN.SW': 'Switzerland',
     }
     
     return countryMap[symbol] || 'United States'
