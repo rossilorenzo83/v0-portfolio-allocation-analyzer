@@ -53,10 +53,7 @@ class ShareMetadataService {
       
       
       const response = await fetch(url, {
-        // Disable SSL certificate validation for development
-        ...(process.env.NODE_ENV === 'development' && { 
-          agent: new (require('https').Agent)({ rejectUnauthorized: false })
-        })
+        // NOTE: Do not disable SSL certificate validation. For development with self-signed certs, use NODE_EXTRA_CA_CERTS or configure certificates properly.
       })
 
       if (response.ok) {
