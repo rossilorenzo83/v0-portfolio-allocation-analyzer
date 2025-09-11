@@ -137,11 +137,8 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
     }
   }, [loading])
 
-  const renderAllocationChart = (data: AllocationItem[], title: string) => {
-    if (!data || data.length === 0) {
-      return <p className="text-center text-gray-500">No data available for {title}.</p>
-    }
-
+  // Create a separate component for allocation charts to properly use hooks
+  const AllocationChart = ({ data, title }: { data: AllocationItem[], title: string }) => {
     // Sort data by percentage (highest first) for consistent ordering
     const sortedData = useMemo(() => 
       [...data].sort((a, b) => b.percentage - a.percentage), 
@@ -416,11 +413,11 @@ export default function PortfolioAnalyzer({ defaultData = null }: PortfolioAnaly
               {renderPositionsTable(portfolioData.positions)}
 
               <div className="grid grid-cols-1 gap-8 md:grid-cols-2" data-testid="allocation-charts">
-                {renderAllocationChart(portfolioData.assetAllocation, "Asset Allocation")}
-                {renderAllocationChart(portfolioData.currencyAllocation, "Currency Allocation")}
-                {renderAllocationChart(portfolioData.trueCountryAllocation, "True Country Allocation")}
-                {renderAllocationChart(portfolioData.trueSectorAllocation, "True Sector Allocation")}
-                {renderAllocationChart(portfolioData.domicileAllocation, "Domicile Allocation")}
+                <AllocationChart data={portfolioData.assetAllocation} title="Asset Allocation" />
+                <AllocationChart data={portfolioData.currencyAllocation} title="Currency Allocation" />
+                <AllocationChart data={portfolioData.trueCountryAllocation} title="True Country Allocation" />
+                <AllocationChart data={portfolioData.trueSectorAllocation} title="True Sector Allocation" />
+                <AllocationChart data={portfolioData.domicileAllocation} title="Domicile Allocation" />
               </div>
             </div>
           )}

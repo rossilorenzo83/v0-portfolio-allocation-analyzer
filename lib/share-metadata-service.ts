@@ -150,6 +150,10 @@ class ShareMetadataService {
       'PRU': 'Financial Services',
       'AIG': 'Financial Services',
       'ALL': 'Financial Services',
+      'SQN': 'Financial Services',
+      'SQN.SW': 'Financial Services',
+      'SRV_META': 'Technology',
+      'SRCH_META': 'Technology',
       
       // Healthcare
       'JNJ': 'Healthcare',
@@ -543,6 +547,10 @@ class ShareMetadataService {
       'FIL': 'Global',
       'THETA': 'Global',
       'XLM': 'Global',
+      
+      // Swiss Stocks
+      'SQN': 'Switzerland',
+      'SQN.SW': 'Switzerland',
     }
     
     return countryMap[symbol] || 'United States'

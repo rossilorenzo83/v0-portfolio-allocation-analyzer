@@ -700,8 +700,19 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     return createEmptyPortfolioData()
   }
 
-  // Row 0 contains the headers for all positions
-  const headerRow = rows[0]
+  // Check if first row is a category header or actual column header
+  let headerRowIndex = 0
+  let startRowIndex = 1
+  
+  // If first row looks like a category header, use it as such and find actual headers later
+  if (rows[0] && isCategoryHeader(rows[0][0]?.toString())) {
+    console.log("First row is a category header, not column headers")
+    // For now, we'll use fixed column indices since we know the Swiss bank structure
+    headerRowIndex = 0  // We'll still reference row 0 for consistency, but won't use it as headers
+    startRowIndex = 0   // Start processing from row 0 to catch the category
+  }
+  
+  const headerRow = rows[headerRowIndex]
   console.log("Using first row as header:", headerRow)
   
   // Use fixed column indices based on the actual Swiss bank CSV structure
@@ -726,8 +737,8 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
   let currentCategory = ""
   let totalPortfolioValue = 0
   
-  // Process rows starting from row 1 (skip header)
-  for (let i = 1; i < rows.length; i++) {
+  // Process rows starting from appropriate index
+  for (let i = startRowIndex; i < rows.length; i++) {
     const row = rows[i]
     if (!row || row.length === 0) continue
     

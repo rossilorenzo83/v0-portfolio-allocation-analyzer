@@ -85,6 +85,7 @@ global.fetch = jest.fn((url) => {
       'META': 'Communication Services',
       'OXY': 'Energy', 
       'SQN': 'Financial Services',
+      'SQN.SW': 'Financial Services',
       'UMC': 'Technology',
       'AAPL': 'Technology',
       'JPM': 'Financial Services',
@@ -101,7 +102,7 @@ global.fetch = jest.fn((url) => {
               {
                 summaryProfile: {
                   sector: sectorMappings[symbol] || 'Technology',
-                  country: symbol === 'NESN' ? 'Switzerland' : 'United States',
+                  country: symbol === 'NESN' || symbol === 'SQN' || symbol === 'SQN.SW' ? 'Switzerland' : 'United States',
                   industry: 'Technology Services'
                 },
                 summaryDetail: {
@@ -123,6 +124,7 @@ global.fetch = jest.fn((url) => {
       'META': 'Communication Services',
       'OXY': 'Energy', 
       'SQN': 'Financial Services',
+      'SQN.SW': 'Financial Services',
       'UMC': 'Technology',
       'AAPL': 'Technology',
       'JPM': 'Financial Services',
@@ -137,7 +139,7 @@ global.fetch = jest.fn((url) => {
           symbol: symbol,
           name: symbol,
           sector: sectorMappings[symbol] || 'Technology',
-          country: symbol === 'NESN' || symbol === 'SQN' ? 'Switzerland' : 'United States',
+          country: symbol === 'NESN' || symbol === 'SQN' || symbol === 'SQN.SW' ? 'Switzerland' : 'United States',
           currency: 'USD',
           type: 'EQUITY',
           exchange: 'NMS'
