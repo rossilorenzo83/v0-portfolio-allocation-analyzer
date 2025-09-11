@@ -130,7 +130,6 @@ class APIService {
     const cached = this.getCached<StockPrice>(cacheKey)
     if (cached) return cached
 
-    console.log(`💰 Fetching price for ${symbol}`)
 
     try {
       await this.rateLimit()
@@ -157,7 +156,7 @@ class APIService {
             const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
 
             const stockPrice: StockPrice = {
-              symbol: symbol, // Always return original symbol
+              symbol, // Always return original symbol
               price: Number(currentPrice.toFixed(2)),
               currency: meta.currency || this.inferCurrency(symbol),
               change: Number(change.toFixed(2)),
@@ -175,10 +174,9 @@ class APIService {
 
         if (response.ok) {
           const data = await response.json()
-          console.log(`✅ Price data for ${symbol}:`, data)
         
         const result: StockPrice = {
-          symbol: symbol, // Always return original symbol
+          symbol, // Always return original symbol
             price: data.price || 0,
             currency: data.currency || this.inferCurrency(symbol),
             change: data.change || 0,
@@ -207,7 +205,6 @@ class APIService {
     const cached = this.getCached<AssetMetadata>(cacheKey)
     if (cached) return cached
 
-    console.log(`📊 Fetching metadata for ${symbol}`)
 
     try {
       await this.rateLimit()
@@ -226,10 +223,9 @@ class APIService {
             const domicile = this.inferDomicileFromCountry(metadata.country, symbol)
             const enrichedMetadata = {
               ...metadata,
-              domicile: domicile
+              domicile
             }
             
-            console.log(`✅ Real metadata found for ${symbol}:`, enrichedMetadata)
             this.setCache(cacheKey, enrichedMetadata, 60) // Cache for 1 hour
             return enrichedMetadata
           }
@@ -246,10 +242,9 @@ class APIService {
             const domicile = this.inferDomicileFromCountry(metadata.country, symbol)
             const enrichedMetadata = {
               ...metadata,
-              domicile: domicile
+              domicile
             }
             
-            console.log(`✅ Client-side metadata found for ${symbol}:`, enrichedMetadata)
             this.setCache(cacheKey, enrichedMetadata, 60) // Cache for 1 hour
             return enrichedMetadata
           }
@@ -272,7 +267,6 @@ class APIService {
     const cached = this.getCached<ETFComposition>(cacheKey)
     if (cached) return cached
 
-    console.log(`📊 Fetching ETF composition for ${symbol}`)
 
     try {
       await this.rateLimit()
@@ -318,7 +312,7 @@ class APIService {
             }
 
             const etfComposition: ETFComposition = {
-              symbol: symbol, // Always return original symbol
+              symbol, // Always return original symbol
               currency: currencies.length > 0 ? currencies : this.processCurrencyData([]),
               country: countries.length > 0 ? countries : this.processCountryData([]),
               sector: sectors.length > 0 ? sectors : this.processSectorData([]),
@@ -338,11 +332,10 @@ class APIService {
 
       if (response.ok) {
         const data = await response.json()
-        console.log(`✅ ETF composition for ${symbol}:`, data)
 
           // Process the ETF data
         const result: ETFComposition = {
-          symbol: symbol, // Always return original symbol
+          symbol, // Always return original symbol
           currency: this.processCurrencyData(data.currency || []),
           country: this.processCountryData(data.country || []),
           sector: this.processSectorData(data.sector || []),
@@ -363,7 +356,6 @@ class APIService {
     }
 
     // Return fallback data
-    console.log(`❌ All methods failed for ${symbol}, returning fallback data`)
     const fallbackData = this.getFallbackETFComposition(symbol)
     this.setCache(cacheKey, fallbackData, 60) // Cache for 1 hour
     return fallbackData
@@ -374,7 +366,6 @@ class APIService {
     const cached = this.getCached<ETFComposition>(cacheKey)
     if (cached) return cached
 
-    console.log(`📊 Fetching ETF composition for ${symbol} with session`)
 
     try {
       await this.rateLimit()
@@ -382,7 +373,6 @@ class APIService {
       // Use Next.js API route instead of direct external API calls
       const url = `/api/yahoo/etf-composition/${encodeURIComponent(symbol)}`
       
-      console.log(`🔗 Making API call to: ${url}`)
       
       const response = await fetch(url)
 
@@ -390,7 +380,6 @@ class APIService {
         const etfComposition = await response.json()
         
         if (etfComposition && etfComposition.symbol) {
-          console.log(`✅ Real ETF composition found for ${symbol} via API route:`, etfComposition)
           this.setCache(cacheKey, etfComposition, 1440) // Cache for 24 hours
           return etfComposition
         } else {
@@ -405,7 +394,6 @@ class APIService {
     }
 
     // Return fallback data
-    console.log(`❌ All methods failed for ${symbol}, returning fallback data`)
     const fallbackData = this.getFallbackETFComposition(symbol)
     this.setCache(cacheKey, fallbackData, 60) // Cache for 1 hour
     return fallbackData
@@ -420,7 +408,6 @@ class APIService {
 
       if (response.ok) {
         const data = await response.json()
-        console.log(`✅ Search results for ${query}:`, data)
         // Handle search results structure
         return Array.isArray(data) ? data : (data ? [data] : [])
       } else {
@@ -604,9 +591,9 @@ class APIService {
     }
 
     return {
-      symbol: symbol,
+      symbol,
       price: Math.round(price * 100) / 100,
-      currency: currency,
+      currency,
       change: (Math.random() - 0.5) * 10,
       changePercent: (Math.random() - 0.5) * 5,
       lastUpdated: new Date().toISOString(),
@@ -616,10 +603,10 @@ class APIService {
   private getFallbackMetadata(symbol: string): AssetMetadata {
     const country = this.inferCountry(symbol)
     return {
-      symbol: symbol,
+      symbol,
       name: this.getKnownName(symbol) || symbol,
       sector: this.inferSector(symbol),
-      country: country,
+      country,
       currency: this.inferCurrency(symbol),
       type: this.inferAssetType(symbol),
       exchange: this.inferExchange(symbol),
@@ -634,7 +621,7 @@ class APIService {
 
     if (isWorldETF) {
       return {
-        symbol: symbol,
+        symbol,
         currency: [
           { currency: "USD", weight: 65 },
           { currency: "EUR", weight: 15 },
@@ -674,7 +661,7 @@ class APIService {
 
     if (isUSETF) {
       return {
-        symbol: symbol,
+        symbol,
         currency: [{ currency: "USD", weight: 100 }],
         country: [{ country: "United States", weight: 100 }],
         sector: [
@@ -699,7 +686,7 @@ class APIService {
 
     // Generic fallback
     return {
-      symbol: symbol,
+      symbol,
       currency: [
         { currency: "USD", weight: 60 },
         { currency: "EUR", weight: 20 },

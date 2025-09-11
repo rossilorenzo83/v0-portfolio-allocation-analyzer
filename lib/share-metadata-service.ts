@@ -44,7 +44,6 @@ class ShareMetadataService {
     const cached = this.getCached<ShareMetadata>(cacheKey)
     if (cached) return cached
 
-    console.log(`📊 Fetching share metadata for ${symbol} with session`)
 
     try {
       await this.rateLimit()
@@ -52,7 +51,6 @@ class ShareMetadataService {
       // Use Next.js API route instead of direct external API calls
       const url = `/api/yahoo/share-metadata/${encodeURIComponent(symbol)}`
       
-      console.log(`🔗 Making API call to: ${url}`)
       
       const response = await fetch(url, {
         // Disable SSL certificate validation for development
@@ -65,7 +63,6 @@ class ShareMetadataService {
         const metadata = await response.json()
         
         if (metadata && metadata.symbol) {
-          console.log(`✅ Real share metadata found for ${symbol} via API route:`, metadata)
           this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
           return metadata
         } else {
@@ -80,7 +77,6 @@ class ShareMetadataService {
     }
 
     // Return fallback with better inference
-    console.log(`🔄 Using fallback metadata for ${symbol}`)
     const fallback = this.getFallbackMetadata(symbol)
     this.setCache(cacheKey, fallback, 60)
     return fallback

@@ -74,11 +74,8 @@ class ETFDataService {
   ): Promise<T | null> {
     const cached = apiCache.get(key)
     if (cached && Date.now() - cached.timestamp < cacheDuration) {
-      console.log(`Cache hit for ${key}`)
       return cached.data as T
     }
-
-    console.log(`Cache miss for ${key}, fetching...`)
     try {
       const data = await fetcher()
       if (data) {
@@ -117,7 +114,6 @@ class ETFDataService {
       for (const suffix of europeanSuffixes) {
         metadata = await apiService.getAssetMetadata(`${symbol}${suffix}`)
         if (metadata) {
-          console.log(`Resolved ${symbol} to ${symbol}${suffix}`)
           return metadata
         }
       }
@@ -353,11 +349,8 @@ async function fetchFromApi<T>(
 ): Promise<T | null> {
   const cached = cacheMap.get(path)
   if (cached && Date.now() - cached.timestamp < cacheDuration) {
-    console.log(`Cache hit for ${path}`)
     return cached.data
   }
-
-  console.log(`Cache miss for ${path}, fetching from API...`)
   try {
     await delay(API_DELAY_MS) // Introduce delay
     const response = await fetch(`/api/yahoo/${path}`)
@@ -413,15 +406,11 @@ export async function searchSymbol(query: string): Promise<SearchResult[]> {
 }
 
 export async function getEtfDataWithFallback(symbol: string): Promise<EtfData | null> {
-  console.log(`🔍 Fetching ETF data with fallback for ${symbol}`)
-  
   // Step 1: Try API first (now using the consolidated etf-composition route)
   let data = await getEtfData(symbol)
-  console.log(`📊 Raw API data for ${symbol}:`, JSON.stringify(data, null, 2))
   
   // Check if we got real data (not fallback) by looking for rich composition data
   if (data && data.composition) {
-    console.log(`📋 Composition data for ${symbol}:`, JSON.stringify(data.composition, null, 2))
     
     // Check for new structure (arrays) first
     let hasRealData = false
@@ -436,26 +425,14 @@ export async function getEtfDataWithFallback(symbol: string): Promise<EtfData | 
                    Object.values(data.composition.sectors).some((weight: any) => weight > 0 && weight < 100)
     }
     
-    console.log(`🔍 Real data check for ${symbol}:`, {
-      hasSectors: !!(data.composition.sector || data.composition.sectors),
-      sectorStructure: data.composition.sector ? 'array' : data.composition.sectors ? 'object' : 'none',
-      sectorData: data.composition.sector || data.composition.sectors,
-      hasRealData
-    })
-    
     if (hasRealData) {
-      console.log(`✅ Real API data found for ${symbol}`)
       return data
-    } else {
-      console.log(`🔄 API returned fallback data for ${symbol}, will try other sources`)
     }
   }
 
   // Step 2: Try realistic fallback data for known ETFs
-  console.log(`🔄 API failed for ${symbol}, trying realistic fallback data`)
   const realisticFallback = etfDataService.generateRealisticFallback(symbol)
   if (realisticFallback) {
-    console.log(`✅ Realistic fallback data found for ${symbol}`)
     return realisticFallback
   }
 
@@ -501,24 +478,19 @@ export async function resolveSymbolAndFetchData(
   // Determine if this position should fetch ETF data
   let shouldFetchETFData = position.category === "ETF" || position.category === "Funds"
 
-  console.log(`🔍 Processing ${position.symbol} (category: ${position.category}, shouldFetchETF: ${shouldFetchETFData})`)
-
   // Helper function to fetch data for a given symbol
   const fetchDataForSymbol = async (symbol: string, stepName: string, forceETF?: boolean): Promise<boolean> => {
-    console.log(`📊 Fetching data for ${symbol} (${stepName})...`)
     
     // For ETFs/Funds: Fetch ETF composition
     if (shouldFetchETFData || forceETF) {
       etfData = await getEtfDataWithFallback(symbol)
     } else {
       // For Shares/Stocks: Fetch asset metadata and convert to ETF-like format
-      console.log(`📈 Fetching asset metadata for share: ${symbol}`)
       
              // Use the Next.js API route for share metadata (handles session management server-side)
        const assetMetadata = await shareMetadataService.getShareMetadataWithSession(symbol, {} as any)
        
        if (assetMetadata) {
-         console.log(`✅ Asset metadata found for ${symbol}:`, assetMetadata)
          
          // Convert asset metadata to ETF-like format for consistent analysis
          // Fallback domicile logic: use domicile if available, otherwise infer from country
@@ -550,7 +522,6 @@ export async function resolveSymbolAndFetchData(
              currencies: { [assetMetadata.currency || "USD"]: 1.0 },
            },
          }
-         console.log(`✅ Converted asset metadata to ETF format for ${symbol}`)
        } else {
          console.warn(`⚠️ No asset metadata found for ${symbol} - skipping redundant fallback call`)
          // REMOVED: Redundant fallback call to apiService.getAssetMetadata() that was causing duplicate API requests
@@ -565,7 +536,6 @@ export async function resolveSymbolAndFetchData(
     // Only consider success if we have both etfData and quoteData
     // or if this is not an ETF and we have quoteData
     if (etfData && quoteData) {
-      console.log(`✅ ${stepName} successful for ${position.symbol} (resolved to ${symbol})`)
       return true
     }
     return false
@@ -573,18 +543,14 @@ export async function resolveSymbolAndFetchData(
 
   // For ETFs and Funds: Use search-based symbol resolution
   if (shouldFetchETFData) {
-    console.log(`🌍 ETF/Fund detected: ${position.symbol}, using search-based resolution`)
     
     try {
       // Step 1: Search for the symbol to get proper resolution
   const searchResults = await searchSymbol(position.symbol)
 
       if (searchResults && searchResults.length > 0) {
-        console.log(`🔍 Search results for ${position.symbol}:`, searchResults.map(r => `${r.symbol} (${r.name})`))
-        
         // Use the first search result (most relevant)
         const resolvedSymbol = searchResults[0].symbol
-        console.log(`✅ Search resolution: ${position.symbol} -> ${resolvedSymbol}`)
         
         // Step 2: Fetch data using the resolved symbol
         if (await fetchDataForSymbol(resolvedSymbol, "Search-based resolution")) {
@@ -600,13 +566,11 @@ export async function resolveSymbolAndFetchData(
     }
 
     // Fallback: Try with original symbol
-    console.log(`🔄 Search failed, trying with original symbol: ${position.symbol}`)
     if (await fetchDataForSymbol(position.symbol, "Original symbol")) {
         return { etfData, quoteData }
       }
   } else {
     // For Shares/Stocks: Fetch metadata and quote data
-    console.log(`📈 Share/Stock detected: ${position.symbol}, fetching metadata and quote`)
     
     if (await fetchDataForSymbol(position.symbol, "Direct metadata and quote fetch")) {
       return { etfData, quoteData }

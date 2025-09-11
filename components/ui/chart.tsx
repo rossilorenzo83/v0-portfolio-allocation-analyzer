@@ -63,29 +63,48 @@ ChartContainer.displayName = "Chart"
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(([_, config]) => config.theme || config.color)
 
+  // Create CSS variables safely without dangerouslySetInnerHTML
+  const cssVariables = React.useMemo(() => {
+    const variables: Record<string, string> = {}
+    
+    colorConfig.forEach(([key, itemConfig]) => {
+      // For light theme (default)
+      const lightColor = itemConfig.theme?.light || itemConfig.color
+      if (lightColor) {
+        variables[`--color-${key}`] = lightColor
+      }
+      
+      // For dark theme, we'll handle it via CSS class
+      const darkColor = itemConfig.theme?.dark || itemConfig.color
+      if (darkColor) {
+        variables[`--color-${key}-dark`] = darkColor
+      }
+    })
+    
+    return variables
+  }, [colorConfig])
+
   if (!colorConfig.length) {
     return null
   }
 
   return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
-    const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
-  })
-  .join("\n")}
-}
-`,
-          )
-          .join("\n"),
-      }}
-    />
+    <>
+      <style>{`
+        [data-chart="${id}"] {
+          ${Object.entries(cssVariables)
+            .filter(([key]) => !key.endsWith('-dark'))
+            .map(([key, value]) => `${key}: ${value};`)
+            .join('\n          ')}
+        }
+        .dark [data-chart="${id}"] {
+          ${Object.entries(cssVariables)
+            .filter(([key]) => key.endsWith('-dark'))
+            .map(([key, value]) => `${key.replace('-dark', '')}: ${value};`)
+            .join('\n          ')}
+        }
+      `}</style>
+    </>
   )
 }
 

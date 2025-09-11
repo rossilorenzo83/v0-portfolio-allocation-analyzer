@@ -201,7 +201,7 @@ export async function GET(
 
         if (hasGoodData) {
           // Try to get currency from multiple API sources before falling back to inference
-          let currency = summaryProfile.currency || 
+          const currency = summaryProfile.currency || 
                         price?.currency || 
                         financialData?.financialCurrency ||
                         summaryDetail?.currency ||
@@ -216,11 +216,11 @@ export async function GET(
           })
           
           const metadata: ShareMetadata = {
-            symbol: symbol, // Always return original symbol
+            symbol, // Always return original symbol
             name: summaryProfile.longName || summaryProfile.shortName || symbol,
             sector: summaryProfile.sector,
             country: summaryProfile.country,
-            currency: currency,
+            currency,
             type: summaryProfile.quoteType || inferAssetType(symbol),
             exchange: summaryProfile.exchange || inferExchange(symbol),
           }
@@ -260,18 +260,18 @@ export async function GET(
 
           if (hasGoodData) {
             // Try to get currency from multiple API sources before falling back to inference
-            let currency = summaryProfile.currency || 
+            const currency = summaryProfile.currency || 
                           price?.currency || 
                           financialData?.financialCurrency ||
                           summaryDetail?.currency ||
                           inferCurrency(symbol)
             
             const metadata: ShareMetadata = {
-              symbol: symbol,
+              symbol,
               name: summaryProfile.longName || summaryProfile.shortName || symbol,
               sector: summaryProfile.sector,
               country: summaryProfile.country,
-              currency: currency,
+              currency,
               type: summaryProfile.quoteType || inferAssetType(symbol),
               exchange: summaryProfile.exchange || inferExchange(symbol),
             }
@@ -287,7 +287,7 @@ export async function GET(
     if (symbolResolutionData) {
       console.log(`🔄 Using symbol resolution data for ${symbol}...`)
       const metadata: ShareMetadata = {
-        symbol: symbol,
+        symbol,
         name: symbolResolutionData.longname || symbolResolutionData.shortname || symbol,
         sector: inferSector(symbol),
         country: inferCountry(symbol),
@@ -493,7 +493,7 @@ function inferExchange(symbol: string): string {
 
 function getFallbackMetadata(symbol: string): ShareMetadata {
   return {
-    symbol: symbol,
+    symbol,
     name: symbol,
     sector: inferSector(symbol),
     country: inferCountry(symbol),
@@ -566,7 +566,7 @@ function parseShareDataFromHTML(data: any, symbol: string): ShareMetadata | null
     const summaryProfile = data?.quoteSummary?.result?.[0]?.summaryProfile
     if (summaryProfile) {
       const metadata: ShareMetadata = {
-        symbol: symbol,
+        symbol,
         name: summaryProfile.longName || summaryProfile.shortName || symbol,
         sector: summaryProfile.sector || inferSector(symbol),
         country: summaryProfile.country || inferCountry(symbol),
@@ -583,7 +583,7 @@ function parseShareDataFromHTML(data: any, symbol: string): ShareMetadata | null
     const quoteData = data?.quoteData?.result?.[0]
     if (quoteData) {
       const metadata: ShareMetadata = {
-        symbol: symbol,
+        symbol,
         name: quoteData.longName || quoteData.shortName || symbol,
         sector: quoteData.sector || inferSector(symbol),
         country: quoteData.country || inferCountry(symbol),

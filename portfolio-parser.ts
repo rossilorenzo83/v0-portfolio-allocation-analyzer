@@ -152,15 +152,12 @@ const parseValue = (value: string, key: string): any => {
 }
 
 export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfolioData> => {
-  console.log("Starting enhanced CSV parsing...")
   
   // Handle empty content
   if (!csvContent || csvContent.trim() === "") {
-    console.log("Empty CSV content, returning empty data structure")
     return createEmptyPortfolioData()
   }
   
-  console.log("CSV preview (first 1000 chars):", csvContent.substring(0, 1000))
 
   const delimiter = detectCSVDelimiter(csvContent)
 
@@ -173,11 +170,8 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
   })
 
   if (errors.length > 0) {
-    console.warn("CSV parsing warnings:", errors)
   }
 
-  console.log("CSV parsing completed with", data.length, "rows")
-  console.log("Sample rows:", data.slice(0, 10))
 
   const rows = data as string[][]
 
@@ -205,7 +199,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
   )
 
   if (isSwissBankFormat) {
-    console.log("Detected Swiss bank format CSV, using specialized parser")
     return await parseSwissBankCSV(rows)
   }
 
@@ -254,20 +247,17 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
 
     const matchCount = headerIndicators.filter((indicator) => rowText.includes(indicator)).length
 
-    console.log(`Row ${i} header match count: ${matchCount}, content: ${rowText.substring(0, 100)}`)
 
     // Lowered threshold for header detection to 2, as some CSVs might have fewer indicators
     if (matchCount >= 2) {
       headerRowIndex = i
       headers = row.map((h) => h.toString().trim())
-      console.log("Header found at row", i, ":", headers)
       break
     }
   }
 
   // If no clear header found, try to infer structure
   if (headerRowIndex === -1) {
-    console.log("No clear header found, attempting structure inference...")
     return await parseCSVWithoutHeaders(rows)
   }
 
@@ -386,7 +376,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
     ]),
   }
 
-  console.log("Column mapping:", columnMap)
 
   const positions: PortfolioPosition[] = []
   let currentCategory = "Unknown"
@@ -414,7 +403,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
       const totalValue = extractLargestNumberFromRow(row)
       if (totalValue > totalPortfolioValue) {
         totalPortfolioValue = totalValue
-        console.log(`Found potential total value: ${totalValue} at row ${i}`)
       }
       continue
     }
@@ -424,7 +412,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
 
     // Skip if no valid symbol
     if (!symbol || symbol.length < 1) {
-      console.log(`Skipping row ${i}: no valid symbol found. Raw symbol cell: "${row[columnMap.symbol] || ""}"`)
       continue
     }
 
@@ -449,7 +436,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
         // Shift currency and total fields
           currencyStr = nextNextField
           totalCHFStr = row.length > columnMap.currency + 2 ? row[columnMap.currency + 2]?.toString() : ""
-        console.log(`Reconstructed decimal price: ${priceStr}, currency: ${currencyStr}`)
         }
       }
     }
@@ -470,18 +456,13 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
     const positionPercent = parseSwissNumber(positionPercentStr.replace("%", ""))
     const dailyChange = parseSwissNumber(dailyChangeStr.replace("%", ""))
 
-    console.log(
-      `Parsed values for ${symbol}: qty=${quantity} (raw: "${quantityStr}"), price=${price} (raw: "${priceStr}"), currency=${currencyStr}, total=${totalCHF} (raw: "${totalCHFStr}")`,
-    )
 
     // Skip if missing essential data
     if (isNaN(quantity) || quantity <= 0) {
-      console.log(`Skipping ${symbol} at row ${i}: invalid quantity (${quantity}).`)
       continue
     }
 
     if (isNaN(price) || price <= 0) {
-      console.log(`Skipping ${symbol} at row ${i}: invalid price (${price}).`)
       continue
     }
 
@@ -489,7 +470,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
     let calculatedTotal = totalCHF
     if (isNaN(calculatedTotal) || calculatedTotal <= 0) {
       calculatedTotal = quantity * price * getCurrencyRate(currencyStr)
-      console.log(`Calculated total for ${symbol}: ${calculatedTotal} (original total was invalid or missing).`)
     }
 
     // Determine category from column data or current category
@@ -518,7 +498,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
       }
     }
 
-    console.log(`✅ Adding position: ${symbol} - ${quantity} @ ${price} ${currencyStr} = ${calculatedTotal} CHF`)
 
     positions.push({
       symbol: symbol,
@@ -543,10 +522,8 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
     })
   }
 
-  console.log(`✅ Parsed ${positions.length} positions from CSV`)
 
   if (positions.length === 0) {
-    console.log("No valid positions found, returning empty data structure")
     return createEmptyPortfolioData()
   }
 
@@ -554,9 +531,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
   const finalTotal = totalPortfolioValue > calculatedTotal ? totalPortfolioValue : calculatedTotal
 
-  console.log(
-    `Total portfolio value: ${finalTotal} CHF (calculated: ${calculatedTotal}, found: ${totalPortfolioValue})`,
-  )
 
   // Enrich with API data
   const enrichedPositions = await enrichPositionsWithAPIData(
@@ -676,7 +650,6 @@ function parsePositionRow(row: string[], columnIndices: any, currentCategory: st
   
   // Validate that we have a valid quantity
   if (quantity <= 0) {
-    console.log(`Invalid quantity: ${quantity}`)
     return null
   }
   
@@ -693,10 +666,8 @@ function parsePositionRow(row: string[], columnIndices: any, currentCategory: st
 }
 
 async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> {
-  console.log("Parsing Swiss bank format CSV with refined logic...")
   
   if (!rows || rows.length === 0) {
-    console.log("No rows to parse")
     return createEmptyPortfolioData()
   }
 
@@ -706,14 +677,12 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
   
   // If first row looks like a category header, use it as such and find actual headers later
   if (rows[0] && isCategoryHeader(rows[0][0]?.toString())) {
-    console.log("First row is a category header, not column headers")
     // For now, we'll use fixed column indices since we know the Swiss bank structure
     headerRowIndex = 0  // We'll still reference row 0 for consistency, but won't use it as headers
     startRowIndex = 0   // Start processing from row 0 to catch the category
   }
   
   const headerRow = rows[headerRowIndex]
-  console.log("Using first row as header:", headerRow)
   
   // Use fixed column indices based on the actual Swiss bank CSV structure
   const columnIndices = {
@@ -731,7 +700,6 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     positionPercent: 12 // "Positions %" column
   }
   
-  console.log("Column mapping from first row:", columnIndices)
   
   const positions: ParsedPosition[] = []
   let currentCategory = ""
@@ -742,31 +710,25 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     const row = rows[i]
     if (!row || row.length === 0) continue
     
-    console.log(`Processing row ${i}:`, row)
     const firstCell = row[0]?.toString().trim()
-    console.log(`First cell: "${firstCell}"`)
     
     // Check if this is a category header
     if (isCategoryHeader(firstCell)) {
       currentCategory = normalizeCategory(firstCell)
-      console.log(`Found category header: "${firstCell}" -> "${currentCategory}"`)
       continue
     }
     
     // Check if this is a subtotal row
     if (isSubtotalRow(firstCell)) {
-      console.log(`Found subtotal row: "${firstCell}"`)
       continue
     }
     
     // Check if this is the grand total row
     if (isGrandTotalRow(firstCell)) {
-      console.log(`Found grand total row: "${firstCell}"`)
       // Extract grand total value
       const grandTotalData = extractGrandTotalData(row, {})
       if (grandTotalData) {
         totalPortfolioValue = grandTotalData.amount
-        console.log(`Grand total: ${grandTotalData.amount} ${grandTotalData.currency}`)
       }
       continue
     }
@@ -775,13 +737,10 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     const position = parsePositionRow(row, columnIndices, currentCategory, headerRow)
     if (position) {
       positions.push(position)
-      console.log(`Parsed position: ${position.symbol} - ${position.quantity} @ ${position.price} ${position.currency}`)
     } else {
-      console.log(`Row ${i} could not be parsed as position, category, subtotal, or grand total`)
     }
   }
   
-  console.log(`Parsed ${positions.length} positions with total value: ${totalPortfolioValue}`)
   
   // Enrich positions with API data
   const enrichedPositions = await enrichPositionsWithAPIData(positions)
@@ -814,7 +773,6 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
 }
 
 async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioData> {
-  console.log("Attempting to parse CSV without clear headers...")
 
   const positions: PortfolioPosition[] = []
   let currentCategory = "Unknown"
@@ -850,7 +808,6 @@ async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioD
           const currency = row[4]?.toString().trim() || "CHF"
           const totalValue = row.length > 5 ? parseSwissNumber(row[5]?.toString() || "") : quantity * price
 
-          console.log(`Inferred position: ${symbol} - ${quantity} @ ${price} ${currency}`)
 
           positions.push({
             symbol: symbol,
@@ -879,11 +836,9 @@ async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioD
   }
 
   if (positions.length === 0) {
-    console.log("Could not parse CSV structure, returning empty data structure")
     return createEmptyPortfolioData()
   }
 
-  console.log(`Inferred ${positions.length} positions without headers`)
 
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
 
@@ -981,17 +936,14 @@ function getCurrencyRate(currency: string): number {
 function parseSwissNumber(str: string): number {
   if (!str) return 0
 
-  console.log(`parseSwissNumber input: "${str}"`)
 
   // Handle Swiss number format: 1'234'567.89 and 1'234'567,89
   let cleaned = str.toString().trim()
   
-  console.log(`parseSwissNumber after trim: "${cleaned}"`)
   
   // If it contains both apostrophes and commas, treat comma as decimal separator
   if (cleaned.includes("'") && cleaned.includes(",")) {
     cleaned = cleaned.replace(/'/g, "").replace(",", ".")
-    console.log(`parseSwissNumber after apostrophe+comma handling: "${cleaned}"`)
   }
   // If it only contains comma and no apostrophes, analyze the pattern
   else if (cleaned.includes(",") && !cleaned.includes("'")) {
@@ -1003,34 +955,27 @@ function parseSwissNumber(str: string): number {
       const afterComma = parts[1]
       if (afterComma.length <= 3 && /^\d+$/.test(afterComma)) {
         cleaned = cleaned.replace(",", ".")
-        console.log(`parseSwissNumber after decimal comma handling: "${cleaned}"`)
       } else {
         // Multiple digits after comma, likely thousands separator
         cleaned = cleaned.replace(/,/g, "")
-        console.log(`parseSwissNumber after thousands comma handling: "${cleaned}"`)
       }
     } else if (parts.length > 2) {
       // Multiple commas = thousands separators
       cleaned = cleaned.replace(/,/g, "")
-      console.log(`parseSwissNumber after multiple commas handling: "${cleaned}"`)
     } else {
       // Single comma at end or beginning, treat as decimal
       cleaned = cleaned.replace(",", ".")
-      console.log(`parseSwissNumber after single comma handling: "${cleaned}"`)
     }
   }
   // If it only contains apostrophes, treat as thousands separator
   else if (cleaned.includes("'")) {
     cleaned = cleaned.replace(/'/g, "")
-    console.log(`parseSwissNumber after apostrophe handling: "${cleaned}"`)
   }
   
   // Remove any remaining non-numeric characters except dots and minus
   cleaned = cleaned.replace(/[^\d.-]/g, "")
-  console.log(`parseSwissNumber after final cleaning: "${cleaned}"`)
 
   const parsed = Number.parseFloat(cleaned)
-  console.log(`parseSwissNumber final result: ${parsed}`)
   return isNaN(parsed) ? 0 : parsed
 }
 
@@ -1064,7 +1009,6 @@ function detectCSVDelimiter(csvText: string): string {
       }
     }
 
-    console.log(`Delimiter '${delimiter}': score=${score}, consistent=${consistentColumns}`)
 
     if (score > maxScore) {
       maxScore = score
@@ -1072,7 +1016,6 @@ function detectCSVDelimiter(csvText: string): string {
     }
   }
 
-  console.log("Selected delimiter:", bestDelimiter)
   return bestDelimiter
 }
 
@@ -1085,7 +1028,6 @@ function detectCSVDelimiter(csvText: string): string {
 async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Promise<PortfolioPosition[]> {
   const enrichedPositions: PortfolioPosition[] = []
   
-  console.log(`🚀 Processing ${parsedPositions.length} positions with parallelism (max 3 concurrent)`)
 
   // Process positions in batches for controlled parallelism
   const BATCH_SIZE = 3 // Avoid overwhelming the API
@@ -1096,10 +1038,8 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
   }
   
   for (const batch of batches) {
-    console.log(`📦 Processing batch of ${batch.length} positions...`)
     
     const batchPromises = batch.map(async (parsed) => {
-    console.log(`Enriching ${parsed.symbol}...`)
 
     try {
       // Smart symbol resolution based on CSV currency
@@ -1108,13 +1048,10 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
       if (!parsed.symbol.includes('.')) {
         if (parsed.currency === 'CHF') {
           smartSymbol = `${parsed.symbol}.SW`
-          console.log(`🇨🇭 CSV currency is CHF, trying Swiss exchange: ${parsed.symbol} → ${smartSymbol}`)
         } else if (parsed.currency === 'GBP') {
           smartSymbol = `${parsed.symbol}.L`
-          console.log(`🇬🇧 CSV currency is GBP, trying London exchange: ${parsed.symbol} → ${smartSymbol}`)
         } else if (parsed.currency === 'EUR') {
           // For EUR, we'd need more logic to determine which European exchange
-          console.log(`🇪🇺 CSV currency is EUR for ${parsed.symbol}, keeping as-is (needs exchange detection)`)
         }
       }
       
@@ -1139,10 +1076,6 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         timeoutPromise
       ])
       
-      console.log(`Enrichment results for ${parsed.symbol}:`, {
-        etfData: etfData ? 'Found' : 'Not found',
-        quoteData: quoteData ? 'Found' : 'Not found'
-      })
 
       const currentPrice = quoteData?.price || parsed.price
       const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
@@ -1166,7 +1099,6 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
         if (Object.keys(sectors).length > 0) {
           const largestSector = Object.entries(sectors).reduce((a, b) => sectors[a[0]] > sectors[b[0]] ? a : b)
           sector = largestSector[0]
-          console.log(`🎯 Using ETF composition sector for ${parsed.symbol}: ${sector}`)
         }
         
         const countries = etfData.composition.countries
@@ -1174,7 +1106,6 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
           const largestCountry = Object.entries(countries).reduce((a, b) => countries[a[0]] > countries[b[0]] ? a : b)
           geography = largestCountry[0]
           domicile = etfData.domicile
-          console.log(`🌍 Using ETF composition country for ${parsed.symbol}: ${geography}`)
         }
       }
       
@@ -1259,7 +1190,6 @@ async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Pr
     const batchResults = await Promise.all(batchPromises)
     enrichedPositions.push(...batchResults)
     
-    console.log(`✅ Batch completed, ${enrichedPositions.length}/${parsedPositions.length} positions processed`)
   }
 
   // Calculate position percentages
@@ -1343,7 +1273,6 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
     if (position.etfComposition) {
         // Try new structure first: country array
         if (position.etfComposition.country && Array.isArray(position.etfComposition.country)) {
-          console.log(`📍 Using NEW country structure for ${position.symbol}:`, position.etfComposition.country)
           position.etfComposition.country.forEach(({ country, weight }) => {
             const value = (weight / 100) * position.totalValueCHF // weight is in percentage
             const current = allocation.get(country) || 0
@@ -1353,7 +1282,6 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
         }
         // Try old structure: countries object
         else if (position.etfComposition.countries) {
-          console.log(`📍 Using OLD country structure for ${position.symbol}:`, position.etfComposition.countries)
           Object.entries(position.etfComposition.countries).forEach(([country, weight]) => {
             const value = weight * position.totalValueCHF
             const current = allocation.get(country) || 0
@@ -1365,7 +1293,6 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
     
     if (!hasCountryData) {
       // Fallback to geography if no ETF composition data (for all asset types)
-      console.log(`📍 No composition country data for ${position.symbol} (${position.category}), using geography:`, position.geography)
       const current = allocation.get(position.geography || "Unknown") || 0
       allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
     }
@@ -1398,7 +1325,6 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
     
     if (!hasSectorData) {
       // Fallback to position.sector if no ETF composition data (for all asset types)
-      console.log(`📊 No composition sector data for ${position.symbol} (${position.category}), using position sector:`, position.sector)
       const current = allocation.get(position.sector || "Unknown") || 0
       allocation.set(position.sector || "Unknown", current + position.totalValueCHF)
     }
