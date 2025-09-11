@@ -330,10 +330,7 @@ class YahooFinanceService {
       
       const response = await fetch(url, { 
         headers,
-        // Disable SSL certificate validation for development
-        ...(process.env.NODE_ENV === 'development' && { 
-          agent: new (require('https').Agent)({ rejectUnauthorized: false })
-        })
+        // Do not disable SSL certificate validation
       })
 
       if (!response.ok) {
