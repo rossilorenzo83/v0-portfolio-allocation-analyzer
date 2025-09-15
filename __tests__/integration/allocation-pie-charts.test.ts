@@ -1,10 +1,170 @@
 import { parsePortfolioCsv } from "../../portfolio-parser"
 
+// Mock the services correctly based on how they're actually used
+jest.mock('../../etf-data-service', () => ({
+  resolveSymbolAndFetchData: jest.fn(),
+}))
+
 // Integration test for pie chart allocation calculations
 describe("Integration: Pie Chart Allocation Tests", () => {
+  const mockResolveSymbolAndFetchData = require('../../etf-data-service').resolveSymbolAndFetchData
+
   beforeEach(() => {
     // Reset all mocks
     jest.clearAllMocks()
+    
+    // Set up default mock that handles multiple symbols
+    mockResolveSymbolAndFetchData.mockImplementation((position) => {
+      const stockData = {
+        'SQN': { 
+          etfData: {
+            symbol: 'SQN', 
+            name: 'SQN', 
+            domicile: 'CH', 
+            composition: { 
+              sectors: { 'Financial Services': 100 }, 
+              countries: { 'Switzerland': 100 }, 
+              currencies: { 'CHF': 100 } 
+            }
+          },
+          quoteData: { price: 517.50, currency: 'CHF' }
+        },
+        'SQN.SW': { 
+          etfData: {
+            symbol: 'SQN.SW', 
+            name: 'SQN', 
+            domicile: 'CH', 
+            composition: { 
+              sectors: { 'Financial Services': 100 }, 
+              countries: { 'Switzerland': 100 }, 
+              currencies: { 'CHF': 100 } 
+            }
+          },
+          quoteData: { price: 517.50, currency: 'CHF' }
+        },
+        'ABNB': { 
+          etfData: {
+            symbol: 'ABNB', 
+            name: 'Airbnb Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Consumer Discretionary': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 124.62, currency: 'USD' }
+        },
+        'AZN': { 
+          etfData: {
+            symbol: 'AZN', 
+            name: 'AstraZeneca', 
+            domicile: 'GB', 
+            composition: { 
+              sectors: { 'Healthcare': 100 }, 
+              countries: { 'United Kingdom': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 81.56, currency: 'USD' }
+        },
+        'META': { 
+          etfData: {
+            symbol: 'META', 
+            name: 'Meta Platforms', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Communication Services': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 752.30, currency: 'USD' }
+        },
+        'AAPL': { 
+          etfData: {
+            symbol: 'AAPL', 
+            name: 'Apple Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Technology': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 150, currency: 'USD' }
+        },
+        'AAPL.SW': { 
+          etfData: {
+            symbol: 'AAPL.SW', 
+            name: 'Apple Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Technology': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 150, currency: 'USD' }
+        },
+        'GOOGL': { 
+          etfData: {
+            symbol: 'GOOGL', 
+            name: 'Alphabet Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Communication Services': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 2800, currency: 'USD' }
+        },
+        'TSLA': { 
+          etfData: {
+            symbol: 'TSLA', 
+            name: 'Tesla Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Consumer Discretionary': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 1000, currency: 'USD' }
+        },
+        'VTI': { 
+          etfData: {
+            symbol: 'VTI', 
+            name: 'Vanguard Total Stock Market ETF', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Technology': 30, 'Financial Services': 20, 'Healthcare': 15, 'Other': 35 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 200, currency: 'USD' }
+        },
+      }
+      
+      // Handle both original symbols and exchange-enhanced symbols
+      const baseSymbol = position.symbol.split('.')[0]
+      const mockData = stockData[position.symbol] || stockData[baseSymbol]
+      return Promise.resolve(mockData || {
+        etfData: { 
+          symbol: position.symbol, 
+          name: position.symbol, 
+          domicile: 'US',
+          composition: { 
+            sectors: { 'Unknown': 100 }, 
+            countries: { 'Unknown': 100 }, 
+            currencies: { 'USD': 100 } 
+          }
+        },
+        quoteData: { price: 100, currency: 'USD' }
+      })
+    })
   })
 
   describe("Sector Allocation Pie Chart", () => {
