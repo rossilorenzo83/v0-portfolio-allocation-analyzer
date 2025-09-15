@@ -1,5 +1,6 @@
 import Papa from "papaparse"
 import { etfDataService, resolveSymbolAndFetchData } from "./etf-data-service"
+import { apiService } from "./lib/api-service"
 
 export interface SwissPortfolioData {
   accountOverview: {
@@ -150,243 +151,150 @@ const parseValue = (value: string, key: string): any => {
   }
 }
 
-export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfolioData> => {
-  console.log("Starting enhanced CSV parsing...")
+// Helper function to detect Swiss bank CSV format
+const detectSwissBankFormat = (rows: string[][]): boolean => {
+  const categoryIndicators = [
+    'actions', 'etf', 'fonds', 'obligations', 
+    'produits structurés', 'crypto-monnaies', 'aktien', 'anleihen'
+  ]
   
-  // Handle empty content
-  if (!csvContent || csvContent.trim() === "") {
-    console.log("Empty CSV content, returning empty data structure")
-    return createEmptyPortfolioData()
-  }
+  const headerCombinations = [
+    ['symbole', 'quantité', 'valeur totale'],
+    ['symbol', 'menge', 'gesamtwert']
+  ]
   
-  console.log("CSV preview (first 1000 chars):", csvContent.substring(0, 1000))
+  // Check for category headers
+  const hasCategoryHeaders = rows.some(row => 
+    row && row.length > 0 && 
+    categoryIndicators.some(indicator => 
+      row[0]?.toLowerCase().includes(indicator)
+    )
+  )
+  
+  // Check for Swiss header combinations
+  const hasSwissHeaders = headerCombinations.some(combination => 
+    rows.some(row => {
+      if (!row || row.length === 0) return false
+      const rowText = row.join(" ").toLowerCase()
+      return combination.every(term => rowText.includes(term))
+    })
+  )
+  
+  return hasCategoryHeaders || hasSwissHeaders
+}
 
+// Helper function to parse CSV with Papa Parse
+const parseCSVData = (csvContent: string): string[][] => {
   const delimiter = detectCSVDelimiter(csvContent)
-
-  // Parse with Papa Parse
+  
   const { data, errors } = Papa.parse(csvContent, {
     delimiter,
     skipEmptyLines: "greedy",
     dynamicTyping: false,
-    header: false, // We'll handle headers manually for more control
+    header: false,
   })
 
   if (errors.length > 0) {
-    console.warn("CSV parsing warnings:", errors)
+    // Log errors but continue processing
   }
 
-  console.log("CSV parsing completed with", data.length, "rows")
-  console.log("Sample rows:", data.slice(0, 10))
+  return data as string[][]
+}
 
-  const rows = data as string[][]
-
-  // Check if this is a Swiss bank format CSV (with category headers or French/German headers)
-  const isSwissBankFormat = rows.some(row => 
-    row && row.length > 0 && 
-    (row[0]?.toLowerCase().includes('actions') || 
-     row[0]?.toLowerCase().includes('etf') ||
-     row[0]?.toLowerCase().includes('fonds') ||
-     row[0]?.toLowerCase().includes('obligations') ||
-     row[0]?.toLowerCase().includes('produits structurés') ||
-     row[0]?.toLowerCase().includes('crypto-monnaies') ||
-     row[0]?.toLowerCase().includes('aktien') ||
-     row[0]?.toLowerCase().includes('anleihen')) ||
-    // Also detect French/German headers as Swiss bank format
-    rows.some(row => 
-      row && row.length > 0 && 
-      ((row.join(" ").toLowerCase().includes('symbole') && 
-        row.join(" ").toLowerCase().includes('quantité') &&
-        row.join(" ").toLowerCase().includes('valeur totale')) ||
-       (row.join(" ").toLowerCase().includes('symbol') && 
-        row.join(" ").toLowerCase().includes('menge') &&
-        row.join(" ").toLowerCase().includes('gesamtwert')))
-    )
-  )
-
-  if (isSwissBankFormat) {
-    console.log("Detected Swiss bank format CSV, using specialized parser")
-    return await parseSwissBankCSV(rows)
-  }
-
-  // Find header row with more flexible matching
-  let headerRowIndex = -1
-  let headers: string[] = []
+// Helper function to find header row in CSV data
+const findHeaderRow = (rows: string[][]): { headerRowIndex: number; headers: string[] } | null => {
+  const headerIndicators = [
+    "symbole", "symbol", "ticker", "isin", "quantité", "quantity", "qty", "nombre",
+    "prix", "price", "cours", "valeur", "devise", "currency", "dev", "ccy",
+    "montant", "total", "chf", "usd", "eur", "gbp", "jpy", "cad",
+    "libellé", "libelle", "description", "nom", "name"
+  ]
 
   for (let i = 0; i < Math.min(rows.length, 20); i++) {
     const row = rows[i]
     if (!row || row.length < 2) continue
 
     const rowText = row.join(" ").toLowerCase()
+    const matchCount = headerIndicators.filter(indicator => rowText.includes(indicator)).length
 
-    // Look for key header indicators - expanded list
-    const headerIndicators = [
-      "symbole",
-      "symbol",
-      "ticker",
-      "isin",
-      "quantité",
-      "quantity",
-      "qty",
-      "nombre",
-      "prix",
-      "price",
-      "cours",
-      "valeur",
-      "devise",
-      "currency",
-      "dev",
-      "ccy",
-      "montant",
-      "total",
-      "chf",
-      "usd",
-      "eur",
-      "gbp",
-      "jpy",
-      "cad",
-      "libellé",
-      "libelle",
-      "description",
-      "nom",
-      "name",
-    ]
-
-    const matchCount = headerIndicators.filter((indicator) => rowText.includes(indicator)).length
-
-    console.log(`Row ${i} header match count: ${matchCount}, content: ${rowText.substring(0, 100)}`)
-
-    // Lowered threshold for header detection to 2, as some CSVs might have fewer indicators
+    // Threshold of 2 matches to identify header row
     if (matchCount >= 2) {
-      headerRowIndex = i
-      headers = row.map((h) => h.toString().trim())
-      console.log("Header found at row", i, ":", headers)
-      break
+      return {
+        headerRowIndex: i,
+        headers: row.map(h => h.toString().trim())
+      }
     }
   }
 
-  // If no clear header found, try to infer structure
-  if (headerRowIndex === -1) {
-    console.log("No clear header found, attempting structure inference...")
-    return await parseCSVWithoutHeaders(rows)
-  }
+  return null
+}
 
-  // Map column indices with more flexible matching
-  const columnMap = {
+// Helper function to create column mapping from headers
+const createColumnMapping = (headers: string[]) => {
+  return {
     symbol: findColumnIndex(headers, [
-      "symbole",
-      "symbol",
-      "ticker",
-      "isin",
-      "code",
-      "instrument",
-      "titre",
-      "security",
+      "symbole", "symbol", "ticker", "isin", "code", "instrument", "titre", "security"
     ]),
     name: findColumnIndex(headers, [
-      "nom",
-      "name",
-      "description",
-      "libellé",
-      "libelle",
-      "designation",
-      "intitulé",
-      "intitule",
-      "security name",
-      "instrument name",
+      "nom", "name", "description", "libellé", "libelle", "designation", 
+      "intitulé", "intitule", "security name", "instrument name"
     ]),
-    quantity: findColumnIndex(headers, ["quantité", "quantity", "qty", "nombre", "qte", "units", "shares", "parts"]),
+    quantity: findColumnIndex(headers, [
+      "quantité", "quantity", "qty", "nombre", "qte", "units", "shares", "parts"
+    ]),
     unitCost: findColumnIndex(headers, [
-      "prix unitaire",
-      "unit price",
-      "cost",
-      "coût unitaire",
-      "cout unitaire",
-      "prix d'achat",
-      "purchase price",
-      "avg cost",
+      "prix unitaire", "unit price", "cost", "coût unitaire", "cout unitaire", 
+      "prix d'achat", "purchase price", "avg cost"
     ]),
     price: findColumnIndex(headers, [
-      "prix",
-      "price",
-      "cours",
-      "valeur",
-      "current price",
-      "market price",
-      "last price",
-      "quote",
-      "cotation",
+      "prix", "price", "cours", "valeur", "current price", "market price", 
+      "last price", "quote", "cotation"
     ]),
-    currency: findColumnIndex(headers, ["devise", "currency", "dev", "ccy", "curr", "monnaie", "währung"]),
-    category: findColumnIndex(headers, ["catégorie", "category", "type", "classe", "asset class", "instrument type"]),
-    geography: findColumnIndex(headers, ["geography", "country", "region", "pays", "région", "géographie"]),
-    sector: findColumnIndex(headers, ["sector", "industry", "secteur", "industrie"]),
-    domicile: findColumnIndex(headers, ["domicile", "domicile country", "fund domicile", "incorporation"]),
+    currency: findColumnIndex(headers, [
+      "devise", "currency", "dev", "ccy", "curr", "monnaie", "währung"
+    ]),
+    category: findColumnIndex(headers, [
+      "catégorie", "category", "type", "classe", "asset class", "instrument type"
+    ]),
+    geography: findColumnIndex(headers, [
+      "geography", "country", "region", "pays", "région", "géographie"
+    ]),
+    sector: findColumnIndex(headers, [
+      "sector", "industry", "secteur", "industrie"
+    ]),
+    domicile: findColumnIndex(headers, [
+      "domicile", "domicile country", "fund domicile", "incorporation"
+    ]),
     totalCHF: findColumnIndex(headers, [
-      "valeur totale chf",
-      "total value chf",
-      "total chf",
-      "montant chf",
-      "valeur chf",
-      "market value chf",
-      "value chf",
-      "total",
-      "montant",
-      "valeur totale",
-      "market value",
-      "gesamtwert chf",
-      "valeur totale chf",
-      "total value",
-      "gesamtwert",
+      "valeur totale chf", "total value chf", "total chf", "montant chf", "valeur chf",
+      "market value chf", "value chf", "total", "montant", "valeur totale", 
+      "market value", "gesamtwert chf", "valeur totale chf", "total value", "gesamtwert"
     ]),
     gainLoss: findColumnIndex(headers, [
-      "g&p chf",
-      "gain loss chf",
-      "plus-value",
-      "résultat",
-      "resultat",
-      "p&l",
-      "pnl",
-      "gain",
-      "loss",
-      "profit",
-      "unrealized",
+      "g&p chf", "gain loss chf", "plus-value", "résultat", "resultat", 
+      "p&l", "pnl", "gain", "loss", "profit", "unrealized"
     ]),
     gainLossPercent: findColumnIndex(headers, [
-      "g&p %",
-      "gain loss %",
-      "plus-value %",
-      "résultat %",
-      "resultat %",
-      "p&l %",
-      "pnl %",
-      "gain %",
-      "performance",
-      "rendement",
+      "g&p %", "gain loss %", "plus-value %", "résultat %", "resultat %", 
+      "p&l %", "pnl %", "gain %", "performance", "rendement"
     ]),
     positionPercent: findColumnIndex(headers, [
-      "positions %",
-      "position %",
-      "poids",
-      "weight",
-      "allocation",
-      "% portfolio",
-      "portfolio %",
-      "weight %",
+      "positions %", "position %", "poids", "weight", "allocation", 
+      "% portfolio", "portfolio %", "weight %"
     ]),
     dailyChange: findColumnIndex(headers, [
-      "quot. %",
-      "daily %",
-      "variation",
-      "change",
-      "var. quot.",
-      "daily change",
-      "1d %",
-      "jour %",
-    ]),
+      "quot. %", "daily %", "variation", "change", "var. quot.", 
+      "daily change", "1d %", "jour %"
+    ])
   }
+}
 
-  console.log("Column mapping:", columnMap)
-
+// Helper function to process CSV rows and extract positions
+const processCSVRows = (
+  rows: string[][], 
+  headerRowIndex: number, 
+  columnMap: ReturnType<typeof createColumnMapping>
+): { positions: PortfolioPosition[]; totalPortfolioValue: number } => {
   const positions: PortfolioPosition[] = []
   let currentCategory = "Unknown"
   let totalPortfolioValue = 0
@@ -399,7 +307,7 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
     const firstCell = row[0]?.toString().trim()
     if (!firstCell) continue
 
-    // Skip total/summary rows (only if the first cell contains these keywords)
+    // Skip total/summary rows
     if (
       firstCell.toLowerCase().includes("total") ||
       firstCell.toLowerCase().includes("sous-total") ||
@@ -413,139 +321,146 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
       const totalValue = extractLargestNumberFromRow(row)
       if (totalValue > totalPortfolioValue) {
         totalPortfolioValue = totalValue
-        console.log(`Found potential total value: ${totalValue} at row ${i}`)
       }
       continue
     }
 
-    // Parse position data
-    const symbol = columnMap.symbol >= 0 ? cleanSymbol(row[columnMap.symbol]?.toString()) : ""
-
-    // Skip if no valid symbol
-    if (!symbol || symbol.length < 1) {
-      console.log(`Skipping row ${i}: no valid symbol found. Raw symbol cell: "${row[columnMap.symbol] || ""}"`)
-      continue
+    // Parse position data from row
+    const position = parsePositionFromRow(row, columnMap, currentCategory)
+    if (position) {
+      positions.push(position)
     }
-
-    // Extract other fields
-    const name = columnMap.name >= 0 ? row[columnMap.name]?.toString().trim() : symbol
-    const quantityStr = columnMap.quantity >= 0 ? row[columnMap.quantity]?.toString() : ""
-    const unitCostStr = columnMap.unitCost >= 0 ? row[columnMap.unitCost]?.toString() : ""
-    let priceStr = columnMap.price >= 0 ? row[columnMap.price]?.toString() : ""
-    let currencyStr = columnMap.currency >= 0 ? row[columnMap.currency]?.toString().trim() : "CHF"
-    let totalCHFStr = columnMap.totalCHF >= 0 ? row[columnMap.totalCHF]?.toString() : ""
-    
-    // Handle case where decimal price is split across fields (e.g., "123,45" becomes "123" and "45")
-    if (columnMap.price >= 0 && columnMap.currency >= 0 && row.length > columnMap.currency) {
-      const nextField = row[columnMap.currency]?.toString().trim()
-      // Check if the "currency" field looks like decimal digits (1-3 digits) AND the next field looks like a currency code
-      if (nextField && /^\d{1,3}$/.test(nextField) && priceStr && /^\d+$/.test(priceStr)) {
-        const nextNextField = row.length > columnMap.currency + 1 ? row[columnMap.currency + 1]?.toString().trim() : ""
-        // Only reconstruct if the next field looks like a currency code (3 letters)
-        if (nextNextField && /^[A-Z]{3}$/.test(nextNextField.toUpperCase())) {
-        // Reconstruct the decimal price
-        priceStr = `${priceStr}.${nextField}`
-        // Shift currency and total fields
-          currencyStr = nextNextField
-          totalCHFStr = row.length > columnMap.currency + 2 ? row[columnMap.currency + 2]?.toString() : ""
-        console.log(`Reconstructed decimal price: ${priceStr}, currency: ${currencyStr}`)
-        }
-      }
-    }
-    const gainLossStr = columnMap.gainLoss >= 0 ? row[columnMap.gainLoss]?.toString() : ""
-    const positionPercentStr = columnMap.positionPercent >= 0 ? row[columnMap.positionPercent]?.toString() : ""
-    const dailyChangeStr = columnMap.dailyChange >= 0 ? row[columnMap.dailyChange]?.toString() : ""
-    const categoryStr = columnMap.category >= 0 ? row[columnMap.category]?.toString().trim() : ""
-    const domicileStr = columnMap.domicile >= 0 ? row[columnMap.domicile]?.toString().trim() : ""
-    const geographyStr = columnMap.geography >= 0 ? row[columnMap.geography]?.toString().trim() : ""
-    const sectorStr = columnMap.sector >= 0 ? row[columnMap.sector]?.toString().trim() : ""
-
-    // Parse numbers with enhanced Swiss formatting
-    const quantity = parseSwissNumber(quantityStr)
-    const unitCost = parseSwissNumber(unitCostStr)
-    const price = parseSwissNumber(priceStr) || unitCost
-    const totalCHF = parseSwissNumber(totalCHFStr)
-    const gainLoss = parseSwissNumber(gainLossStr)
-    const positionPercent = parseSwissNumber(positionPercentStr.replace("%", ""))
-    const dailyChange = parseSwissNumber(dailyChangeStr.replace("%", ""))
-
-    console.log(
-      `Parsed values for ${symbol}: qty=${quantity} (raw: "${quantityStr}"), price=${price} (raw: "${priceStr}"), currency=${currencyStr}, total=${totalCHF} (raw: "${totalCHFStr}")`,
-    )
-
-    // Skip if missing essential data
-    if (isNaN(quantity) || quantity <= 0) {
-      console.log(`Skipping ${symbol} at row ${i}: invalid quantity (${quantity}).`)
-      continue
-    }
-
-    if (isNaN(price) || price <= 0) {
-      console.log(`Skipping ${symbol} at row ${i}: invalid price (${price}).`)
-      continue
-    }
-
-    // Calculate total value if not provided or invalid
-    let calculatedTotal = totalCHF
-    if (isNaN(calculatedTotal) || calculatedTotal <= 0) {
-      calculatedTotal = quantity * price * getCurrencyRate(currencyStr)
-      console.log(`Calculated total for ${symbol}: ${calculatedTotal} (original total was invalid or missing).`)
-    }
-
-    // Determine category from column data or current category
-    let positionCategory = currentCategory || "Unknown"
-    if (categoryStr) {
-      // Map French/other language categories to standard categories
-      const categoryMapping: { [key: string]: string } = {
-        "actions": "Actions",
-        "stocks": "Actions", 
-        "equity": "Actions",
-        "obligations": "Bonds",
-        "bonds": "Bonds",
-        "bond": "Bonds",
-        "etf": "ETF",
-        "fonds": "Funds",
-        "funds": "Funds",
-        "cash": "Cash",
-        "liquidités": "Cash"
-      }
-      
-      const mappedCategory = categoryMapping[categoryStr.toLowerCase()]
-      if (mappedCategory) {
-        positionCategory = mappedCategory
-      } else {
-        positionCategory = categoryStr // Use original if no mapping found
-      }
-    }
-
-    console.log(`✅ Adding position: ${symbol} - ${quantity} @ ${price} ${currencyStr} = ${calculatedTotal} CHF`)
-
-    positions.push({
-      symbol: symbol,
-      name: name || symbol,
-      quantity: quantity,
-      unitCost: unitCost || price,
-      price: price,
-      totalValueCHF: calculatedTotal,
-      currency: currencyStr || "CHF",
-      category: positionCategory,
-      sector: sectorStr || "Unknown",
-      geography: geographyStr || "Unknown",
-      domicile: domicileStr || "Unknown",
-      withholdingTax: 15,
-      taxOptimized: false,
-      gainLossCHF: gainLoss || 0,
-      unrealizedGainLoss: 0,
-      unrealizedGainLossPercent: 0,
-      positionPercent: positionPercent || 0,
-      dailyChangePercent: dailyChange || 0,
-      isOTC: false,
-    })
   }
 
-  console.log(`✅ Parsed ${positions.length} positions from CSV`)
+  return { positions, totalPortfolioValue }
+}
+
+// Helper function to parse a single position from a CSV row
+const parsePositionFromRow = (
+  row: string[], 
+  columnMap: ReturnType<typeof createColumnMapping>, 
+  currentCategory: string
+): PortfolioPosition | null => {
+  const symbol = columnMap.symbol >= 0 ? cleanSymbol(row[columnMap.symbol]?.toString()) : ""
+  
+  // Skip if no valid symbol
+  if (!symbol || symbol.length < 1) {
+    return null
+  }
+
+  // Extract fields from row
+  const name = columnMap.name >= 0 ? row[columnMap.name]?.toString().trim() : symbol
+  const quantityStr = columnMap.quantity >= 0 ? row[columnMap.quantity]?.toString() : ""
+  const unitCostStr = columnMap.unitCost >= 0 ? row[columnMap.unitCost]?.toString() : ""
+  let priceStr = columnMap.price >= 0 ? row[columnMap.price]?.toString() : ""
+  let currencyStr = columnMap.currency >= 0 ? row[columnMap.currency]?.toString().trim() : "CHF"
+  let totalCHFStr = columnMap.totalCHF >= 0 ? row[columnMap.totalCHF]?.toString() : ""
+  
+  // Handle decimal price split across fields
+  if (columnMap.price >= 0 && columnMap.currency >= 0 && row.length > columnMap.currency) {
+    const nextField = row[columnMap.currency]?.toString().trim()
+    if (nextField && /^\d{1,3}$/.test(nextField) && priceStr && /^\d+$/.test(priceStr)) {
+      const nextNextField = row.length > columnMap.currency + 1 ? row[columnMap.currency + 1]?.toString().trim() : ""
+      if (nextNextField && /^[A-Z]{3}$/.test(nextNextField.toUpperCase())) {
+        priceStr = `${priceStr}.${nextField}`
+        currencyStr = nextNextField
+        totalCHFStr = row.length > columnMap.currency + 2 ? row[columnMap.currency + 2]?.toString() : ""
+      }
+    }
+  }
+
+  const gainLossStr = columnMap.gainLoss >= 0 ? row[columnMap.gainLoss]?.toString() : ""
+  const positionPercentStr = columnMap.positionPercent >= 0 ? row[columnMap.positionPercent]?.toString() : ""
+  const dailyChangeStr = columnMap.dailyChange >= 0 ? row[columnMap.dailyChange]?.toString() : ""
+  const categoryStr = columnMap.category >= 0 ? row[columnMap.category]?.toString().trim() : ""
+  const domicileStr = columnMap.domicile >= 0 ? row[columnMap.domicile]?.toString().trim() : ""
+  const geographyStr = columnMap.geography >= 0 ? row[columnMap.geography]?.toString().trim() : ""
+  const sectorStr = columnMap.sector >= 0 ? row[columnMap.sector]?.toString().trim() : ""
+
+  // Parse numbers
+  const quantity = parseSwissNumber(quantityStr)
+  const unitCost = parseSwissNumber(unitCostStr)
+  const price = parseSwissNumber(priceStr) || unitCost
+  const totalCHF = parseSwissNumber(totalCHFStr)
+  const gainLoss = parseSwissNumber(gainLossStr)
+  const positionPercent = parseSwissNumber(positionPercentStr.replace("%", ""))
+  const dailyChange = parseSwissNumber(dailyChangeStr.replace("%", ""))
+
+  // Validate essential data
+  if (isNaN(quantity) || quantity <= 0 || isNaN(price) || price <= 0) {
+    return null
+  }
+
+  // Calculate total value
+  let calculatedTotal = totalCHF
+  if (isNaN(calculatedTotal) || calculatedTotal <= 0) {
+    calculatedTotal = quantity * price * getCurrencyRate(currencyStr)
+  }
+
+  // Determine category
+  let positionCategory = currentCategory || "Unknown"
+  if (categoryStr) {
+    const categoryMapping: { [key: string]: string } = {
+      "actions": "Actions", "stocks": "Actions", "equity": "Actions",
+      "obligations": "Bonds", "bonds": "Bonds", "bond": "Bonds",
+      "etf": "ETF", "fonds": "Funds", "funds": "Funds",
+      "cash": "Cash", "liquidités": "Cash"
+    }
+    
+    const mappedCategory = categoryMapping[categoryStr.toLowerCase()]
+    positionCategory = mappedCategory || categoryStr
+  }
+
+  return {
+    symbol: symbol,
+    name: name || symbol,
+    quantity: quantity,
+    unitCost: unitCost || price,
+    price: price,
+    totalValueCHF: calculatedTotal,
+    currency: currencyStr || "CHF",
+    category: positionCategory,
+    sector: sectorStr || "Unknown",
+    geography: geographyStr || "Unknown",
+    domicile: domicileStr || "Unknown",
+    withholdingTax: 15,
+    taxOptimized: false,
+    gainLossCHF: gainLoss || 0,
+    unrealizedGainLoss: 0,
+    unrealizedGainLossPercent: 0,
+    positionPercent: positionPercent || 0,
+    dailyChangePercent: dailyChange || 0,
+    isOTC: false,
+  }
+}
+
+export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfolioData> => {
+  // Handle empty content
+  if (!csvContent || csvContent.trim() === "") {
+    return createEmptyPortfolioData()
+  }
+
+  const rows = parseCSVData(csvContent)
+  
+  // Check if this is a Swiss bank format CSV
+  if (detectSwissBankFormat(rows)) {
+    return await parseSwissBankCSV(rows)
+  }
+
+  // Find header row
+  const headerInfo = findHeaderRow(rows)
+  if (!headerInfo) {
+    return await parseCSVWithoutHeaders(rows)
+  }
+  
+  const { headerRowIndex, headers } = headerInfo
+  
+  // Create column mapping and process rows
+  const columnMap = createColumnMapping(headers)
+  const { positions, totalPortfolioValue } = processCSVRows(rows, headerRowIndex, columnMap)
+
 
   if (positions.length === 0) {
-    console.log("No valid positions found, returning empty data structure")
     return createEmptyPortfolioData()
   }
 
@@ -553,9 +468,6 @@ export const parsePortfolioCsv = async (csvContent: string): Promise<SwissPortfo
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
   const finalTotal = totalPortfolioValue > calculatedTotal ? totalPortfolioValue : calculatedTotal
 
-  console.log(
-    `Total portfolio value: ${finalTotal} CHF (calculated: ${calculatedTotal}, found: ${totalPortfolioValue})`,
-  )
 
   // Enrich with API data
   const enrichedPositions = await enrichPositionsWithAPIData(
@@ -675,7 +587,6 @@ function parsePositionRow(row: string[], columnIndices: any, currentCategory: st
   
   // Validate that we have a valid quantity
   if (quantity <= 0) {
-    console.log(`Invalid quantity: ${quantity}`)
     return null
   }
   
@@ -692,16 +603,23 @@ function parsePositionRow(row: string[], columnIndices: any, currentCategory: st
 }
 
 async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> {
-  console.log("Parsing Swiss bank format CSV with refined logic...")
   
   if (!rows || rows.length === 0) {
-    console.log("No rows to parse")
     return createEmptyPortfolioData()
   }
 
-  // Row 0 contains the headers for all positions
-  const headerRow = rows[0]
-  console.log("Using first row as header:", headerRow)
+  // Check if first row is a category header or actual column header
+  let headerRowIndex = 0
+  let startRowIndex = 1
+  
+  // If first row looks like a category header, use it as such and find actual headers later
+  if (rows[0] && isCategoryHeader(rows[0][0]?.toString())) {
+    // For now, we'll use fixed column indices since we know the Swiss bank structure
+    headerRowIndex = 0  // We'll still reference row 0 for consistency, but won't use it as headers
+    startRowIndex = 0   // Start processing from row 0 to catch the category
+  }
+  
+  const headerRow = rows[headerRowIndex]
   
   // Use fixed column indices based on the actual Swiss bank CSV structure
   const columnIndices = {
@@ -719,42 +637,35 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     positionPercent: 12 // "Positions %" column
   }
   
-  console.log("Column mapping from first row:", columnIndices)
   
   const positions: ParsedPosition[] = []
   let currentCategory = ""
   let totalPortfolioValue = 0
   
-  // Process rows starting from row 1 (skip header)
-  for (let i = 1; i < rows.length; i++) {
+  // Process rows starting from appropriate index
+  for (let i = startRowIndex; i < rows.length; i++) {
     const row = rows[i]
     if (!row || row.length === 0) continue
     
-    console.log(`Processing row ${i}:`, row)
     const firstCell = row[0]?.toString().trim()
-    console.log(`First cell: "${firstCell}"`)
     
     // Check if this is a category header
     if (isCategoryHeader(firstCell)) {
       currentCategory = normalizeCategory(firstCell)
-      console.log(`Found category header: "${firstCell}" -> "${currentCategory}"`)
       continue
     }
     
     // Check if this is a subtotal row
     if (isSubtotalRow(firstCell)) {
-      console.log(`Found subtotal row: "${firstCell}"`)
       continue
     }
     
     // Check if this is the grand total row
     if (isGrandTotalRow(firstCell)) {
-      console.log(`Found grand total row: "${firstCell}"`)
       // Extract grand total value
       const grandTotalData = extractGrandTotalData(row, {})
       if (grandTotalData) {
         totalPortfolioValue = grandTotalData.amount
-        console.log(`Grand total: ${grandTotalData.amount} ${grandTotalData.currency}`)
       }
       continue
     }
@@ -763,13 +674,10 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
     const position = parsePositionRow(row, columnIndices, currentCategory, headerRow)
     if (position) {
       positions.push(position)
-      console.log(`Parsed position: ${position.symbol} - ${position.quantity} @ ${position.price} ${position.currency}`)
     } else {
-      console.log(`Row ${i} could not be parsed as position, category, subtotal, or grand total`)
     }
   }
   
-  console.log(`Parsed ${positions.length} positions with total value: ${totalPortfolioValue}`)
   
   // Enrich positions with API data
   const enrichedPositions = await enrichPositionsWithAPIData(positions)
@@ -802,7 +710,6 @@ async function parseSwissBankCSV(rows: string[][]): Promise<SwissPortfolioData> 
 }
 
 async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioData> {
-  console.log("Attempting to parse CSV without clear headers...")
 
   const positions: PortfolioPosition[] = []
   let currentCategory = "Unknown"
@@ -838,7 +745,6 @@ async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioD
           const currency = row[4]?.toString().trim() || "CHF"
           const totalValue = row.length > 5 ? parseSwissNumber(row[5]?.toString() || "") : quantity * price
 
-          console.log(`Inferred position: ${symbol} - ${quantity} @ ${price} ${currency}`)
 
           positions.push({
             symbol: symbol,
@@ -867,11 +773,9 @@ async function parseCSVWithoutHeaders(rows: string[][]): Promise<SwissPortfolioD
   }
 
   if (positions.length === 0) {
-    console.log("Could not parse CSV structure, returning empty data structure")
     return createEmptyPortfolioData()
   }
 
-  console.log(`Inferred ${positions.length} positions without headers`)
 
   const calculatedTotal = positions.reduce((sum, p) => sum + p.totalValueCHF, 0)
 
@@ -969,17 +873,14 @@ function getCurrencyRate(currency: string): number {
 function parseSwissNumber(str: string): number {
   if (!str) return 0
 
-  console.log(`parseSwissNumber input: "${str}"`)
 
   // Handle Swiss number format: 1'234'567.89 and 1'234'567,89
   let cleaned = str.toString().trim()
   
-  console.log(`parseSwissNumber after trim: "${cleaned}"`)
   
   // If it contains both apostrophes and commas, treat comma as decimal separator
   if (cleaned.includes("'") && cleaned.includes(",")) {
     cleaned = cleaned.replace(/'/g, "").replace(",", ".")
-    console.log(`parseSwissNumber after apostrophe+comma handling: "${cleaned}"`)
   }
   // If it only contains comma and no apostrophes, analyze the pattern
   else if (cleaned.includes(",") && !cleaned.includes("'")) {
@@ -991,34 +892,27 @@ function parseSwissNumber(str: string): number {
       const afterComma = parts[1]
       if (afterComma.length <= 3 && /^\d+$/.test(afterComma)) {
         cleaned = cleaned.replace(",", ".")
-        console.log(`parseSwissNumber after decimal comma handling: "${cleaned}"`)
       } else {
         // Multiple digits after comma, likely thousands separator
         cleaned = cleaned.replace(/,/g, "")
-        console.log(`parseSwissNumber after thousands comma handling: "${cleaned}"`)
       }
     } else if (parts.length > 2) {
       // Multiple commas = thousands separators
       cleaned = cleaned.replace(/,/g, "")
-      console.log(`parseSwissNumber after multiple commas handling: "${cleaned}"`)
     } else {
       // Single comma at end or beginning, treat as decimal
       cleaned = cleaned.replace(",", ".")
-      console.log(`parseSwissNumber after single comma handling: "${cleaned}"`)
     }
   }
   // If it only contains apostrophes, treat as thousands separator
   else if (cleaned.includes("'")) {
     cleaned = cleaned.replace(/'/g, "")
-    console.log(`parseSwissNumber after apostrophe handling: "${cleaned}"`)
   }
   
   // Remove any remaining non-numeric characters except dots and minus
   cleaned = cleaned.replace(/[^\d.-]/g, "")
-  console.log(`parseSwissNumber after final cleaning: "${cleaned}"`)
 
   const parsed = Number.parseFloat(cleaned)
-  console.log(`parseSwissNumber final result: ${parsed}`)
   return isNaN(parsed) ? 0 : parsed
 }
 
@@ -1052,7 +946,6 @@ function detectCSVDelimiter(csvText: string): string {
       }
     }
 
-    console.log(`Delimiter '${delimiter}': score=${score}, consistent=${consistentColumns}`)
 
     if (score > maxScore) {
       maxScore = score
@@ -1060,7 +953,6 @@ function detectCSVDelimiter(csvText: string): string {
     }
   }
 
-  console.log("Selected delimiter:", bestDelimiter)
   return bestDelimiter
 }
 
@@ -1070,117 +962,202 @@ function detectCSVDelimiter(csvText: string): string {
  */
 
 
+// Helper function to enhance symbol with exchange suffix based on currency
+const enhanceSymbolWithExchange = (symbol: string, currency: string): string => {
+  if (symbol.includes('.')) return symbol
+  
+  if (currency === 'CHF') return `${symbol}.SW`
+  if (currency === 'GBP') return `${symbol}.L`
+  // For EUR, we'd need more logic to determine which European exchange
+  
+  return symbol
+}
+
+// Helper function to determine tax optimization for Swiss investors
+const calculateTaxOptimization = (domicile: string): { taxOptimized: boolean; withholdingTax: number } => {
+  const taxOptimized = domicile === "US" || domicile === "IE" || domicile === "LU"
+  const withholdingTax = taxOptimized ? 15 : 30
+  return { taxOptimized, withholdingTax }
+}
+
+// Helper function to extract sector and geography from ETF composition
+const extractSectorAndGeography = (etfData: any, fallbackSector: string, fallbackGeography: string) => {
+  let sector = fallbackSector
+  let geography = fallbackGeography
+  let domicile = "Unknown"
+  
+  if (etfData?.composition) {
+    const sectors = etfData.composition.sectors
+    if (Object.keys(sectors).length > 0) {
+      const largestSector = Object.entries(sectors).reduce((a, b) => 
+        sectors[a[0]] > sectors[b[0]] ? a : b
+      )
+      sector = largestSector[0]
+    }
+    
+    const countries = etfData.composition.countries
+    if (Object.keys(countries).length > 0) {
+      const largestCountry = Object.entries(countries).reduce((a, b) => 
+        countries[a[0]] > countries[b[0]] ? a : b
+      )
+      geography = largestCountry[0]
+      domicile = etfData.domicile
+    }
+  }
+  
+  return { sector, geography, domicile }
+}
+
+// Helper function to create enriched position from parsed data and API response
+const createEnrichedPosition = (
+  parsed: ParsedPosition,
+  etfData: any,
+  quoteData: any
+): PortfolioPosition => {
+  const currentPrice = quoteData?.price || parsed.price
+  const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
+  
+  // Determine domicile and tax optimization
+  let domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfData?.domicile || "Unknown")
+  const { taxOptimized, withholdingTax } = calculateTaxOptimization(domicile)
+  
+  // Extract sector and geography
+  const { sector, geography, domicile: enrichedDomicile } = extractSectorAndGeography(
+    etfData, 
+    parsed.sector || "Unknown", 
+    parsed.geography || "Unknown"
+  )
+  
+  if (enrichedDomicile !== "Unknown") {
+    domicile = enrichedDomicile
+  }
+  
+  return {
+    symbol: parsed.symbol,
+    name: etfData?.name || parsed.name,
+    quantity: parsed.quantity,
+    unitCost: parsed.price,
+    price: parsed.price,
+    currentPrice: currentPrice,
+    totalValueCHF,
+    currency: parsed.currency,
+    category: parsed.category,
+    sector: sector,
+    geography: parsed.geography || geography,
+    domicile: domicile,
+    withholdingTax: etfData?.composition ? 15 : withholdingTax,
+    taxOptimized: taxOptimized,
+    gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
+    unrealizedGainLoss: (currentPrice - parsed.price) * parsed.quantity,
+    unrealizedGainLossPercent: ((currentPrice - parsed.price) / parsed.price) * 100,
+    positionPercent: 0, // Will be calculated later
+    dailyChangePercent: 0, // Not available from current service
+    isOTC: false,
+    etfComposition: etfData?.composition || undefined,
+  }
+}
+
+// Helper function to create fallback position when API enrichment fails
+const createFallbackPosition = (parsed: ParsedPosition): PortfolioPosition => {
+  return {
+    symbol: parsed.symbol,
+    name: parsed.name,
+    quantity: parsed.quantity,
+    unitCost: parsed.price,
+    price: parsed.price,
+    currentPrice: parsed.price,
+    totalValueCHF: parsed.totalValue || parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
+    currency: parsed.currency,
+    category: parsed.category,
+    sector: "Unknown",
+    geography: "Unknown",
+    domicile: "Unknown",
+    withholdingTax: 15,
+    taxOptimized: false,
+    gainLossCHF: 0,
+    unrealizedGainLoss: 0,
+    unrealizedGainLossPercent: 0,
+    positionPercent: 0,
+    dailyChangePercent: 0,
+    isOTC: false,
+  }
+}
+
+// Helper function to process a single position with API enrichment
+const enrichSinglePosition = async (parsed: ParsedPosition): Promise<PortfolioPosition> => {
+  try {
+    // Smart symbol resolution based on CSV currency
+    const smartSymbol = enhanceSymbolWithExchange(parsed.symbol, parsed.currency)
+    
+    const position = {
+      symbol: smartSymbol,
+      name: parsed.name,
+      currency: parsed.currency,
+      exchange: "UNKNOWN",
+      averagePrice: parsed.price,
+      category: parsed.category
+    }
+
+    // Add timeout protection
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`Timeout enriching ${parsed.symbol} after 30 seconds`)), 30000)
+    })
+    
+    const { etfData, quoteData } = await Promise.race([
+      resolveSymbolAndFetchData(position),
+      timeoutPromise
+    ])
+
+    const enrichedPosition = createEnrichedPosition(parsed, etfData, quoteData)
+    
+    // Log missing enrichment data for individual stocks
+    if ((enrichedPosition.sector === "Unknown" || enrichedPosition.geography === "Unknown") && 
+        parsed.category === "Actions") {
+      console.warn(`⚠️ No enrichment data found for individual stock ${parsed.symbol}`)
+      console.warn(`  - Sector: ${enrichedPosition.sector}`)
+      console.warn(`  - Geography: ${enrichedPosition.geography}`)
+      console.warn(`  - ETF data available: ${!!etfData}`)
+      console.warn(`  - ETF composition available: ${!!etfData?.composition}`)
+      if (etfData?.composition) {
+        console.warn(`  - Composition sectors:`, Object.keys(etfData.composition.sectors))
+        console.warn(`  - Composition countries:`, Object.keys(etfData.composition.countries))
+      }
+    }
+    
+    return enrichedPosition
+  } catch (error) {
+    console.error(`Error enriching ${parsed.symbol}:`, error)
+    
+    // Log timeout details
+    if (error instanceof Error && error.message.includes('Timeout')) {
+      console.error(`❌ TIMEOUT: CSV loading stuck on ${parsed.symbol} - this suggests an API hang`)
+      console.error(`   Position category: ${parsed.category}`)
+      console.error(`   This often indicates Yahoo Finance session or network issues`)
+    }
+
+    return createFallbackPosition(parsed)
+  }
+}
+
 async function enrichPositionsWithAPIData(parsedPositions: ParsedPosition[]): Promise<PortfolioPosition[]> {
   const enrichedPositions: PortfolioPosition[] = []
-
-  for (const parsed of parsedPositions) {
-    console.log(`Enriching ${parsed.symbol}...`)
-
-    try {
-      // Use centralized ETF data service for all enrichment
-      // This handles symbol resolution, API calls, caching, and fallbacks
-      const position = {
-        symbol: parsed.symbol,
-        name: parsed.name,
-        currency: parsed.currency,
-        exchange: "UNKNOWN", // Will be resolved by the service
-        averagePrice: parsed.price,
-        category: parsed.category
-      }
-
-      const { etfData, quoteData } = await resolveSymbolAndFetchData(position)
-      
-      console.log(`Enrichment results for ${parsed.symbol}:`, {
-        etfData: etfData ? 'Found' : 'Not found',
-        quoteData: quoteData ? 'Found' : 'Not found'
-      })
-
-      const currentPrice = quoteData?.price || parsed.price
-      const totalValueCHF = parsed.totalValue || parsed.quantity * currentPrice * getCurrencyRate(parsed.currency)
-
-      // Determine tax optimization for Swiss investors
-      // Use original domicile from CSV if available, otherwise use enriched data
-      const domicile = parsed.domicile !== "Unknown" ? parsed.domicile : (etfData?.domicile || "Unknown")
-
-      // For Swiss investors: US domiciled ETFs are tax-optimized (15% withholding tax)
-      // Irish/Luxembourg ETFs are also good (15% withholding tax)
-      // Other domiciles have higher withholding taxes
-      const taxOptimized = domicile === "US" || domicile === "IE" || domicile === "LU"
-
-      // Extract sector and geography from ETF composition if available
-      let sector = parsed.sector || "Unknown"
-      let geography = parsed.geography || "Unknown"
-      
-      if (etfData?.composition && (parsed.category === "ETF" || parsed.category === "Funds")) {
-        // For ETFs, use ETF composition data for sector and geography
-        const sectors = etfData.composition.sectors
-        if (Object.keys(sectors).length > 0) {
-          const largestSector = Object.entries(sectors).reduce((a, b) => sectors[a[0]] > sectors[b[0]] ? a : b)
-          sector = largestSector[0]
-        }
-        
-        const countries = etfData.composition.countries
-        if (Object.keys(countries).length > 0) {
-          const largestCountry = Object.entries(countries).reduce((a, b) => countries[a[0]] > countries[b[0]] ? a : b)
-          geography = largestCountry[0]
-        }
-      }
-
-      const enrichedPosition: PortfolioPosition = {
-        symbol: parsed.symbol,
-        name: etfData?.name || parsed.name,
-        quantity: parsed.quantity,
-        unitCost: parsed.price,
-        price: parsed.price,
-        currentPrice: currentPrice,
-        totalValueCHF,
-        currency: parsed.currency,
-        category: parsed.category,
-        sector: sector,
-        geography: parsed.geography || geography,
-        domicile: domicile,
-        withholdingTax: etfData?.composition ? 15 : (domicile === "US" ? 15 : domicile === "IE" || domicile === "LU" ? 15 : 30),
-        taxOptimized: taxOptimized,
-        gainLossCHF: totalValueCHF - parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
-        unrealizedGainLoss: (currentPrice - parsed.price) * parsed.quantity,
-        unrealizedGainLossPercent: ((currentPrice - parsed.price) / parsed.price) * 100,
-        positionPercent: 0, // Will be calculated later
-        dailyChangePercent: 0, // Not available from current service, could be enhanced
-        isOTC: false,
-        // Store ETF composition data for true allocation calculations
-        etfComposition: etfData?.composition || undefined,
-      }
-
-      enrichedPositions.push(enrichedPosition)
-    } catch (error) {
-      console.error(`Error enriching ${parsed.symbol}:`, error)
-
-      // Add position with basic data if API fails
-      const enrichedPosition: PortfolioPosition = {
-        symbol: parsed.symbol,
-        name: parsed.name,
-        quantity: parsed.quantity,
-        unitCost: parsed.price,
-        price: parsed.price,
-        currentPrice: parsed.price,
-        totalValueCHF: parsed.totalValue || parsed.quantity * parsed.price * getCurrencyRate(parsed.currency),
-        currency: parsed.currency,
-        category: parsed.category,
-        sector: "Unknown",
-        geography: "Unknown",
-        domicile: "Unknown",
-        withholdingTax: 15,
-        taxOptimized: false,
-        gainLossCHF: 0,
-        unrealizedGainLoss: 0,
-        unrealizedGainLossPercent: 0,
-        positionPercent: 0,
-        dailyChangePercent: 0,
-        isOTC: false,
-      }
-
-      enrichedPositions.push(enrichedPosition)
-    }
+  
+  // Process positions in batches for controlled parallelism
+  const BATCH_SIZE = 3 // Avoid overwhelming the API
+  const batches = []
+  
+  for (let i = 0; i < parsedPositions.length; i += BATCH_SIZE) {
+    batches.push(parsedPositions.slice(i, i + BATCH_SIZE))
+  }
+  
+  for (const batch of batches) {
+    
+    const batchPromises = batch.map(enrichSinglePosition)
+    
+    // Wait for all positions in this batch to complete
+    const batchResults = await Promise.all(batchPromises)
+    enrichedPositions.push(...batchResults)
+    
   }
 
   // Calculate position percentages
@@ -1212,35 +1189,36 @@ function calculateTrueCurrencyAllocation(positions: PortfolioPosition[], totalVa
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF" || position.category === "Funds") {
-      // Get ETF composition for true currency exposure
-      try {
-        // Mock ETF composition data
-        const composition = {
-          currency: [
-            { currency: "USD", weight: 70 },
-            { currency: "EUR", weight: 20 },
-            { currency: "CHF", weight: 10 },
-          ],
-        }
-        if (composition && composition.currency.length > 0) {
-          composition.currency.forEach((curr) => {
-            const value = (curr.weight / 100) * position.totalValueCHF
-            const current = allocation.get(curr.currency) || 0
-            allocation.set(curr.currency, current + value)
-          })
-        } else {
-          // Fallback to trading currency
-          const current = allocation.get(position.currency) || 0
-          allocation.set(position.currency, current + position.totalValueCHF)
-        }
-      } catch (error) {
-        // Fallback to trading currency on API error
-        const current = allocation.get(position.currency) || 0
-        allocation.set(position.currency, current + position.totalValueCHF)
+    // Use ETF composition data for true currency exposure
+    let hasCurrencyData = false
+
+    if (position.etfComposition) {
+      // Try new structure first: currency array
+      if (position.etfComposition.currency && Array.isArray(position.etfComposition.currency)) {
+        position.etfComposition.currency.forEach(({ currency, weight }) => {
+          // Handle both decimal (0.25) and percentage (25) formats
+          const normalizedWeight = weight > 1 ? weight / 100 : weight
+          const value = normalizedWeight * position.totalValueCHF
+          const current = allocation.get(currency) || 0
+          allocation.set(currency, current + value)
+        })
+        hasCurrencyData = true
       }
-    } else {
-      // Direct currency exposure
+      // Try old structure: currencies object
+      else if (position.etfComposition.currencies) {
+        Object.entries(position.etfComposition.currencies).forEach(([currency, weight]) => {
+          // Handle both decimal (0.25) and percentage (25) formats
+          const normalizedWeight = weight > 1 ? weight / 100 : weight
+          const value = normalizedWeight * position.totalValueCHF
+          const current = allocation.get(currency) || 0
+          allocation.set(currency, current + value)
+        })
+        hasCurrencyData = true
+      }
+    }
+
+    if (!hasCurrencyData) {
+      // Fallback to trading currency if no ETF composition data
       const current = allocation.get(position.currency) || 0
       allocation.set(position.currency, current + position.totalValueCHF)
     }
@@ -1258,22 +1236,36 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF" || position.category === "Funds") {
-      // Use ETF composition data for true country exposure
-      if (position.etfComposition && position.etfComposition.countries) {
-        const countries = position.etfComposition.countries
-        Object.entries(countries).forEach(([country, weight]) => {
-          const value = weight * position.totalValueCHF
-          const current = allocation.get(country) || 0
-          allocation.set(country, current + value)
+    // Use ETF composition data for true country exposure (works for both ETFs and individual stocks converted to ETF-like format)
+    let hasCountryData = false
+    
+    if (position.etfComposition) {
+        // Try new structure first: country array
+        if (position.etfComposition.country && Array.isArray(position.etfComposition.country)) {
+          position.etfComposition.country.forEach(({ country, weight }) => {
+            // Handle both decimal (0.25) and percentage (25) formats
+            const normalizedWeight = weight > 1 ? weight / 100 : weight
+            const value = normalizedWeight * position.totalValueCHF
+            const current = allocation.get(country) || 0
+            allocation.set(country, current + value)
           })
-        } else {
-        // Fallback to geography if no ETF composition data
-        const current = allocation.get(position.geography || "Unknown") || 0
-        allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
+          hasCountryData = true
+        }
+        // Try old structure: countries object
+        else if (position.etfComposition.countries) {
+          Object.entries(position.etfComposition.countries).forEach(([country, weight]) => {
+            // Handle both decimal (0.25) and percentage (25) formats
+            const normalizedWeight = weight > 1 ? weight / 100 : weight
+            const value = normalizedWeight * position.totalValueCHF
+            const current = allocation.get(country) || 0
+            allocation.set(country, current + value)
+          })
+          hasCountryData = true
+        }
       }
-    } else {
-      // Direct country exposure
+    
+    if (!hasCountryData) {
+      // Fallback to geography if no ETF composition data (for all asset types)
       const current = allocation.get(position.geography || "Unknown") || 0
       allocation.set(position.geography || "Unknown", current + position.totalValueCHF)
     }
@@ -1291,22 +1283,23 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF" || position.category === "Funds") {
-      // Use ETF composition data for true sector exposure
-      if (position.etfComposition && position.etfComposition.sectors) {
-        const sectors = position.etfComposition.sectors
-        Object.entries(sectors).forEach(([sector, weight]) => {
-          const value = weight * position.totalValueCHF
-          const current = allocation.get(sector) || 0
-          allocation.set(sector, current + value)
-          })
-        } else {
-        // Fallback to mixed if no ETF composition data
-        const current = allocation.get("Mixed") || 0
-        allocation.set("Mixed", current + position.totalValueCHF)
-      }
-    } else {
-      // Direct sector exposure
+    // Use ETF composition data for true sector exposure (works for both ETFs and individual stocks converted to ETF-like format)
+    let hasSectorData = false
+    
+    if (position.etfComposition && position.etfComposition.sectors) {
+      const sectors = position.etfComposition.sectors
+      Object.entries(sectors).forEach(([sector, weight]) => {
+        // Handle both decimal (0.25) and percentage (25) formats
+        const normalizedWeight = weight > 1 ? weight / 100 : weight
+        const value = normalizedWeight * position.totalValueCHF
+        const current = allocation.get(sector) || 0
+        allocation.set(sector, current + value)
+      })
+      hasSectorData = true
+    }
+    
+    if (!hasSectorData) {
+      // Fallback to position.sector if no ETF composition data (for all asset types)
       const current = allocation.get(position.sector || "Unknown") || 0
       allocation.set(position.sector || "Unknown", current + position.totalValueCHF)
     }

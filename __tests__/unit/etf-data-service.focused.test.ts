@@ -74,13 +74,13 @@ describe('etf-data-service (focused, cache-safe)', () => {
     expect(result?.symbol).toBe('REAL1')
   })
 
-  it('getEtfDataWithFallback: uses static fallback for known symbol when API fails', async () => {
+  it('getEtfDataWithFallback: uses realistic fallback for known symbol when API fails', async () => {
     ;(global.fetch as jest.Mock).mockImplementation((_url: string) => {
       return Promise.resolve(makeResponse(false, null, { status: 500, statusText: 'Server Error' }))
     })
 
     const { getEtfDataWithFallback } = await import('../../etf-data-service')
-    const result = await getEtfDataWithFallback('VWRL') // present in FALLBACK_ETF_DATA
+    const result = await getEtfDataWithFallback('VWRL') // matches world ETF pattern
     expect(result?.symbol).toBe('VWRL')
     expect(result?.name).toBe('Vanguard FTSE All-World UCITS ETF')
   })
@@ -99,7 +99,7 @@ describe('etf-data-service (focused, cache-safe)', () => {
     expect(result?.currency).toBe('USD')
   })
 
-  it('getQuoteWithFallback: uses static fallback for known symbol when API fails', async () => {
+  it('getQuoteWithFallback: uses realistic fallback for known symbol when API fails', async () => {
     ;(global.fetch as jest.Mock).mockImplementation((_url: string) => {
       return Promise.resolve(makeResponse(false, null, { status: 500, statusText: 'Server Error' }))
     })

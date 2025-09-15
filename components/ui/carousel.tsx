@@ -86,7 +86,7 @@ const Carousel = React.forwardRef<HTMLDivElement, CarouselProps>(
       <CarouselContext.Provider
         value={{
           carouselRef,
-          api: api,
+          api,
           scrollNext,
           scrollPrev,
           canScrollNext,
