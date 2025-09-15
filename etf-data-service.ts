@@ -325,9 +325,9 @@ class ETFDataService {
     
     return {
       symbol: fallbackData.symbol,
-      currency: Object.entries(fallbackData.composition.currencies || {}).map(([currency, weight]) => ({ currency, weight: weight * 100 })),
-      country: Object.entries(fallbackData.composition.countries || {}).map(([country, weight]) => ({ country, weight: weight * 100 })),
-      sector: Object.entries(fallbackData.composition.sectors || {}).map(([sector, weight]) => ({ sector, weight: weight * 100 })),
+      currency: Object.entries(fallbackData.composition.currencies || {}).map(([currency, weight]) => ({ currency, weight: weight })),
+      country: Object.entries(fallbackData.composition.countries || {}).map(([country, weight]) => ({ country, weight: weight })),
+      sector: Object.entries(fallbackData.composition.sectors || {}).map(([sector, weight]) => ({ sector, weight: weight })),
       holdings: [],
       domicile: fallbackData.domicile,
       withholdingTax: fallbackData.domicile === 'US' ? 15 : fallbackData.domicile === 'IE' ? 15 : 30,

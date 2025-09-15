@@ -1189,35 +1189,36 @@ function calculateTrueCurrencyAllocation(positions: PortfolioPosition[], totalVa
   const allocation = new Map<string, number>()
 
   for (const position of positions) {
-    if (position.category === "ETF" || position.category === "Funds") {
-      // Get ETF composition for true currency exposure
-      try {
-        // Mock ETF composition data
-        const composition = {
-          currency: [
-            { currency: "USD", weight: 70 },
-            { currency: "EUR", weight: 20 },
-            { currency: "CHF", weight: 10 },
-          ],
-        }
-        if (composition && composition.currency.length > 0) {
-          composition.currency.forEach((curr) => {
-            const value = (curr.weight / 100) * position.totalValueCHF
-            const current = allocation.get(curr.currency) || 0
-            allocation.set(curr.currency, current + value)
-          })
-        } else {
-          // Fallback to trading currency
-          const current = allocation.get(position.currency) || 0
-          allocation.set(position.currency, current + position.totalValueCHF)
-        }
-      } catch (error) {
-        // Fallback to trading currency on API error
-        const current = allocation.get(position.currency) || 0
-        allocation.set(position.currency, current + position.totalValueCHF)
+    // Use ETF composition data for true currency exposure
+    let hasCurrencyData = false
+
+    if (position.etfComposition) {
+      // Try new structure first: currency array
+      if (position.etfComposition.currency && Array.isArray(position.etfComposition.currency)) {
+        position.etfComposition.currency.forEach(({ currency, weight }) => {
+          // Handle both decimal (0.25) and percentage (25) formats
+          const normalizedWeight = weight > 1 ? weight / 100 : weight
+          const value = normalizedWeight * position.totalValueCHF
+          const current = allocation.get(currency) || 0
+          allocation.set(currency, current + value)
+        })
+        hasCurrencyData = true
       }
-    } else {
-      // Direct currency exposure
+      // Try old structure: currencies object
+      else if (position.etfComposition.currencies) {
+        Object.entries(position.etfComposition.currencies).forEach(([currency, weight]) => {
+          // Handle both decimal (0.25) and percentage (25) formats
+          const normalizedWeight = weight > 1 ? weight / 100 : weight
+          const value = normalizedWeight * position.totalValueCHF
+          const current = allocation.get(currency) || 0
+          allocation.set(currency, current + value)
+        })
+        hasCurrencyData = true
+      }
+    }
+
+    if (!hasCurrencyData) {
+      // Fallback to trading currency if no ETF composition data
       const current = allocation.get(position.currency) || 0
       allocation.set(position.currency, current + position.totalValueCHF)
     }
@@ -1242,7 +1243,9 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
         // Try new structure first: country array
         if (position.etfComposition.country && Array.isArray(position.etfComposition.country)) {
           position.etfComposition.country.forEach(({ country, weight }) => {
-            const value = (weight / 100) * position.totalValueCHF // weight is in percentage
+            // Handle both decimal (0.25) and percentage (25) formats
+            const normalizedWeight = weight > 1 ? weight / 100 : weight
+            const value = normalizedWeight * position.totalValueCHF
             const current = allocation.get(country) || 0
             allocation.set(country, current + value)
           })
@@ -1251,7 +1254,9 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
         // Try old structure: countries object
         else if (position.etfComposition.countries) {
           Object.entries(position.etfComposition.countries).forEach(([country, weight]) => {
-            const value = (weight / 100) * position.totalValueCHF
+            // Handle both decimal (0.25) and percentage (25) formats
+            const normalizedWeight = weight > 1 ? weight / 100 : weight
+            const value = normalizedWeight * position.totalValueCHF
             const current = allocation.get(country) || 0
             allocation.set(country, current + value)
           })
@@ -1284,7 +1289,9 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
     if (position.etfComposition && position.etfComposition.sectors) {
       const sectors = position.etfComposition.sectors
       Object.entries(sectors).forEach(([sector, weight]) => {
-        const value = (weight / 100) * position.totalValueCHF
+        // Handle both decimal (0.25) and percentage (25) formats
+        const normalizedWeight = weight > 1 ? weight / 100 : weight
+        const value = normalizedWeight * position.totalValueCHF
         const current = allocation.get(sector) || 0
         allocation.set(sector, current + value)
       })
