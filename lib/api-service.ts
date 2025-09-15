@@ -125,70 +125,75 @@ class APIService {
     this.rateLimitMap.set("global", Date.now())
   }
 
+  // Helper method to fetch stock price from server-side Yahoo Finance API
+  private async fetchStockPriceServerSide(symbol: string): Promise<StockPrice | null> {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "application/json",
+      },
+    })
+
+    if (!response.ok) return null
+
+    const data = await response.json()
+    const result = data.chart?.result?.[0]
+    if (!result) return null
+
+    const meta = result.meta
+    const currentPrice = meta.regularMarketPrice || meta.previousClose
+    const previousClose = meta.previousClose || currentPrice
+    const change = currentPrice - previousClose
+    const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
+
+    return {
+      symbol,
+      price: Number(currentPrice.toFixed(2)),
+      currency: meta.currency || this.inferCurrency(symbol),
+      change: Number(change.toFixed(2)),
+      changePercent: Number(changePercent.toFixed(2)),
+      lastUpdated: new Date().toISOString(),
+    }
+  }
+
+  // Helper method to fetch stock price from client-side API route
+  private async fetchStockPriceClientSide(symbol: string): Promise<StockPrice | null> {
+    const response = await fetch(`${this.baseUrl}/quote/${encodeURIComponent(symbol)}`)
+
+    if (!response.ok) {
+      console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
+      return null
+    }
+
+    const data = await response.json()
+    return {
+      symbol,
+      price: data.price || 0,
+      currency: data.currency || this.inferCurrency(symbol),
+      change: data.change || 0,
+      changePercent: data.changePercent || 0,
+      lastUpdated: new Date().toISOString(),
+    }
+  }
+
   async getStockPrice(symbol: string): Promise<StockPrice | null> {
     const cacheKey = `price_${symbol}`
     const cached = this.getCached<StockPrice>(cacheKey)
     if (cached) return cached
 
-
     try {
       await this.rateLimit()
       
-      // Check if we're running server-side (has access to process.env)
-      if (typeof process !== 'undefined' && process.env) {
-        // Server-side: Use free Yahoo Finance API
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
-        const response = await fetch(url, {
-        headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "application/json",
-        },
-      })
+      // Determine execution environment and fetch accordingly
+      const isServerSide = typeof process !== 'undefined' && process.env
+      const stockPrice = isServerSide 
+        ? await this.fetchStockPriceServerSide(symbol)
+        : await this.fetchStockPriceClientSide(symbol)
 
-      if (response.ok) {
-        const data = await response.json()
-          const result = data.chart?.result?.[0]
-          if (result) {
-            const meta = result.meta
-            const currentPrice = meta.regularMarketPrice || meta.previousClose
-            const previousClose = meta.previousClose || currentPrice
-            const change = currentPrice - previousClose
-            const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
-
-            const stockPrice: StockPrice = {
-              symbol, // Always return original symbol
-              price: Number(currentPrice.toFixed(2)),
-              currency: meta.currency || this.inferCurrency(symbol),
-              change: Number(change.toFixed(2)),
-              changePercent: Number(changePercent.toFixed(2)),
-              lastUpdated: new Date().toISOString(),
-            }
-
-            this.setCache(cacheKey, stockPrice, 5) // Cache for 5 minutes
-            return stockPrice
-          }
-        }
-      } else {
-        // Client-side: Use Next.js API route
-        const response = await fetch(`${this.baseUrl}/quote/${encodeURIComponent(symbol)}`)
-
-        if (response.ok) {
-          const data = await response.json()
-        
-        const result: StockPrice = {
-          symbol, // Always return original symbol
-            price: data.price || 0,
-            currency: data.currency || this.inferCurrency(symbol),
-            change: data.change || 0,
-            changePercent: data.changePercent || 0,
-          lastUpdated: new Date().toISOString(),
-        }
-
-        this.setCache(cacheKey, result, 5) // Cache for 5 minutes
-        return result
-      } else {
-          console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
-        }
+      if (stockPrice) {
+        this.setCache(cacheKey, stockPrice, 5) // Cache for 5 minutes
+        return stockPrice
       }
     } catch (error) {
       console.error(`Error fetching price for ${symbol}:`, error)
@@ -200,57 +205,60 @@ class APIService {
     return fallback
   }
 
+  // Helper method to enrich metadata with domicile information
+  private enrichMetadataWithDomicile(metadata: any, symbol: string): AssetMetadata {
+    const domicile = this.inferDomicileFromCountry(metadata.country, symbol)
+    return {
+      ...metadata,
+      domicile
+    }
+  }
+
+  // Helper method to fetch metadata from server-side
+  private async fetchMetadataServerSide(symbol: string): Promise<AssetMetadata | null> {
+    const url = `/api/yahoo/share-metadata/${encodeURIComponent(symbol)}`
+    const response = await fetch(`http://localhost:3000${url}`)
+
+    if (!response.ok) return null
+
+    const metadata = await response.json()
+    if (!metadata || !metadata.symbol) return null
+
+    return this.enrichMetadataWithDomicile(metadata, symbol)
+  }
+
+  // Helper method to fetch metadata from client-side
+  private async fetchMetadataClientSide(symbol: string): Promise<AssetMetadata | null> {
+    const response = await fetch(`${this.baseUrl}/share-metadata/${encodeURIComponent(symbol)}`)
+
+    if (!response.ok) {
+      console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
+      return null
+    }
+
+    const metadata = await response.json()
+    if (!metadata || !metadata.symbol) return null
+
+    return this.enrichMetadataWithDomicile(metadata, symbol)
+  }
+
   async getAssetMetadata(symbol: string): Promise<AssetMetadata | null> {
     const cacheKey = `metadata_${symbol}`
     const cached = this.getCached<AssetMetadata>(cacheKey)
     if (cached) return cached
 
-
     try {
       await this.rateLimit()
       
-      // Check if we're running server-side (has access to process.env)
-      if (typeof process !== 'undefined' && process.env) {
-        // Server-side: Use local share-metadata API route for proper Swiss symbol resolution
-        const url = `/api/yahoo/share-metadata/${encodeURIComponent(symbol)}`
-        const response = await fetch(`http://localhost:3000${url}`)
+      // Determine execution environment and fetch accordingly
+      const isServerSide = typeof process !== 'undefined' && process.env
+      const metadata = isServerSide 
+        ? await this.fetchMetadataServerSide(symbol)
+        : await this.fetchMetadataClientSide(symbol)
 
-        if (response.ok) {
-          const metadata = await response.json()
-          
-          if (metadata && metadata.symbol) {
-            // Add domicile inference based on country and symbol
-            const domicile = this.inferDomicileFromCountry(metadata.country, symbol)
-            const enrichedMetadata = {
-              ...metadata,
-              domicile
-            }
-            
-            this.setCache(cacheKey, enrichedMetadata, 60) // Cache for 1 hour
-            return enrichedMetadata
-          }
-        }
-      } else {
-        // Client-side: Use Next.js share-metadata API route  
-        const response = await fetch(`${this.baseUrl}/share-metadata/${encodeURIComponent(symbol)}`)
-
-        if (response.ok) {
-          const metadata = await response.json()
-          
-          if (metadata && metadata.symbol) {
-            // Add domicile inference based on country and symbol
-            const domicile = this.inferDomicileFromCountry(metadata.country, symbol)
-            const enrichedMetadata = {
-              ...metadata,
-              domicile
-            }
-            
-            this.setCache(cacheKey, enrichedMetadata, 60) // Cache for 1 hour
-            return enrichedMetadata
-          }
-        } else {
-          console.error(`API route error for ${symbol}: ${response.status} - ${response.statusText}`)
-        }
+      if (metadata) {
+        this.setCache(cacheKey, metadata, 60) // Cache for 1 hour
+        return metadata
       }
     } catch (error) {
       console.error(`Error fetching metadata for ${symbol}:`, error)

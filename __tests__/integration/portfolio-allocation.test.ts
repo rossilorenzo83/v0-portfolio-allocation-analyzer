@@ -7,46 +7,133 @@
 
 import { parsePortfolioCsv } from "../../portfolio-parser"
 
-// Mock with realistic share metadata to demonstrate the fix
-jest.mock('../../lib/api-service', () => ({
-  apiService: {
-    getETFData: jest.fn(),
-    getAssetMetadata: jest.fn(),
-    getQuote: jest.fn(),
-  }
+// Mock the services correctly based on how they're actually used
+jest.mock('../../etf-data-service', () => ({
+  resolveSymbolAndFetchData: jest.fn(),
 }))
 
 describe("Bug Detection: SQN Sector Allocation Issue", () => {
-  const mockApiService = require('../../lib/api-service').apiService
+  const mockResolveSymbolAndFetchData = require('../../etf-data-service').resolveSymbolAndFetchData
 
   beforeEach(() => {
     jest.clearAllMocks()
-    
-    // Mock successful share metadata responses (simulating working API)
-    mockApiService.getAssetMetadata.mockImplementation((symbol) => {
-      const stockData = {
-        'SQN': { symbol: 'SQN', sector: 'Financial Services', country: 'Switzerland', currency: 'CHF', type: 'EQUITY' },
-        'AAPL': { symbol: 'AAPL', sector: 'Technology', country: 'United States', currency: 'USD', type: 'EQUITY' },
-        'META': { symbol: 'META', sector: 'Communication Services', country: 'United States', currency: 'USD', type: 'EQUITY' },
-        'ABNB': { symbol: 'ABNB', sector: 'Consumer Discretionary', country: 'United States', currency: 'USD', type: 'EQUITY' },
-        'AZN': { symbol: 'AZN', sector: 'Healthcare', country: 'United Kingdom', currency: 'USD', type: 'EQUITY' },
-        'BABA': { symbol: 'BABA', sector: 'Consumer Discretionary', country: 'China', currency: 'USD', type: 'EQUITY' },
-        'OXY': { symbol: 'OXY', sector: 'Energy', country: 'United States', currency: 'USD', type: 'EQUITY' },
-        'UMC': { symbol: 'UMC', sector: 'Technology', country: 'Taiwan', currency: 'USD', type: 'EQUITY' },
-      }
-      return Promise.resolve(stockData[symbol] || { symbol, sector: 'Unknown', country: 'Unknown', currency: 'USD', type: 'EQUITY' })
-    })
-
-    mockApiService.getQuote.mockResolvedValue({
-      price: 100,
-      currency: 'USD',
-      change: 0,
-      changePercent: 0,
-      lastUpdated: new Date().toISOString()
-    })
   })
 
   it("REGRESSION TEST: Should prevent 90%+ Unknown sector allocation (the SQN bug)", async () => {
+    // Set up specific mock for this test
+    mockResolveSymbolAndFetchData.mockImplementation((position) => {
+      const stockData = {
+        'SQN': { 
+          etfData: {
+            symbol: 'SQN', 
+            name: 'SQN', 
+            domicile: 'CH', 
+            composition: { 
+              sectors: { 'Financial Services': 100 }, 
+              countries: { 'Switzerland': 100 }, 
+              currencies: { 'CHF': 100 } 
+            }
+          },
+          quoteData: { price: 517.50, currency: 'CHF' }
+        },
+        'ABNB': { 
+          etfData: {
+            symbol: 'ABNB', 
+            name: 'Airbnb Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Consumer Discretionary': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 124.62, currency: 'USD' }
+        },
+        'AZN': { 
+          etfData: {
+            symbol: 'AZN', 
+            name: 'AstraZeneca', 
+            domicile: 'GB', 
+            composition: { 
+              sectors: { 'Healthcare': 100 }, 
+              countries: { 'United Kingdom': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 81.56, currency: 'USD' }
+        },
+        'BABA': { 
+          etfData: {
+            symbol: 'BABA', 
+            name: 'Alibaba Group', 
+            domicile: 'CN', 
+            composition: { 
+              sectors: { 'Consumer Discretionary': 100 }, 
+              countries: { 'China': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 141.20, currency: 'USD' }
+        },
+        'META': { 
+          etfData: {
+            symbol: 'META', 
+            name: 'Meta Platforms', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Communication Services': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 752.30, currency: 'USD' }
+        },
+        'OXY': { 
+          etfData: {
+            symbol: 'OXY', 
+            name: 'Occidental Petroleum', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Energy': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 45.38, currency: 'USD' }
+        },
+        'UMC': { 
+          etfData: {
+            symbol: 'UMC', 
+            name: 'United Microelectronics', 
+            domicile: 'TW', 
+            composition: { 
+              sectors: { 'Technology': 100 }, 
+              countries: { 'Taiwan': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 6.89, currency: 'USD' }
+        },
+      }
+      
+      // Handle both original symbols and exchange-enhanced symbols (e.g., SQN -> SQN.SW)
+      const baseSymbol = position.symbol.split('.')[0] // Remove exchange suffix
+      const mockData = stockData[position.symbol] || stockData[baseSymbol]
+      return Promise.resolve(mockData || {
+        etfData: { 
+          symbol: position.symbol, 
+          name: position.symbol, 
+          domicile: 'US',
+          composition: { 
+            sectors: { 'Unknown': 100 }, 
+            countries: { 'Unknown': 100 }, 
+            currencies: { 'USD': 100 } 
+          }
+        },
+        quoteData: { price: 100, currency: 'USD' }
+      })
+    })
+
     // Reproduce the user's exact CSV data that caused 90% "Unknown" in pie charts
     const csvContent = ` ,Symbole,Quantité,Coût unitaire,Valeur totale,Variation journalière,Var. quot. %,Prix,Dev.,G&P CHF,G&P %,Valeur totale CHF,Positions %,
 Actions, , , , , , , , , , , , , 
@@ -99,6 +186,68 @@ Actions, , , , , , , , , , , , ,
   })
 
   it("REGRESSION TEST: Should prevent 90%+ Unknown country allocation", async () => {
+    // Set up specific mock for this test
+    mockResolveSymbolAndFetchData.mockImplementation((position) => {
+      const stockData = {
+        'SQN': { 
+          etfData: {
+            symbol: 'SQN', 
+            name: 'SQN', 
+            domicile: 'CH', 
+            composition: { 
+              sectors: { 'Financial Services': 100 }, 
+              countries: { 'Switzerland': 100 }, 
+              currencies: { 'CHF': 100 } 
+            }
+          },
+          quoteData: { price: 517.50, currency: 'CHF' }
+        },
+        'AAPL': { 
+          etfData: {
+            symbol: 'AAPL', 
+            name: 'Apple Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Technology': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 150, currency: 'USD' }
+        },
+        'AZN': { 
+          etfData: {
+            symbol: 'AZN', 
+            name: 'AstraZeneca', 
+            domicile: 'GB', 
+            composition: { 
+              sectors: { 'Healthcare': 100 }, 
+              countries: { 'United Kingdom': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 160, currency: 'USD' }
+        },
+      }
+      
+      // Handle both original symbols and exchange-enhanced symbols (e.g., SQN -> SQN.SW)
+      const baseSymbol = position.symbol.split('.')[0] // Remove exchange suffix
+      const mockData = stockData[position.symbol] || stockData[baseSymbol]
+      return Promise.resolve(mockData || {
+        etfData: { 
+          symbol: position.symbol, 
+          name: position.symbol, 
+          domicile: 'US',
+          composition: { 
+            sectors: { 'Unknown': 100 }, 
+            countries: { 'Unknown': 100 }, 
+            currencies: { 'USD': 100 } 
+          }
+        },
+        quoteData: { price: 100, currency: 'USD' }
+      })
+    })
+    
     const csvContent = ` ,Symbole,Quantité,Coût unitaire,Valeur totale,Variation journalière,Var. quot. %,Prix,Dev.,G&P CHF,G&P %,Valeur totale CHF,Positions %,
 Actions, , , , , , , , , , , , , 
  ,SQN,1000,517.50,517500.00,,,517.50,CHF,0,0%,517500.00,70%,
@@ -133,7 +282,7 @@ Actions, , , , , , , , , , , , ,
 
   it("DEMO: What the bug looked like with API failures", async () => {
     // Simulate the bug by making share metadata fail (returning "Unknown")
-    mockApiService.getAssetMetadata.mockRejectedValue(new Error('Share metadata API failed'))
+    mockResolveSymbolAndFetchData.mockRejectedValue(new Error('Share metadata API failed'))
     
     const csvContent = ` ,Symbole,Quantité,Coût unitaire,Valeur totale,Variation journalière,Var. quot. %,Prix,Dev.,G&P CHF,G&P %,Valeur totale CHF,Positions %,
 Actions, , , , , , , , , , , , , 
@@ -162,13 +311,49 @@ Actions, , , , , , , , , , , , ,
 
   it("Should handle mixed asset types correctly", async () => {
     // Test with both ETFs and stocks to ensure different enrichment paths work
-    mockApiService.getETFData.mockResolvedValueOnce({
-      symbol: 'VTI',
-      composition: {
-        sectors: { 'Technology': 30.0, 'Financial Services': 20.0, 'Healthcare': 15.0 },
-        countries: { 'United States': 100.0 }
-      },
-      domicile: 'US'
+    mockResolveSymbolAndFetchData.mockImplementation((position) => {
+      if (position.symbol === 'VTI') {
+        return Promise.resolve({
+          etfData: {
+            symbol: 'VTI',
+            name: 'Vanguard Total Stock Market ETF',
+            domicile: 'US',
+            composition: {
+              sectors: { 'Technology': 30.0, 'Financial Services': 20.0, 'Healthcare': 15.0 },
+              countries: { 'United States': 100.0 },
+              currencies: { 'USD': 100 }
+            }
+          },
+          quoteData: { price: 200, currency: 'USD' }
+        })
+      } else if (position.symbol === 'SQN' || position.symbol === 'SQN.SW') {
+        return Promise.resolve({
+          etfData: {
+            symbol: 'SQN',
+            name: 'SQN',
+            domicile: 'CH',
+            composition: {
+              sectors: { 'Financial Services': 100 },
+              countries: { 'Switzerland': 100 },
+              currencies: { 'CHF': 100 }
+            }
+          },
+          quoteData: { price: 100, currency: 'CHF' }
+        })
+      }
+      return Promise.resolve({
+        etfData: { 
+          symbol: position.symbol, 
+          name: position.symbol, 
+          domicile: 'US',
+          composition: { 
+            sectors: { 'Unknown': 100 }, 
+            countries: { 'Unknown': 100 }, 
+            currencies: { 'USD': 100 } 
+          }
+        },
+        quoteData: { price: 100, currency: 'USD' }
+      })
     })
     
     const csvContent = `ETF, , , , , , , , , , , , , 

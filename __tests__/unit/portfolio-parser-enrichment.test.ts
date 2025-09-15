@@ -1,16 +1,27 @@
 import { parsePortfolioCsv } from "../../portfolio-parser"
 
-// Mock the API service to test both success and failure cases
+// Mock the services correctly based on how they're actually used
 jest.mock('../../lib/api-service', () => ({
   apiService: {
     getETFData: jest.fn(),
-    getAssetMetadata: jest.fn(),
     getQuote: jest.fn(),
   }
 }))
 
+jest.mock('../../lib/share-metadata-service', () => ({
+  shareMetadataService: {
+    getShareMetadataWithSession: jest.fn(),
+  }
+}))
+
+jest.mock('../../etf-data-service', () => ({
+  resolveSymbolAndFetchData: jest.fn(),
+}))
+
 describe("Portfolio Parser - Data Enrichment Tests", () => {
   const mockApiService = require('../../lib/api-service').apiService
+  const mockShareMetadataService = require('../../lib/share-metadata-service').shareMetadataService
+  const mockResolveSymbolAndFetchData = require('../../etf-data-service').resolveSymbolAndFetchData
 
   beforeEach(() => {
     jest.clearAllMocks()
@@ -18,21 +29,22 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
 
   describe("Individual Stock Enrichment (Actions category)", () => {
     it("should enrich individual stocks with sector and geography from share metadata", async () => {
-      // Mock successful share metadata response
-      mockApiService.getAssetMetadata.mockResolvedValueOnce({
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        sector: 'Technology',
-        country: 'United States',
-        currency: 'USD',
-        type: 'EQUITY',
-        exchange: 'NMS'
-      })
-
-      mockApiService.getQuote.mockResolvedValue({
-        symbol: 'AAPL',
-        price: 150.00,
-        currency: 'USD'
+      // Mock resolveSymbolAndFetchData to return both etfData and quoteData
+      mockResolveSymbolAndFetchData.mockResolvedValue({
+        etfData: {
+          symbol: 'AAPL',
+          name: 'Apple Inc.',
+          domicile: 'US',
+          composition: {
+            sectors: { 'Technology': 100 },
+            countries: { 'United States': 100 },
+            currencies: { 'USD': 100 }
+          }
+        },
+        quoteData: {
+          price: 150.00,
+          currency: 'USD'
+        }
       })
 
       const csvContent = `Actions, , , , , , , , , , , , , 
@@ -49,39 +61,55 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
       expect(aaplPosition.sector).toBe('Technology') // Should NOT be "Unknown"
       expect(aaplPosition.geography).toBe('United States') // Should NOT be "Unknown"
       
-      // Verify share metadata was called
-      expect(mockApiService.getShareMetadata).toHaveBeenCalledWith('AAPL')
+      // Verify resolveSymbolAndFetchData was called
+      expect(mockResolveSymbolAndFetchData).toHaveBeenCalledWith(expect.objectContaining({
+        symbol: 'AAPL',
+        category: 'Actions'
+      }))
     })
 
     it("should handle multiple individual stocks correctly", async () => {
       // Mock different stocks with different sectors
-      mockApiService.getAssetMetadata
+      mockResolveSymbolAndFetchData
         .mockResolvedValueOnce({
-          symbol: 'AAPL',
-          sector: 'Technology',
-          country: 'United States',
-          currency: 'USD',
-          type: 'EQUITY'
+          etfData: {
+            symbol: 'AAPL',
+            name: 'Apple Inc.',
+            domicile: 'US',
+            composition: {
+              sectors: { 'Technology': 100 },
+              countries: { 'United States': 100 },
+              currencies: { 'USD': 100 }
+            }
+          },
+          quoteData: { price: 150, currency: 'USD' }
         })
         .mockResolvedValueOnce({
-          symbol: 'JPM',
-          sector: 'Financial Services',
-          country: 'United States',
-          currency: 'USD',
-          type: 'EQUITY'
+          etfData: {
+            symbol: 'JPM',
+            name: 'JPMorgan Chase',
+            domicile: 'US',
+            composition: {
+              sectors: { 'Financial Services': 100 },
+              countries: { 'United States': 100 },
+              currencies: { 'USD': 100 }
+            }
+          },
+          quoteData: { price: 200, currency: 'USD' }
         })
         .mockResolvedValueOnce({
-          symbol: 'NESN',
-          sector: 'Consumer Staples',
-          country: 'Switzerland',
-          currency: 'CHF',
-          type: 'EQUITY'
+          etfData: {
+            symbol: 'NESN',
+            name: 'Nestle SA',
+            domicile: 'CH',
+            composition: {
+              sectors: { 'Consumer Staples': 100 },
+              countries: { 'Switzerland': 100 },
+              currencies: { 'CHF': 100 }
+            }
+          },
+          quoteData: { price: 100, currency: 'CHF' }
         })
-
-      mockApiService.getQuote.mockResolvedValue({
-        price: 100,
-        currency: 'USD'
-      })
 
       const csvContent = `Actions, , , , , , , , , , , , , 
  ,AAPL,10,150.00,1500.00,,,150.00,USD,0,0%,1500.00,30%,
@@ -115,20 +143,21 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
 
     it("should reproduce the SQN bug scenario - large stock position showing as Unknown", async () => {
       // Mock SQN metadata (this is the key stock from the user's CSV)
-      mockApiService.getAssetMetadata.mockResolvedValueOnce({
-        symbol: 'SQN',
-        name: 'SQN',
-        sector: 'Financial Services',
-        country: 'Switzerland',
-        currency: 'USD',
-        type: 'EQUITY',
-        exchange: 'NMS'
-      })
-
-      mockApiService.getQuote.mockResolvedValue({
-        symbol: 'SQN',
-        price: 517.50,
-        currency: 'CHF'
+      mockResolveSymbolAndFetchData.mockResolvedValue({
+        etfData: {
+          symbol: 'SQN',
+          name: 'SQN',
+          domicile: 'CH',
+          composition: {
+            sectors: { 'Financial Services': 100 },
+            countries: { 'Switzerland': 100 },
+            currencies: { 'CHF': 100 }
+          }
+        },
+        quoteData: {
+          price: 517.50,
+          currency: 'CHF'
+        }
       })
 
       // CSV similar to user's actual data - SQN is 55% of portfolio
@@ -162,8 +191,7 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
 
     it("should gracefully handle share metadata API failures", async () => {
       // Mock API failure
-      mockApiService.getAssetMetadata.mockRejectedValue(new Error('API Error'))
-      mockApiService.getQuote.mockResolvedValue({ symbol: 'AAPL', price: 150 })
+      mockResolveSymbolAndFetchData.mockRejectedValue(new Error('API Error'))
 
       const csvContent = `Actions, , , , , , , , , , , , , 
  ,AAPL,10,150.00,1500.00,,,150.00,USD,0,0%,1500.00,100%,`
@@ -182,36 +210,41 @@ describe("Portfolio Parser - Data Enrichment Tests", () => {
 
   describe("ETF vs Stock Category Handling", () => {
     it("should handle ETFs differently from individual stocks", async () => {
-      // Mock ETF data
-      mockApiService.getETFData.mockResolvedValueOnce({
-        symbol: 'VWRL',
-        name: 'Vanguard FTSE All-World ETF',
-        composition: {
-          sectors: {
-            'Technology': 25.0,
-            'Financial Services': 15.0,
-            'Healthcare': 12.0
+      // Mock ETF and stock data using resolveSymbolAndFetchData
+      mockResolveSymbolAndFetchData
+        .mockResolvedValueOnce({
+          etfData: {
+            symbol: 'VWRL',
+            name: 'Vanguard FTSE All-World ETF',
+            domicile: 'IE',
+            composition: {
+              sectors: {
+                'Technology': 25.0,
+                'Financial Services': 15.0,
+                'Healthcare': 12.0
+              },
+              countries: {
+                'United States': 60.0,
+                'Japan': 10.0,
+                'United Kingdom': 8.0
+              }
+            }
           },
-          countries: {
-            'United States': 60.0,
-            'Japan': 10.0,
-            'United Kingdom': 8.0
-          }
-        },
-        domicile: 'IE',
-        withholdingTax: 15
-      })
-
-      // Mock stock data
-      mockApiService.getAssetMetadata.mockResolvedValueOnce({
-        symbol: 'AAPL',
-        sector: 'Technology',
-        country: 'United States',
-        currency: 'USD',
-        type: 'EQUITY'
-      })
-
-      mockApiService.getQuote.mockResolvedValue({ price: 100 })
+          quoteData: { price: 100, currency: 'USD' }
+        })
+        .mockResolvedValueOnce({
+          etfData: {
+            symbol: 'AAPL',
+            name: 'Apple Inc.',
+            domicile: 'US',
+            composition: {
+              sectors: { 'Technology': 100 },
+              countries: { 'United States': 100 },
+              currencies: { 'USD': 100 }
+            }
+          },
+          quoteData: { price: 100, currency: 'USD' }
+        })
 
       const csvContent = `ETF, , , , , , , , , , , , , 
  ,VWRL,50,100.00,5000.00,,,100.00,USD,0,0%,5000.00,83%,
@@ -236,27 +269,47 @@ Actions, , , , , , , , , , , , ,
       expect(stockPosition?.geography).toBe('United States') // From share metadata
 
       // Verify correct API calls were made
-      expect(mockApiService.getETFData).toHaveBeenCalledWith('VWRL')
-      expect(mockApiService.getShareMetadata).toHaveBeenCalledWith('AAPL')
+      expect(mockResolveSymbolAndFetchData).toHaveBeenCalledWith(expect.objectContaining({
+        symbol: 'VWRL',
+        category: 'ETF'
+      }))
+      expect(mockResolveSymbolAndFetchData).toHaveBeenCalledWith(expect.objectContaining({
+        symbol: 'AAPL',
+        category: 'Actions'
+      }))
     })
   })
 
   describe("Allocation Calculation Validation", () => {
     it("should calculate realistic sector allocations when stocks are properly enriched", async () => {
       // Large position in Financial Services (like SQN scenario)
-      mockApiService.getAssetMetadata
+      mockResolveSymbolAndFetchData
         .mockResolvedValueOnce({
-          symbol: 'JPM',
-          sector: 'Financial Services',
-          country: 'United States'
+          etfData: {
+            symbol: 'JPM',
+            name: 'JPMorgan Chase',
+            domicile: 'US',
+            composition: {
+              sectors: { 'Financial Services': 100 },
+              countries: { 'United States': 100 },
+              currencies: { 'USD': 100 }
+            }
+          },
+          quoteData: { price: 100, currency: 'USD' }
         })
         .mockResolvedValueOnce({
-          symbol: 'AAPL',
-          sector: 'Technology',
-          country: 'United States'
+          etfData: {
+            symbol: 'AAPL',
+            name: 'Apple Inc.',
+            domicile: 'US',
+            composition: {
+              sectors: { 'Technology': 100 },
+              countries: { 'United States': 100 },
+              currencies: { 'USD': 100 }
+            }
+          },
+          quoteData: { price: 100, currency: 'USD' }
         })
-
-      mockApiService.getQuote.mockResolvedValue({ price: 100 })
 
       const csvContent = `Actions, , , , , , , , , , , , , 
  ,JPM,100,100.00,10000.00,,,100.00,USD,0,0%,10000.00,90%,
@@ -271,8 +324,8 @@ Actions, , , , , , , , , , , , ,
       const technology = sectorAllocation.find(s => s.name === 'Technology')
       const unknown = sectorAllocation.find(s => s.name === 'Unknown')
 
-      expect(financialServices?.percentage).toBeCloseTo(90, 1) // JPM is 90% of portfolio
-      expect(technology?.percentage).toBeCloseTo(10, 1) // AAPL is 10% of portfolio
+      expect(financialServices?.percentage).toBeCloseTo(90.91, 1) // JPM is ~90.91% of portfolio
+      expect(technology?.percentage).toBeCloseTo(9.09, 1) // AAPL is ~9.09% of portfolio
       
       // Unknown should be minimal or zero
       if (unknown) {
@@ -282,8 +335,7 @@ Actions, , , , , , , , , , , , ,
 
     it("should identify when sector allocation is dominated by 'Unknown' (the bug scenario)", async () => {
       // Simulate the bug - API fails, stocks default to "Unknown"
-      mockApiService.getAssetMetadata.mockRejectedValue(new Error('API Error'))
-      mockApiService.getQuote.mockResolvedValue({ price: 100 })
+      mockResolveSymbolAndFetchData.mockRejectedValue(new Error('API Error'))
 
       const csvContent = `Actions, , , , , , , , , , , , , 
  ,SQN,1000,100.00,100000.00,,,100.00,CHF,0,0%,100000.00,90%,

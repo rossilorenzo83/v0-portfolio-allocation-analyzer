@@ -1251,7 +1251,7 @@ function calculateTrueCountryAllocation(positions: PortfolioPosition[], totalVal
         // Try old structure: countries object
         else if (position.etfComposition.countries) {
           Object.entries(position.etfComposition.countries).forEach(([country, weight]) => {
-            const value = weight * position.totalValueCHF
+            const value = (weight / 100) * position.totalValueCHF
             const current = allocation.get(country) || 0
             allocation.set(country, current + value)
           })
@@ -1284,7 +1284,7 @@ function calculateTrueSectorAllocation(positions: PortfolioPosition[], totalValu
     if (position.etfComposition && position.etfComposition.sectors) {
       const sectors = position.etfComposition.sectors
       Object.entries(sectors).forEach(([sector, weight]) => {
-        const value = weight * position.totalValueCHF
+        const value = (weight / 100) * position.totalValueCHF
         const current = allocation.get(sector) || 0
         allocation.set(sector, current + value)
       })

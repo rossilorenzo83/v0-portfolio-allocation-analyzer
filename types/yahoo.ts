@@ -38,6 +38,7 @@ export interface QuoteData {
   change?: number
   changePercent?: number
   marketCap?: number
+  lastUpdated?: string
 }
 
 export interface SearchResult {
