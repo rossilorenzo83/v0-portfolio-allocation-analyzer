@@ -55,7 +55,7 @@
     "node-notifier": "latest",
     "papaparse": "latest",
     "path": "latest",
-    "playwright": "^1.55.0",
+    "playwright": "^1.55.1",
     "react": "^19",
     "react-day-picker": "latest",
     "react-dom": "^19",
