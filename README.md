@@ -33,12 +33,11 @@ This project is a web application designed to help users analyze their investmen
     yarn install
     \`\`\`
 3.  **Set up Environment Variables:**
-    Create a `.env.local` file in the root directory and add your Yahoo Finance API key:
+    Create a `.env.local` file in the root directory:
     \`\`\`
-    YAHOO_FINANCE_API_KEY=YOUR_YAHOO_FINANCE_API_KEY
     NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL=/api/yahoo
     \`\`\`
-    *Note: For development, the `NEXT_PUBLIC_YAHOO_FINANCE_API_BASE_URL` is set to proxy through `/api/yahoo` to avoid CORS issues and allow for server-side API calls.*
+    *Note: The app uses web scraping from Yahoo Finance, so no API key is required.*
 
 ### Running the Application
 
