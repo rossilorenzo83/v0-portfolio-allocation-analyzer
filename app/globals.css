@@ -66,10 +66,10 @@
 
 @layer base {
   * {
-    border-color: theme(colors.border);
+    border-color: hsl(var(--border));
   }
   body {
-    background-color: theme(colors.background);
-    color: theme(colors.foreground);
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
   }
 }
