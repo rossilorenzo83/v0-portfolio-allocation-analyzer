@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @layer base {
   :root {
@@ -68,10 +66,10 @@
 
 @layer base {
   * {
-    border-color: hsl(var(--border));
+    border-color: theme(colors.border);
   }
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: theme(colors.background);
+    color: theme(colors.foreground);
   }
 }
