@@ -63,29 +63,48 @@ ChartContainer.displayName = "Chart"
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(([_, config]) => config.theme || config.color)
 
+  // Create CSS variables safely without dangerouslySetInnerHTML
+  const cssVariables = React.useMemo(() => {
+    const variables: Record<string, string> = {}
+    
+    colorConfig.forEach(([key, itemConfig]) => {
+      // For light theme (default)
+      const lightColor = itemConfig.theme?.light || itemConfig.color
+      if (lightColor) {
+        variables[`--color-${key}`] = lightColor
+      }
+      
+      // For dark theme, we'll handle it via CSS class
+      const darkColor = itemConfig.theme?.dark || itemConfig.color
+      if (darkColor) {
+        variables[`--color-${key}-dark`] = darkColor
+      }
+    })
+    
+    return variables
+  }, [colorConfig])
+
   if (!colorConfig.length) {
     return null
   }
 
   return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
-    const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
-  })
-  .join("\n")}
-}
-`,
-          )
-          .join("\n"),
-      }}
-    />
+    <>
+      <style>{`
+        [data-chart="${id}"] {
+          ${Object.entries(cssVariables)
+            .filter(([key]) => !key.endsWith('-dark'))
+            .map(([key, value]) => `${key}: ${value};`)
+            .join('\n          ')}
+        }
+        .dark [data-chart="${id}"] {
+          ${Object.entries(cssVariables)
+            .filter(([key]) => key.endsWith('-dark'))
+            .map(([key, value]) => `${key.replace('-dark', '')}: ${value};`)
+            .join('\n          ')}
+        }
+      `}</style>
+    </>
   )
 }
 
@@ -156,7 +175,7 @@ const ChartTooltipContent = React.forwardRef<
       <div
         ref={ref}
         className={cn(
-          "grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl",
+          "grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-gray-300/50 bg-white px-2.5 py-1.5 text-xs shadow-xl dark:border-gray-600/50 dark:bg-gray-900",
           className,
         )}
       >

@@ -33,13 +33,53 @@ export async function GET(
       )
     }
 
-    // Step 1: Try to resolve the symbol first (like ETFs do)
+    // Step 1: Try to resolve the symbol first (like ETFs do) + European exchange suffixes
     console.log(`🔍 Attempting symbol resolution for ${symbol}...`)
     let resolvedSymbol = symbol
     let symbolResolutionData = null
     
-    try {
-      const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}`
+    // For European stocks, try adding appropriate exchange suffixes
+    const possibleSymbols = [symbol] // Start with original symbol
+    
+    // Add European exchange suffixes based on known companies
+    const swissCompanies = ['NOVN', 'ROG', 'NESN', 'UBSG', 'CSGN', 'SQN', 'ZURN', 'SREN', 'GIVN', 'LONN', 'SLOG', 'BAER', 'CFR', 'SCMN', 'SGS', 'TEMN', 'VZUG', 'GEBN', 'HOLN', 'KER', 'LHN', 'PARG', 'RUS', 'SGSN', 'UHR', 'VACN']
+    const ukCompanies = ['AZN', 'BP', 'SHEL', 'RIO', 'BHP', 'UNVR']
+    const germanCompanies = ['SAP', 'SIE', 'ALV', 'BAS', 'BMW', 'DAI', 'DTE', 'MUV2']
+    const frenchCompanies = ['MC', 'OR', 'BNP', 'SAN', 'TTE', 'CAP', 'AIR', 'ACA']
+    const dutchCompanies = ['ASML', 'HEIA', 'UNA', 'ADYEN']
+    
+    if (swissCompanies.includes(symbol) && !symbol.includes('.')) {
+      possibleSymbols.push(`${symbol}.SW`) // Swiss exchange
+      possibleSymbols.push(`${symbol}.SWX`) // Alternative Swiss exchange
+    }
+    
+    if (ukCompanies.includes(symbol) && !symbol.includes('.')) {
+      possibleSymbols.push(`${symbol}.L`) // London exchange
+      possibleSymbols.push(`${symbol}.LN`) // Alternative London exchange
+    }
+    
+    if (germanCompanies.includes(symbol) && !symbol.includes('.')) {
+      possibleSymbols.push(`${symbol}.F`) // Frankfurt exchange
+      possibleSymbols.push(`${symbol}.ETR`) // Alternative German exchange
+    }
+    
+    if (frenchCompanies.includes(symbol) && !symbol.includes('.')) {
+      possibleSymbols.push(`${symbol}.PA`) // Paris exchange
+      possibleSymbols.push(`${symbol}.EPA`) // Alternative Paris exchange
+    }
+    
+    if (dutchCompanies.includes(symbol) && !symbol.includes('.')) {
+      possibleSymbols.push(`${symbol}.AS`) // Amsterdam exchange
+      possibleSymbols.push(`${symbol}.AMS`) // Alternative Amsterdam exchange
+    }
+    
+    console.log(`🔍 Trying symbol variants for ${symbol}:`, possibleSymbols)
+    
+    // Try each possible symbol variant until we find one that works
+    for (const trySymbol of possibleSymbols) {
+      try {
+        console.log(`🔍 Trying symbol variant: ${trySymbol}`)
+        const searchUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(trySymbol)}`
       const searchHeaders: Record<string, string> = {
         'User-Agent': session.userAgent,
         'Accept': 'application/json',
@@ -90,18 +130,30 @@ export async function GET(
           }
         }
         
-        if (resolvedSymbol === symbol) {
-          console.log(`📋 Symbol resolution: ${symbol} -> ${symbol} (no change)`)
+        // If we found a match, break out of the loop
+        if (resolvedSymbol !== symbol) {
+          console.log(`✅ Found working symbol variant: ${trySymbol} -> ${resolvedSymbol}`)
+          break
+        } else {
+          console.log(`📋 Symbol resolution: ${trySymbol} -> no change, trying next variant...`)
         }
+      } else {
+        console.log(`⚠️ No search results for ${trySymbol}, trying next variant...`)
       }
     } catch (error) {
-      console.warn(`⚠️ Symbol resolution failed for ${symbol}:`, error)
+      console.warn(`⚠️ Symbol resolution failed for ${trySymbol}:`, error)
+      // Continue to next variant
     }
+  }
+  
+  if (resolvedSymbol === symbol && possibleSymbols.length > 1) {
+    console.log(`⚠️ All symbol variants failed for ${symbol}, using original symbol`)
+  }
 
     console.log(`📊 Fetching share metadata for ${resolvedSymbol} with session`)
 
     // Step 2: Try quoteSummary with resolved symbol first
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(resolvedSymbol)}?modules=summaryProfile,summaryDetail`
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(resolvedSymbol)}?modules=summaryProfile,summaryDetail,price,financialData`
     
     const headers: Record<string, string> = {
       'User-Agent': session.userAgent,
@@ -127,6 +179,8 @@ export async function GET(
       
       const summaryProfile = data.quoteSummary?.result?.[0]?.summaryProfile
       const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail
+      const price = data.quoteSummary?.result?.[0]?.price
+      const financialData = data.quoteSummary?.result?.[0]?.financialData
       
       if (summaryProfile) {
         // Check if we have good quality data
@@ -146,12 +200,27 @@ export async function GET(
         })
 
         if (hasGoodData) {
+          // Try to get currency from multiple API sources before falling back to inference
+          const currency = summaryProfile.currency || 
+                        price?.currency || 
+                        financialData?.financialCurrency ||
+                        summaryDetail?.currency ||
+                        inferCurrency(symbol)
+          
+          console.log(`💱 Currency sources for ${resolvedSymbol}:`, {
+            summaryProfile: summaryProfile.currency,
+            price: price?.currency,
+            financialData: financialData?.financialCurrency,
+            summaryDetail: summaryDetail?.currency,
+            final: currency
+          })
+          
           const metadata: ShareMetadata = {
-            symbol: symbol, // Always return original symbol
+            symbol, // Always return original symbol
             name: summaryProfile.longName || summaryProfile.shortName || symbol,
             sector: summaryProfile.sector,
             country: summaryProfile.country,
-            currency: summaryProfile.currency || inferCurrency(symbol),
+            currency,
             type: summaryProfile.quoteType || inferAssetType(symbol),
             exchange: summaryProfile.exchange || inferExchange(symbol),
           }
@@ -171,12 +240,15 @@ export async function GET(
     // Step 3: If resolved symbol failed or had poor data, try original symbol
     if (resolvedSymbol !== symbol) {
       console.log(`🔄 Trying original symbol ${symbol} as fallback...`)
-      const originalUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryProfile,summaryDetail`
+      const originalUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=summaryProfile,summaryDetail,price,financialData`
       const originalResponse = await fetch(originalUrl, { headers })
 
       if (originalResponse.ok) {
         const data = await originalResponse.json()
         const summaryProfile = data.quoteSummary?.result?.[0]?.summaryProfile
+        const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail
+        const price = data.quoteSummary?.result?.[0]?.price
+        const financialData = data.quoteSummary?.result?.[0]?.financialData
         
         if (summaryProfile) {
           const hasGoodData = summaryProfile.sector && 
@@ -187,12 +259,19 @@ export async function GET(
                              summaryProfile.country !== 'unknown'
 
           if (hasGoodData) {
+            // Try to get currency from multiple API sources before falling back to inference
+            const currency = summaryProfile.currency || 
+                          price?.currency || 
+                          financialData?.financialCurrency ||
+                          summaryDetail?.currency ||
+                          inferCurrency(symbol)
+            
             const metadata: ShareMetadata = {
-              symbol: symbol,
+              symbol,
               name: summaryProfile.longName || summaryProfile.shortName || symbol,
               sector: summaryProfile.sector,
               country: summaryProfile.country,
-              currency: summaryProfile.currency || inferCurrency(symbol),
+              currency,
               type: summaryProfile.quoteType || inferAssetType(symbol),
               exchange: summaryProfile.exchange || inferExchange(symbol),
             }
@@ -208,7 +287,7 @@ export async function GET(
     if (symbolResolutionData) {
       console.log(`🔄 Using symbol resolution data for ${symbol}...`)
       const metadata: ShareMetadata = {
-        symbol: symbol,
+        symbol,
         name: symbolResolutionData.longname || symbolResolutionData.shortname || symbol,
         sector: inferSector(symbol),
         country: inferCountry(symbol),
@@ -311,7 +390,13 @@ function inferSector(symbol: string): string {
     'ONDO': 'Cryptocurrency',
   }
   
-  return sectorMap[symbol] || 'Technology'
+  // NO MORE HARDCODED FALLBACKS - show "Unknown" to expose API failures
+  if (sectorMap[symbol]) {
+    console.warn(`⚠️ FALLBACK: Using hardcoded sector data for ${symbol}: ${sectorMap[symbol]} - this masks API failures`)
+  } else {
+    console.warn(`⚠️ FALLBACK: No sector data available for ${symbol} from API/scraping - showing Unknown to expose the issue`)
+  }
+  return sectorMap[symbol] || 'Unknown'
 }
 
 function inferCountry(symbol: string): string {
@@ -323,6 +408,7 @@ function inferCountry(symbol: string): string {
   // Check for specific Swiss companies
   const swissCompanies = ['NOVN', 'ROG', 'NESN', 'UBSG', 'CSGN', 'SQN', 'ZURN', 'SREN', 'GIVN', 'LONN', 'SLOG', 'BAER', 'CFR', 'SCMN', 'SGS', 'TEMN', 'VZUG', 'GEBN', 'HOLN', 'KER', 'LHN', 'PARG', 'RUS', 'SGSN', 'UHR', 'VACN']
   if (swissCompanies.includes(symbol)) {
+    console.warn(`⚠️ FALLBACK: Using hardcoded country data for ${symbol}: Switzerland - this masks API failures`)
     return 'Switzerland'
   }
   
@@ -366,11 +452,34 @@ function inferCountry(symbol: string): string {
     return 'United States'
   }
   
-  // Default to US for most symbols
+  // Show warning when falling back to US default
+  console.warn(`⚠️ FALLBACK: No country data available for ${symbol} from API/scraping - defaulting to United States (may be wrong)`)
   return 'United States'
 }
 
 function inferCurrency(symbol: string): string {
+  // Swiss stocks and ETFs
+  const swissCompanies = ['NOVN', 'ROG', 'NESN', 'UBSG', 'CSGN', 'SQN', 'ZURN', 'SREN', 'GIVN', 'LONN', 'SLOG', 'BAER', 'CFR', 'SCMN', 'SGS', 'TEMN', 'VZUG', 'GEBN', 'HOLN', 'KER', 'LHN', 'PARG', 'RUS', 'SGSN', 'UHR', 'VACN']
+  if (swissCompanies.includes(symbol) || symbol.endsWith('.SW') || symbol.endsWith('.SWX')) {
+    if (swissCompanies.includes(symbol)) {
+      console.warn(`⚠️ FALLBACK: Using hardcoded currency data for ${symbol}: CHF - this masks API failures`)
+    }
+    return 'CHF'
+  }
+  
+  // UK stocks
+  const ukCompanies = ['AZN', 'BP', 'SHEL', 'RIO', 'BHP', 'UNVR']
+  if (ukCompanies.includes(symbol) || symbol.endsWith('.L') || symbol.endsWith('.LN')) {
+    return 'GBP'
+  }
+  
+  // Euro-denominated stocks
+  const euroCompanies = ['SAP', 'SIE', 'ALV', 'BAS', 'BMW', 'DAI', 'DTE', 'MUV2', 'MC', 'OR', 'BNP', 'SAN', 'TTE', 'CAP', 'AIR', 'ACA', 'ASML', 'HEIA', 'UNA', 'ADYEN']
+  if (euroCompanies.includes(symbol) || symbol.endsWith('.F') || symbol.endsWith('.ETR') || symbol.endsWith('.PA') || symbol.endsWith('.AS')) {
+    return 'EUR'
+  }
+  
+  // Default to USD for US stocks and unknown symbols
   return 'USD'
 }
 
@@ -384,7 +493,7 @@ function inferExchange(symbol: string): string {
 
 function getFallbackMetadata(symbol: string): ShareMetadata {
   return {
-    symbol: symbol,
+    symbol,
     name: symbol,
     sector: inferSector(symbol),
     country: inferCountry(symbol),
@@ -457,7 +566,7 @@ function parseShareDataFromHTML(data: any, symbol: string): ShareMetadata | null
     const summaryProfile = data?.quoteSummary?.result?.[0]?.summaryProfile
     if (summaryProfile) {
       const metadata: ShareMetadata = {
-        symbol: symbol,
+        symbol,
         name: summaryProfile.longName || summaryProfile.shortName || symbol,
         sector: summaryProfile.sector || inferSector(symbol),
         country: summaryProfile.country || inferCountry(symbol),
@@ -474,7 +583,7 @@ function parseShareDataFromHTML(data: any, symbol: string): ShareMetadata | null
     const quoteData = data?.quoteData?.result?.[0]
     if (quoteData) {
       const metadata: ShareMetadata = {
-        symbol: symbol,
+        symbol,
         name: quoteData.longName || quoteData.shortName || symbol,
         sector: quoteData.sector || inferSector(symbol),
         country: quoteData.country || inferCountry(symbol),

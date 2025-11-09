@@ -1,31 +1,104 @@
 import { parsePortfolioCsv } from '../../portfolio-parser'
 
-// Test helper functions that are not exported but need coverage
-// We'll use a different approach - testing through the main exported function
+// Mock the services correctly based on how they're actually used
+jest.mock('../../etf-data-service', () => ({
+  resolveSymbolAndFetchData: jest.fn(),
+}))
 
 describe('Portfolio Parser Extended Coverage', () => {
-  // Mock the ETF data service to avoid external dependencies
-  jest.mock('../../etf-data-service', () => ({
-    etfDataService: {
-      getETFData: jest.fn().mockResolvedValue({
-        symbol: 'VTI',
-        composition: {
-          sectors: { 'Technology': 25.0 },
-          countries: { 'United States': 100.0 },
-          currencies: { 'USD': 100.0 }
-        }
+  const mockResolveSymbolAndFetchData = require('../../etf-data-service').resolveSymbolAndFetchData
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    
+    // Set up default mock that handles multiple symbols
+    mockResolveSymbolAndFetchData.mockImplementation((position) => {
+      const stockData = {
+        'AAPL': { 
+          etfData: {
+            symbol: 'AAPL', 
+            name: 'Apple Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Technology': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 150, currency: 'USD' }
+        },
+        'AAPL.SW': { 
+          etfData: {
+            symbol: 'AAPL.SW', 
+            name: 'Apple Inc.', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Technology': 100 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 150, currency: 'USD' }
+        },
+        'SQN': { 
+          etfData: {
+            symbol: 'SQN', 
+            name: 'SQN', 
+            domicile: 'CH', 
+            composition: { 
+              sectors: { 'Financial Services': 100 }, 
+              countries: { 'Switzerland': 100 }, 
+              currencies: { 'CHF': 100 } 
+            }
+          },
+          quoteData: { price: 517.50, currency: 'CHF' }
+        },
+        'SQN.SW': { 
+          etfData: {
+            symbol: 'SQN.SW', 
+            name: 'SQN', 
+            domicile: 'CH', 
+            composition: { 
+              sectors: { 'Financial Services': 100 }, 
+              countries: { 'Switzerland': 100 }, 
+              currencies: { 'CHF': 100 } 
+            }
+          },
+          quoteData: { price: 517.50, currency: 'CHF' }
+        },
+        'VTI': { 
+          etfData: {
+            symbol: 'VTI', 
+            name: 'Vanguard Total Stock Market ETF', 
+            domicile: 'US', 
+            composition: { 
+              sectors: { 'Technology': 30, 'Financial Services': 20, 'Healthcare': 15, 'Other': 35 }, 
+              countries: { 'United States': 100 }, 
+              currencies: { 'USD': 100 } 
+            }
+          },
+          quoteData: { price: 200, currency: 'USD' }
+        },
+      }
+      
+      // Handle both original symbols and exchange-enhanced symbols
+      const baseSymbol = position.symbol.split('.')[0]
+      const mockData = stockData[position.symbol] || stockData[baseSymbol]
+      return Promise.resolve(mockData || {
+        etfData: { 
+          symbol: position.symbol, 
+          name: position.symbol, 
+          domicile: 'US',
+          composition: { 
+            sectors: { 'Unknown': 100 }, 
+            countries: { 'Unknown': 100 }, 
+            currencies: { 'USD': 100 } 
+          }
+        },
+        quoteData: { price: 100, currency: 'USD' }
       })
-    },
-    resolveSymbolAndFetchData: jest.fn().mockResolvedValue({
-      symbol: 'AAPL',
-      name: 'Apple Inc.',
-      currentPrice: 150.0,
-      currency: 'USD',
-      sector: 'Technology',
-      geography: 'United States',
-      domicile: 'US'
     })
-  }))
+  })
 
   // Test parseSwissNumber function through different CSV inputs
   describe('Swiss Number Parsing', () => {
@@ -230,6 +303,66 @@ GOOGL,"Alphabet Inc. - Class A",5,2500`
       
       expect(result).toBeDefined()
       expect(result.positions).toBeDefined()
+    })
+  })
+
+  describe('Portfolio Allocation Bug Regression Tests', () => {
+    it('should enrich individual stocks with proper sectors (SQN bug regression test)', async () => {
+      // This test specifically targets the bug where individual stocks get "Unknown" sectors
+      const csvContent = `Actions, , , , , , , , , , , , , 
+ ,SQN,1000,100.00,100000.00,,,100.00,CHF,0,0%,100000.00,90%,
+ ,AAPL,100,100.00,10000.00,,,100.00,USD,0,0%,10000.00,10%,`
+
+      const result = await parsePortfolioCsv(csvContent)
+
+      // Validate positions exist
+      expect(result.positions).toHaveLength(2)
+      
+      const sqnPosition = result.positions.find(p => p.symbol === 'SQN')
+      const aaplPosition = result.positions.find(p => p.symbol === 'AAPL')
+      
+      expect(sqnPosition).toBeDefined()
+      expect(aaplPosition).toBeDefined()
+      
+      // CRITICAL BUG CHECK: The sector allocation should not be dominated by "Unknown"
+      const sectorAllocation = result.trueSectorAllocation
+      const unknownSector = sectorAllocation.find(s => s.name === 'Unknown')
+      
+      // This is the key assertion that would catch the original bug
+      if (unknownSector) {
+        // Before fix: This would be ~100% due to all stocks being "Unknown"
+        // After fix: This should be much lower
+        expect(unknownSector.percentage).toBeLessThan(95) // Catch the 90%+ "Unknown" bug
+      }
+      
+      // Should have at least some non-Unknown sectors
+      const knownSectors = sectorAllocation.filter(s => s.name !== 'Unknown')
+      expect(knownSectors.length).toBeGreaterThan(0)
+      
+      // Total percentages should add up to ~100%
+      const totalPercentage = sectorAllocation.reduce((sum, s) => sum + s.percentage, 0)
+      expect(totalPercentage).toBeCloseTo(100, 1)
+    })
+
+    it('should prevent country allocation dominated by Unknown', async () => {
+      // Test country/geography allocation bug
+      const csvContent = `Actions, , , , , , , , , , , , , 
+ ,SQN,1000,100.00,100000.00,,,100.00,CHF,0,0%,100000.00,85%,
+ ,AAPL,100,100.00,10000.00,,,100.00,USD,0,0%,10000.00,15%,`
+
+      const result = await parsePortfolioCsv(csvContent)
+
+      const countryAllocation = result.trueCountryAllocation
+      const unknownCountry = countryAllocation.find(c => c.name === 'Unknown')
+      
+      // Similar test for geography - should not be dominated by "Unknown"
+      if (unknownCountry) {
+        expect(unknownCountry.percentage).toBeLessThan(95)
+      }
+      
+      // Should have meaningful country diversity
+      const knownCountries = countryAllocation.filter(c => c.name !== 'Unknown')
+      expect(knownCountries.length).toBeGreaterThan(0)
     })
   })
 })
